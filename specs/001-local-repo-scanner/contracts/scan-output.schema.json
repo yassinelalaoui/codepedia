@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Local Repository Scanner Output",
+  "type": "object",
+  "required": ["root_path", "generated_at", "entries", "summary"],
+  "properties": {
+    "root_path": {
+      "type": "string",
+      "description": "Resolved local repository path that was scanned"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the scan completed"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["relative_path", "language"],
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "description": "Repository-relative path to the retained source file"
+          },
+          "language": {
+            "type": "string",
+            "description": "Detected programming language label"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_candidates",
+        "included_files",
+        "ignored_files",
+        "binary_files",
+        "unsupported_files"
+      ],
+      "properties": {
+        "total_candidates": { "type": "integer", "minimum": 0 },
+        "included_files": { "type": "integer", "minimum": 0 },
+        "ignored_files": { "type": "integer", "minimum": 0 },
+        "binary_files": { "type": "integer", "minimum": 0 },
+        "unsupported_files": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+
