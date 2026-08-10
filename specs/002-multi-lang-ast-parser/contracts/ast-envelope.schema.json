@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Normalized AST Envelope",
+  "type": "object",
+  "required": ["language", "root", "source_path", "has_errors", "parser_name"],
+  "properties": {
+    "language": { "type": "string" },
+    "source_path": { "type": "string" },
+    "has_errors": { "type": "boolean" },
+    "parser_name": { "type": "string" },
+    "root": {
+      "$ref": "#/$defs/node"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": [
+        "type",
+        "start_byte",
+        "end_byte",
+        "start_point",
+        "end_point",
+        "children",
+        "fields",
+        "named",
+        "extra",
+        "missing"
+      ],
+      "properties": {
+        "type": { "type": "string" },
+        "start_byte": { "type": "integer", "minimum": 0 },
+        "end_byte": { "type": "integer", "minimum": 0 },
+        "start_point": {
+          "type": "object",
+          "required": ["row", "column"],
+          "properties": {
+            "row": { "type": "integer", "minimum": 0 },
+            "column": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "end_point": {
+          "type": "object",
+          "required": ["row", "column"],
+          "properties": {
+            "row": { "type": "integer", "minimum": 0 },
+            "column": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/node" }
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/node" }
+        },
+        "named": { "type": "boolean" },
+        "extra": { "type": "boolean" },
+        "missing": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+
