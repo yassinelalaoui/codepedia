@@ -4,9 +4,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+from embedding_engine import EmbeddingEngine
+
 from .chunking import build_code_chunk
 from .models import CodeChunk, IndexRecord, SearchQuery, SearchResult, VectorEntry
-from .search import encode_text, rank_entries, rebuild_results
+from .search import rank_entries
 from . import storage
 
 
@@ -18,6 +20,7 @@ class VectorIndex:
         metadataPath: str | Path,
         *,
         auto_load: bool = True,
+        embedding_engine: EmbeddingEngine | None = None,
     ) -> None:
         self.repositoryRoot = str(Path(repositoryRoot).expanduser().resolve())
         self.indexPath = Path(indexPath).expanduser()
@@ -33,6 +36,7 @@ class VectorIndex:
         )
         self._entries: dict[str, VectorEntry] = {}
         self._file_to_chunks: dict[str, set[str]] = {}
+        self._embedding_engine = embedding_engine
         self._load_if_needed(auto_load=auto_load)
 
     @classmethod
@@ -41,8 +45,10 @@ class VectorIndex:
         repositoryRoot: str | Path,
         indexPath: str | Path,
         metadataPath: str | Path,
+        *,
+        embedding_engine: EmbeddingEngine | None = None,
     ) -> "VectorIndex":
-        return cls(repositoryRoot, indexPath, metadataPath, auto_load=True)
+        return cls(repositoryRoot, indexPath, metadataPath, auto_load=True, embedding_engine=embedding_engine)
 
     @property
     def record(self) -> IndexRecord:
@@ -140,7 +146,11 @@ class VectorIndex:
         if not self._entries:
             return []
         dimension = next(iter(self._entries.values())).dimensionality
-        query_vector = encode_text(search_query.queryText, dimension=dimension)
+        if self._embedding_engine is None:
+            raise RuntimeError("VectorIndex.search requires an EmbeddingEngine configured on the index")
+        query_vector = self._embedding_engine.embed(search_query.queryText)
+        if len(query_vector) != dimension:
+            raise ValueError("query vector dimensionality does not match indexed entries")
         return rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=search_query.filters)
 
     def save(self) -> IndexRecord:

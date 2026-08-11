@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from vector_index import CodeChunk, SearchQuery, VectorIndex, build_code_chunk, build_code_chunks, encode_text, rank_entries
+from vector_index import CodeChunk, SearchQuery, VectorIndex, build_code_chunk, build_code_chunks, rank_entries
+from vector_index.search import encode_text
+
+
+class FakeEmbeddingEngine:
+    def embed(self, text: str):
+        return encode_text(text)
 
 
 def test_code_chunk_normalizes_embedding_and_path():
@@ -12,14 +18,25 @@ def test_code_chunk_normalizes_embedding_and_path():
 
 
 def test_build_chunk_helpers_create_stable_ids_and_embeddings():
-    first = build_code_chunk("def alpha():\n    return 1", source_symbol_id="symbol-alpha", source_file_path="src/alpha.py")
-    second = build_code_chunk("def alpha():\n    return 1", source_symbol_id="symbol-alpha", source_file_path="src/alpha.py")
+    engine = FakeEmbeddingEngine()
+    first = build_code_chunk(
+        "def alpha():\n    return 1",
+        source_symbol_id="symbol-alpha",
+        source_file_path="src/alpha.py",
+        embedding_engine=engine,
+    )
+    second = build_code_chunk(
+        "def alpha():\n    return 1",
+        source_symbol_id="symbol-alpha",
+        source_file_path="src/alpha.py",
+        embedding_engine=engine,
+    )
 
     assert first.id == second.id
     assert first.embedding == second.embedding
     assert first.chunkType == "code"
 
-    chunks = build_code_chunks(["one", "two"], source_symbol_id="symbol-beta")
+    chunks = build_code_chunks(["one", "two"], source_symbol_id="symbol-beta", embedding_engine=engine)
     assert len(chunks) == 2
 
 
@@ -38,9 +55,10 @@ def test_search_query_validates_k():
 
 
 def test_vector_index_add_remove_and_reindex_round_trip(tmp_path):
-    index = VectorIndex(tmp_path / "repo", tmp_path / "index.sqlite", tmp_path / "meta.sqlite")
-    first = build_code_chunk("alpha helper", source_symbol_id="symbol-alpha", source_file_path="src/alpha.py")
-    second = build_code_chunk("beta helper", source_symbol_id="symbol-beta", source_file_path="src/beta.py")
+    engine = FakeEmbeddingEngine()
+    index = VectorIndex(tmp_path / "repo", tmp_path / "index.sqlite", tmp_path / "meta.sqlite", embedding_engine=engine)
+    first = build_code_chunk("alpha helper", source_symbol_id="symbol-alpha", source_file_path="src/alpha.py", embedding_engine=engine)
+    second = build_code_chunk("beta helper", source_symbol_id="symbol-beta", source_file_path="src/beta.py", embedding_engine=engine)
 
     index.addChunks([first, second])
     assert len(index.entries) == 2
@@ -50,6 +68,9 @@ def test_vector_index_add_remove_and_reindex_round_trip(tmp_path):
     assert removed == (first.id,)
     assert len(index.chunks_for_file("src/alpha.py")) == 0
 
-    replaced = index.reindexFile("src/beta.py", [build_code_chunk("beta helper updated", source_symbol_id="symbol-beta", source_file_path="src/beta.py")])
+    replaced = index.reindexFile(
+        "src/beta.py",
+        [build_code_chunk("beta helper updated", source_symbol_id="symbol-beta", source_file_path="src/beta.py", embedding_engine=engine)],
+    )
     assert len(replaced) == 1
     assert index.search("updated helper", k=1)[0].sourceFilePath.endswith("src/beta.py")
