@@ -64,7 +64,7 @@ Independent test criteria: a search query can be vectorized by the shared
 engine, the query vector can be compared against indexed chunks, and search
 routing no longer depends on the legacy hash-based text encoding path.
 
-- [X] T008 [US2] Update `src/vector_index/search.py` to accept query vectors from `EmbeddingEngine` and keep cosine ranking, filtering, and top-k result shaping unchanged.
+- [X] T008 [US2] Keep `src/vector_index/search.py` as the pure ranking helper for cosine similarity, filtering, and top-k result shaping once query vectors are produced elsewhere.
 - [X] T009 [P] [US2] Update `src/vector_index/index.py` so `VectorIndex.search()` uses the shared embedding engine for `SearchQuery.queryText` while preserving existing filters and return types.
 
 ## Phase 5: User Story 3 - Detect missing local embedding availability
@@ -78,12 +78,12 @@ before any embedding call, and both indexing and search surface explicit local
 errors instead of silently falling back.
 
 - [X] T010 [US3] Implement local availability checks and explicit error mapping in `src/embedding_engine/engine.py` so missing runtime and missing model conditions fail before embedding.
-- [X] T011 [P] [US3] Update `src/vector_index/chunking.py` and `src/vector_index/search.py` call paths to surface `EmbeddingEngine` failures directly and remove any remaining fallback to the legacy local hash encoder.
+- [X] T011 [P] [US3] Update `src/vector_index/chunking.py` and `src/vector_index/index.py` call paths to surface `EmbeddingEngine` failures directly and remove any remaining fallback to the legacy local hash encoder.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [X] T012 Align `specs/009-local-embedding-engine/contracts/embedding-engine.md`, `specs/009-local-embedding-engine/data-model.md`, and `specs/009-local-embedding-engine/quickstart.md` with the final engine behavior and error wording.
-- [X] T013 Verify the full feature against the local embedding quickstart scenarios in `specs/009-local-embedding-engine/quickstart.md`, including the stopped-runtime failure case and the semantic-similarity sanity check.
+- [X] T013 Verify the full feature against the local embedding quickstart scenarios in `specs/009-local-embedding-engine/quickstart.md`, including the stopped-runtime failure case, the semantic-similarity sanity check, and an explicit no-outbound-network assertion.
 
 ## Dependencies
 

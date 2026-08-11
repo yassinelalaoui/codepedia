@@ -79,7 +79,7 @@ Structure Decision: keep the embedding engine in its own package so the code
 chunk pipeline and the search/query pipeline can share one local embedding
 abstraction without tying the feature to a single caller. The existing
 `vector_index` package remains the integration surface for code fragments and
-semantic search queries.
+semantic search queries, while `search.py` stays a pure ranking helper.
 
 ## Phase 0: Research
 
@@ -103,8 +103,9 @@ unavailable models.
 ### Decision 4
 
 Integrate the engine at the existing vectorization call sites in
-`src/vector_index/chunking.py` and `src/vector_index/search.py` so both code
-fragments and user queries use the same vectorization path.
+`src/vector_index/chunking.py` and `src/vector_index/index.py` so both code
+fragments and user queries use the same vectorization path, while
+`src/vector_index/search.py` remains responsible for ranking only.
 
 ### Decision 5
 

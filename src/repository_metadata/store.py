@@ -10,6 +10,7 @@ from parser_engine import FileSymbolInventory, SourceFile
 
 from .fingerprints import compute_content_hash, file_has_changed
 from .models import DependencyEdge, Repository, RepositoryBundle, SourceFile as StoredSourceFile, SourceFileBundle
+from .models import Symbol
 from .sqlite_store import (
     connect,
     get_source_file_content_hash,
@@ -17,11 +18,13 @@ from .sqlite_store import (
     load_repository_bundle,
     load_source_file,
     load_source_file_bundle,
+    load_symbols_for_source_file,
     repository_root_exists,
     stable_repository_id,
     stable_source_file_id,
     upsert_repository,
     upsert_source_file_bundle,
+    update_symbol_generated_summary,
 )
 
 
@@ -107,6 +110,30 @@ class RepositoryMetadataStore:
         repository_id = stable_repository_id(repository_root)
         with closing(connect(self.db_path)) as connection:
             return load_repository(connection, repository_id=repository_id)
+
+    def load_source_file_symbols(self, *, repository_root: str | Path, path: str | Path) -> tuple[Symbol, ...]:
+        repository_id = stable_repository_id(repository_root)
+        with closing(connect(self.db_path)) as connection:
+            row = connection.execute(
+                "SELECT id FROM source_files WHERE repository_id = ? AND path = ?",
+                (repository_id, Path(path).as_posix().replace("\\", "/")),
+            ).fetchone()
+            if row is None:
+                raise KeyError(str(path))
+            return load_symbols_for_source_file(connection, source_file_id=row["id"])
+
+    def update_symbol_generated_summary(self, symbol_id: str, generated_summary: str) -> None:
+        with closing(connect(self.db_path)) as connection:
+            update_symbol_generated_summary(connection, symbol_id=symbol_id, generated_summary=generated_summary)
+
+    def update_symbol_generated_summaries(self, summaries: Iterable[tuple[str, str]]) -> None:
+        with closing(connect(self.db_path)) as connection:
+            with connection:
+                for symbol_id, generated_summary in summaries:
+                    connection.execute(
+                        "UPDATE symbols SET generated_summary = ? WHERE id = ?",
+                        (generated_summary, symbol_id),
+                    )
 
 
 def open_repository_metadata_store(db_path: str | Path) -> RepositoryMetadataStore:

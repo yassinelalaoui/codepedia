@@ -524,6 +524,56 @@ def load_source_file_bundle(connection: sqlite3.Connection, *, source_file_id: s
     )
 
 
+def load_symbol(connection: sqlite3.Connection, *, symbol_id: str) -> Symbol:
+    row = connection.execute("SELECT source_file_id FROM symbols WHERE id = ?", (symbol_id,)).fetchone()
+    if row is None:
+        raise KeyError(symbol_id)
+    source_file_id = row["source_file_id"]
+    for symbol in _load_symbols(connection, source_file_id=source_file_id):
+        if symbol.id == symbol_id:
+            return symbol
+    raise KeyError(symbol_id)
+
+
+def load_symbols_for_source_file(connection: sqlite3.Connection, *, source_file_id: str) -> tuple[Symbol, ...]:
+    return tuple(_load_symbols(connection, source_file_id=source_file_id))
+
+
+def update_symbol_generated_summary(connection: sqlite3.Connection, *, symbol_id: str, generated_summary: str) -> None:
+    with connection:
+        connection.execute(
+            "UPDATE symbols SET generated_summary = ? WHERE id = ?",
+            (generated_summary, symbol_id),
+        )
+
+
+def load_symbol(connection: sqlite3.Connection, *, symbol_id: str) -> Symbol:
+    row = connection.execute(
+        "SELECT source_file_id FROM symbols WHERE id = ?",
+        (symbol_id,),
+    ).fetchone()
+    if row is None:
+        raise KeyError(symbol_id)
+    source_file_id = row["source_file_id"]
+    symbols = _load_symbols(connection, source_file_id=source_file_id)
+    for symbol in symbols:
+        if symbol.id == symbol_id:
+            return symbol
+    raise KeyError(symbol_id)
+
+
+def load_symbols_for_source_file(connection: sqlite3.Connection, *, source_file_id: str) -> tuple[Symbol, ...]:
+    return tuple(_load_symbols(connection, source_file_id=source_file_id))
+
+
+def update_symbol_generated_summary(connection: sqlite3.Connection, *, symbol_id: str, generated_summary: str) -> None:
+    with connection:
+        connection.execute(
+            "UPDATE symbols SET generated_summary = ? WHERE id = ?",
+            (generated_summary, symbol_id),
+        )
+
+
 def load_repository_bundle(connection: sqlite3.Connection, *, repository_id: str) -> RepositoryBundle:
     repository = load_repository(connection, repository_id=repository_id)
     source_rows = connection.execute(

@@ -25,7 +25,7 @@
 3. Compare cosine similarity across the three vectors.
 4. Confirm the related fragments score higher than the unrelated fragment.
 
-## Validate search reuse
+## Validate search vectorization
 
 1. Embed a code fragment during indexing.
 2. Embed a user-style search query with the same engine.

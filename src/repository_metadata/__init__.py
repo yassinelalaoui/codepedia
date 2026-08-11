@@ -12,6 +12,8 @@ from .models import (
     SourceFile,
     Symbol,
 )
+from .summary_context import ImpactedSymbolSet, SummaryContext, SummaryResult, SymbolSummaryJob
+from .summary_pipeline import CodeSummaryPipeline, LocalLLMUnavailableError, SummaryPipelineError
 from .store import RepositoryMetadataStore, open_repository_metadata_store
 
 __all__ = [
@@ -19,11 +21,18 @@ __all__ = [
     "DependencyEdge",
     "DependencyGraph",
     "FunctionSymbol",
+    "ImpactedSymbolSet",
+    "CodeSummaryPipeline",
+    "LocalLLMUnavailableError",
     "ModuleSymbol",
     "Parameter",
     "Repository",
     "RepositoryMetadataStore",
+    "SummaryContext",
+    "SummaryPipelineError",
+    "SummaryResult",
     "SourceFile",
+    "SymbolSummaryJob",
     "Symbol",
     "compute_content_hash",
     "file_has_changed",

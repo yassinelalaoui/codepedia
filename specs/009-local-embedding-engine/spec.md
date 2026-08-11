@@ -10,8 +10,8 @@ API or remote service.
 The same embedding capability is used in two product flows:
 
 - vectorizing code fragments during indexing
-- vectorizing a user question or search query during retrieval in the chat
-  experience
+- vectorizing a user question or search query during semantic search and
+  retrieval
 
 If the local embedding model is not available, not started, or cannot be
 reached, the system must report that situation explicitly instead of failing
@@ -49,7 +49,7 @@ Acceptance criteria:
 ### US2 - Embed search queries locally
 
 As a user, I want my search question to be converted into a vector so that the
-tool can find relevant code fragments using semantic similarity.
+tool can find relevant code fragments using semantic similarity during search.
 
 Acceptance criteria:
 
