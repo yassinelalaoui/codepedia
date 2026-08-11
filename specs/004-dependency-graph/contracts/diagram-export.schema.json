@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dependency Diagram Export",
+  "type": "object",
+  "required": ["rootId", "selectionType", "nodes", "edges", "generatedAt"],
+  "properties": {
+    "rootId": {
+      "type": "string"
+    },
+    "selectionType": {
+      "type": "string",
+      "enum": ["file", "module", "symbol"]
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "kind", "name", "sourceFile"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string", "enum": ["file", "symbol"] },
+        "name": { "type": "string" },
+        "sourceFile": { "type": "string" },
+        "symbolType": { "type": ["string", "null"] },
+        "metadata": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": ["sourceId", "targetId", "type"],
+      "properties": {
+        "sourceId": { "type": "string" },
+        "targetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["import", "call", "inheritance"] },
+        "sourceFile": { "type": ["string", "null"] },
+        "metadata": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

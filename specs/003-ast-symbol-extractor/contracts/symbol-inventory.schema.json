@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Symbol Inventory",
+  "type": "object",
+  "required": ["sourceFile", "module", "classes", "functions", "imports", "callRelations", "inheritanceRelations"],
+  "properties": {
+    "sourceFile": {
+      "type": "string"
+    },
+    "module": {
+      "$ref": "#/$defs/moduleSymbol"
+    },
+    "classes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/classSymbol"
+      }
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/functionSymbol"
+      }
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/importRecord"
+      }
+    },
+    "callRelations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/callRelation"
+      }
+    },
+    "inheritanceRelations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/inheritanceRelation"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "symbol": {
+      "type": "object",
+      "required": ["id", "name", "lineStart", "lineEnd", "docstring", "generatedSummary"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "lineStart": { "type": "integer", "minimum": 1 },
+        "lineEnd": { "type": "integer", "minimum": 1 },
+        "docstring": { "type": "string" },
+        "generatedSummary": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "moduleSymbol": {
+      "allOf": [
+        { "$ref": "#/$defs/symbol" },
+        {
+          "type": "object",
+          "required": ["filePath", "imports"],
+          "properties": {
+            "filePath": { "type": "string" },
+            "imports": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/importRecord" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "classSymbol": {
+      "allOf": [
+        { "$ref": "#/$defs/symbol" },
+        {
+          "type": "object",
+          "required": ["methods", "nestedSymbols"],
+          "properties": {
+            "parentClass": { "type": ["string", "null"] },
+            "methods": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/functionSymbol" }
+            },
+            "nestedSymbols": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "$ref": "#/$defs/classSymbol" },
+                  { "$ref": "#/$defs/functionSymbol" }
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "functionSymbol": {
+      "allOf": [
+        { "$ref": "#/$defs/symbol" },
+        {
+          "type": "object",
+          "required": ["parameters", "nestedSymbols", "owner"],
+          "properties": {
+            "parameters": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": ["string", "null"] },
+                  "defaultValue": { "type": ["string", "null"] }
+                },
+                "additionalProperties": false
+              }
+            },
+            "returnType": { "type": ["string", "null"] },
+            "nestedSymbols": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "$ref": "#/$defs/classSymbol" },
+                  { "$ref": "#/$defs/functionSymbol" }
+                ]
+              }
+            },
+            "owner": {
+              "type": "string",
+              "enum": ["module", "class"]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "importRecord": {
+      "type": "object",
+      "required": ["id", "sourceFile", "text", "lineStart", "lineEnd"],
+      "properties": {
+        "id": { "type": "string" },
+        "sourceFile": { "type": "string" },
+        "text": { "type": "string" },
+        "lineStart": { "type": "integer", "minimum": 1 },
+        "lineEnd": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "callRelation": {
+      "type": "object",
+      "required": ["id", "sourceFile", "lineStart", "lineEnd"],
+      "properties": {
+        "id": { "type": "string" },
+        "sourceFile": { "type": "string" },
+        "callerSymbolId": { "type": ["string", "null"] },
+        "calleeSymbolIdOrName": { "type": ["string", "null"] },
+        "lineStart": { "type": "integer", "minimum": 1 },
+        "lineEnd": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "inheritanceRelation": {
+      "type": "object",
+      "required": ["id", "sourceFile", "subclassSymbolId", "parentClassName", "lineStart", "lineEnd"],
+      "properties": {
+        "id": { "type": "string" },
+        "sourceFile": { "type": "string" },
+        "subclassSymbolId": { "type": "string" },
+        "parentClassName": { "type": "string" },
+        "lineStart": { "type": "integer", "minimum": 1 },
+        "lineEnd": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
