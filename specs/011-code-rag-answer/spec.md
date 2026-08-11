@@ -107,6 +107,8 @@ Acceptance criteria:
 - The answer must name the files that were used to justify it.
 - The answer must name the symbols that were used to justify it when symbol
   level evidence is available.
+- The answer payload must preserve both the cited file paths and the cited
+  symbol ids so the UI can render citations without parsing prose.
 - The answer must remain traceable to the retrieved evidence, even when the
   final wording is concise.
 
