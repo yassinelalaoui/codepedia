@@ -32,6 +32,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-model", required=True, help="Local model name to use for answer generation.")
     parser.add_argument("--llm-endpoint", default=DEFAULT_LLM_ENDPOINT_URL)
     parser.add_argument(
+        "--docs-root",
+        required=True,
+        help="Path to the doc_generator output directory to serve as the documentation wiki.",
+    )
+    parser.add_argument(
         "--host",
         default="127.0.0.1",
         help="Bind address. Defaults to 127.0.0.1 (local machine only); pass an explicit "
@@ -45,6 +50,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return build_arg_parser().parse_args(argv)
 
 
+def _startup_message(host: str, port: int) -> str:
+    return f"Documentation wiki available at http://{host}:{port}/"
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     repo_root = Path(args.repo).expanduser().resolve()
@@ -56,8 +65,10 @@ def main(argv: list[str] | None = None) -> None:
     embedding_engine = create_embedding_engine(args.embedding_model, args.embedding_endpoint)
     vector_index = VectorIndex(repo_root, index_db, metadata_db, embedding_engine=embedding_engine)
     llm_engine = create_local_llm_engine(args.llm_model, args.llm_endpoint)
+    docs_root = Path(args.docs_root)
 
-    app = create_app(vector_index, embedding_engine, llm_engine)
+    app = create_app(vector_index, embedding_engine, llm_engine, docs_root)
+    print(_startup_message(args.host, args.port))
     uvicorn.run(app, host=args.host, port=args.port)
 
 

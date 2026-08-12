@@ -39,9 +39,11 @@ def build_test_app(
     *,
     embedding_engine: FakeEmbeddingEngine | None = None,
     llm_engine: FakeLLMEngine | None = None,
+    docs_root: Path | None = None,
 ) -> tuple[FastAPI, VectorIndex]:
     embedding_engine = embedding_engine if embedding_engine is not None else FakeEmbeddingEngine()
     llm_engine = llm_engine if llm_engine is not None else FakeLLMEngine()
+    docs_root = docs_root if docs_root is not None else tmp_path / "docs"
 
     index = VectorIndex(
         tmp_path / "repo",
@@ -57,5 +59,5 @@ def build_test_app(
     )
     index.addChunk(chunk)
 
-    app = create_app(index, embedding_engine, llm_engine)
+    app = create_app(index, embedding_engine, llm_engine, docs_root)
     return app, index
