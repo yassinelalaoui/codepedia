@@ -1,0 +1,68 @@
+# {{ module.name }}
+
+{% if module.docstring %}{{ module.docstring }}
+
+{% endif %}
+## Summary
+
+{% if module.generatedSummary %}{{ module.generatedSummary }}{% else %}_Summary pending — this module has not been summarized yet._{% endif %}
+
+{% if diagram_link %}
+[View dependency diagram]({{ diagram_link.relativePath }})
+{% endif %}
+
+## Classes
+
+{% if classes %}
+{% for class, methods in classes %}
+### {{ class.name }}
+
+{% if class.parentClass %}Inherits from `{{ class.parentClass }}`.
+
+{% endif %}
+{% if class.docstring %}{{ class.docstring }}
+
+{% endif %}
+{% if class.generatedSummary %}{{ class.generatedSummary }}{% else %}_Summary pending — this class has not been summarized yet._{% endif %}
+
+{% if methods %}
+{% for method in methods %}
+#### {{ class.name }}.{{ method.name }}({{ method.parameters | map(attribute='name') | join(', ') }}){% if method.returnType %} -> {{ method.returnType }}{% endif %}
+
+{% if method.docstring %}{{ method.docstring }}
+
+{% endif %}
+{% if method.generatedSummary %}{{ method.generatedSummary }}{% else %}_Summary pending — this method has not been summarized yet._{% endif %}
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+_No classes in this module._
+{% endif %}
+
+## Functions
+
+{% if functions %}
+{% for function in functions %}
+### {{ function.name }}({{ function.parameters | map(attribute='name') | join(', ') }}){% if function.returnType %} -> {{ function.returnType }}{% endif %}
+
+{% if function.docstring %}{{ function.docstring }}
+
+{% endif %}
+{% if function.generatedSummary %}{{ function.generatedSummary }}{% else %}_Summary pending — this function has not been summarized yet._{% endif %}
+
+{% endfor %}
+{% else %}
+_No functions in this module._
+{% endif %}
+
+## Related modules
+
+{% if related_links %}
+{% for link in related_links %}
+- [{{ link.label }}]({{ link.relativePath }})
+{% endfor %}
+{% else %}
+_No related modules detected._
+{% endif %}

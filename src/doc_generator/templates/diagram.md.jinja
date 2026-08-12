@@ -1,0 +1,26 @@
+# {{ module_name }} — Dependency diagram
+
+{% if owner_link %}[Back to module page]({{ owner_link.relativePath }})
+
+{% endif %}
+## Related modules
+
+{% if neighbor_links %}
+{% for link in neighbor_links %}
+- [{{ link.label }}]({{ link.relativePath }})
+{% endfor %}
+{% else %}
+_This module currently has no dependency edges._
+{% endif %}
+
+## Edges
+
+{% if diagram.edges %}
+| Source | Target | Type |
+| --- | --- | --- |
+{% for edge in diagram.edges %}
+| {{ edge.sourceId }} | {{ edge.targetId }} | {{ edge.type }} |
+{% endfor %}
+{% else %}
+_No edges to display._
+{% endif %}

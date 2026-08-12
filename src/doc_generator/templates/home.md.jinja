@@ -1,0 +1,15 @@
+# {{ repository_name }} — Documentation
+
+- Repository root: `{{ repository.rootPath }}`
+- Detected languages: {{ repository.detectedLanguages | join(', ') if repository.detectedLanguages else '_unknown_' }}
+- Last indexed: {{ repository.lastIndexedAt }}
+
+## Modules
+
+{% if module_entries %}
+{% for entry in module_entries %}
+- [{{ entry.module.name }}]({{ entry.moduleLink.relativePath if entry.moduleLink else '#' }}){% if entry.module.docstring %} — {{ entry.module.docstring | replace('\n', ' ') }}{% endif %} ([dependencies]({{ entry.diagramLink.relativePath if entry.diagramLink else '#' }}))
+{% endfor %}
+{% else %}
+_No modules discovered yet._
+{% endif %}
