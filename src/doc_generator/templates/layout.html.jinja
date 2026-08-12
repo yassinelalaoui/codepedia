@@ -14,6 +14,7 @@
   th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; }
   pre.mermaid { background: none; text-align: center; }
 </style>
+<link rel="stylesheet" href="{{ ui_style_href }}">
 </head>
 <body>
 <header class="site-header">
@@ -22,6 +23,8 @@
 <main>
 {{ content_html | safe }}
 </main>
+<div id="wiki-search-root"></div>
+<div id="wiki-chat-root"></div>
 <footer class="site-footer">
   <p>Generated locally by doc_generator on {{ generated_at }}.</p>
 </footer>
@@ -31,5 +34,7 @@
     mermaid.initialize({ startOnLoad: true });
   }
 </script>
+<script>window.__WIKI_UI_CONFIG__ = { searchIndexHref: {{ search_index_href | tojson }} };</script>
+<script src="{{ ui_script_href }}"></script>
 </body>
 </html>

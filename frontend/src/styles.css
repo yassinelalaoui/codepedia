@@ -1,0 +1,60 @@
+.wiki-search-widget,
+.wiki-chat-panel {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ddd;
+  font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif;
+}
+
+.wiki-search-widget input,
+.wiki-chat-panel input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+}
+
+.wiki-search-results {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.wiki-search-results li {
+  padding: 0.3rem 0;
+}
+
+.wiki-search-results a {
+  color: #0b5fff;
+  text-decoration: none;
+}
+
+.wiki-search-meta {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.wiki-chat-messages {
+  margin: 0.75rem 0;
+}
+
+.wiki-chat-message {
+  margin-bottom: 0.75rem;
+}
+
+.wiki-chat-message.role-user {
+  font-weight: 600;
+}
+
+.wiki-chat-citations {
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.wiki-chat-citations a {
+  color: #0b5fff;
+}
+
+.wiki-chat-error {
+  color: #b00020;
+}

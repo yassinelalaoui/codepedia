@@ -16,6 +16,7 @@ from .manifest_store import DocPageManifestStore
 from .markdown_render import render_markdown_template
 from .mermaid_diagram import build_mermaid_source
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
+from .search_index import build_search_index
 from .writer import DocumentationWriter
 
 
@@ -58,6 +59,7 @@ class DocGenerator:
     def generateOverviewPage(self, repository: Repository) -> DocPage:
         bundle = self._ensure_bundle()
         modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
+        architecture_summary = self._build_architecture_summary(bundle.files)
 
         page_links: list[PageLink] = []
         module_entries = []
@@ -93,6 +95,7 @@ class DocGenerator:
             repository=repository,
             repository_name=repository_name,
             module_entries=module_entries,
+            architecture_summary=architecture_summary,
         )
         html = render_page_html(title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML)
 
@@ -316,6 +319,10 @@ class DocGenerator:
             # script (research.md Decision 7), not just diagram pages, so the
             # asset must be ensured whenever any page is written this run.
             self._writer.ensure_mermaid_asset()
+            # Same reasoning for the wiki UI bundle (016 research.md Decision 8)
+            # and the search index it and the chat panel both depend on.
+            self._writer.ensure_wiki_ui_assets()
+            self._writer.write_search_index(build_search_index(bundle))
 
         return DocumentationSet(repositoryId=self.repositoryId, outputRoot=str(self.outputRoot), pages=tuple(pages))
 
@@ -361,6 +368,25 @@ class DocGenerator:
             related_key, related_name = resolved
             related[related_key] = related_name
         return sorted(related.items(), key=lambda item: item[1])
+
+    def _build_architecture_summary(self, files: tuple[SourceFileBundle, ...]) -> dict:
+        class_count = sum(len(file_bundle.classes) for file_bundle in files)
+        function_count = sum(len(self._documented_functions(file_bundle)) for file_bundle in files)
+
+        groups: dict[str, int] = {}
+        for file_bundle in files:
+            group_name = Path(file_bundle.module.filePath).parent.name or "."
+            groups[group_name] = groups.get(group_name, 0) + 1
+
+        return {
+            "moduleCount": len(files),
+            "classCount": class_count,
+            "functionCount": function_count,
+            "groups": sorted(
+                ({"name": name, "moduleCount": count} for name, count in groups.items()),
+                key=lambda entry: entry["name"],
+            ),
+        }
 
     def _classes_with_methods(self, file_bundle: SourceFileBundle) -> list[tuple[object, tuple]]:
         functions_by_id = {function.id: function for function in file_bundle.functions}

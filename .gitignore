@@ -39,3 +39,7 @@ venv/
 .coverage
 htmlcov/
 *.egg-info/
+
+### Node.js (frontend/) ###
+node_modules/
+frontend/dist/

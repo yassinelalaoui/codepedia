@@ -15,7 +15,7 @@
 
 {% if classes %}
 {% for class, methods in classes %}
-### {{ class.name }}
+### {{ class.name }} {: #{{ class.id }} }
 
 {% if class.parentClass %}Inherits from `{{ class.parentClass }}`.
 
@@ -27,7 +27,7 @@
 
 {% if methods %}
 {% for method in methods %}
-#### {{ class.name }}.{{ method.name }}({{ method.parameters | map(attribute='name') | join(', ') }}){% if method.returnType %} -> {{ method.returnType }}{% endif %}
+#### {{ class.name }}.{{ method.name }}({{ method.parameters | map(attribute='name') | join(', ') }}){% if method.returnType %} -> {{ method.returnType }}{% endif %} {: #{{ method.id }} }
 
 {% if method.docstring %}{{ method.docstring }}
 
@@ -45,7 +45,7 @@ _No classes in this module._
 
 {% if functions %}
 {% for function in functions %}
-### {{ function.name }}({{ function.parameters | map(attribute='name') | join(', ') }}){% if function.returnType %} -> {{ function.returnType }}{% endif %}
+### {{ function.name }}({{ function.parameters | map(attribute='name') | join(', ') }}){% if function.returnType %} -> {{ function.returnType }}{% endif %} {: #{{ function.id }} }
 
 {% if function.docstring %}{{ function.docstring }}
 

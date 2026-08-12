@@ -7,9 +7,14 @@ import markdown as markdown_lib
 
 from .links import HOME_OUTPUT_HTML, relative_output_link
 from .markdown_render import render_html_template
-from .writer import MERMAID_ASSET_OUTPUT_PATH
+from .writer import (
+    MERMAID_ASSET_OUTPUT_PATH,
+    SEARCH_INDEX_OUTPUT_PATH,
+    WIKI_UI_CSS_OUTPUT_PATH,
+    WIKI_UI_JS_OUTPUT_PATH,
+)
 
-_MARKDOWN_EXTENSIONS = ("tables", "fenced_code", "toc")
+_MARKDOWN_EXTENSIONS = ("tables", "fenced_code", "toc", "attr_list")
 
 # python-markdown's fenced_code extension renders a ```mermaid fence as
 # <pre><code class="language-mermaid">...</code></pre>. Mermaid's default
@@ -27,11 +32,19 @@ def render_page_html(*, title: str, content_markdown: str, output_path_html: str
     mermaid_script_href = relative_output_link(
         from_output_path=output_path_html, to_output_path=MERMAID_ASSET_OUTPUT_PATH
     )
+    ui_script_href = relative_output_link(from_output_path=output_path_html, to_output_path=WIKI_UI_JS_OUTPUT_PATH)
+    ui_style_href = relative_output_link(from_output_path=output_path_html, to_output_path=WIKI_UI_CSS_OUTPUT_PATH)
+    search_index_href = relative_output_link(
+        from_output_path=output_path_html, to_output_path=SEARCH_INDEX_OUTPUT_PATH
+    )
     return render_html_template(
         "layout.html.jinja",
         title=title,
         content_html=content_html,
         home_href=home_href or HOME_OUTPUT_HTML,
         mermaid_script_href=mermaid_script_href,
+        ui_script_href=ui_script_href,
+        ui_style_href=ui_style_href,
+        search_index_href=search_index_href,
         generated_at=datetime.now(timezone.utc).isoformat(),
     )

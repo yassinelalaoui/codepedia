@@ -4,6 +4,18 @@
 - Detected languages: {{ repository.detectedLanguages | join(', ') if repository.detectedLanguages else '_unknown_' }}
 - Last indexed: {{ repository.lastIndexedAt }}
 
+## Architecture overview
+
+This repository has {{ architecture_summary.moduleCount }} documented module{{ '' if architecture_summary.moduleCount == 1 else 's' }}, {{ architecture_summary.classCount }} class{{ '' if architecture_summary.classCount == 1 else 'es' }}, and {{ architecture_summary.functionCount }} top-level function{{ '' if architecture_summary.functionCount == 1 else 's' }}.
+
+{% if architecture_summary.groups %}
+| Area | Modules |
+| --- | --- |
+{% for group in architecture_summary.groups %}
+| {{ group.name }} | {{ group.moduleCount }} |
+{% endfor %}
+{% endif %}
+
 ## Modules
 
 {% if module_entries %}
