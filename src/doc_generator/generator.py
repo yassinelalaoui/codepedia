@@ -14,6 +14,7 @@ from .html_render import render_page_html
 from .impact import compute_regeneration_impact
 from .manifest_store import DocPageManifestStore
 from .markdown_render import render_markdown_template
+from .mermaid_diagram import build_mermaid_source
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
 from .writer import DocumentationWriter
 
@@ -218,6 +219,13 @@ class DocGenerator:
         if owner_link:
             page_links.append(owner_link)
 
+        mermaid_source = build_mermaid_source(
+            diagram,
+            diagram_page_id=page_id,
+            diagram_output_path_html=diagram_html,
+            resolve_module=self._resolve_module_key_by_path,
+        )
+
         title = f"{module_name} — Dependency diagram"
         content = render_markdown_template(
             "diagram.md.jinja",
@@ -225,6 +233,7 @@ class DocGenerator:
             diagram=diagram,
             owner_link=owner_link,
             neighbor_links=[link for link in page_links if link is not owner_link],
+            mermaid_source=mermaid_source.sourceText,
         )
         html = render_page_html(title=title, content_markdown=content, output_path_html=diagram_html)
 
@@ -301,6 +310,12 @@ class DocGenerator:
                 diagram_page = self.generateDependencyDiagramPage(diagram)
                 self._writer.write_page(diagram_page)
                 pages.append(diagram_page)
+
+        if pages:
+            # Every page's shared HTML layout references the vendored Mermaid
+            # script (research.md Decision 7), not just diagram pages, so the
+            # asset must be ensured whenever any page is written this run.
+            self._writer.ensure_mermaid_asset()
 
         return DocumentationSet(repositoryId=self.repositoryId, outputRoot=str(self.outputRoot), pages=tuple(pages))
 

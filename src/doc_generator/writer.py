@@ -13,6 +13,10 @@ class OutputRootEscapeError(ValueError):
     pass
 
 
+MERMAID_ASSET_SOURCE_PATH = Path(__file__).resolve().parent / "assets" / "mermaid.min.js"
+MERMAID_ASSET_OUTPUT_PATH = "assets/mermaid.min.js"
+
+
 @dataclass(slots=True)
 class DocumentationWriter:
     outputRoot: Path
@@ -48,6 +52,15 @@ class DocumentationWriter:
         )
         self.manifestStore.save_entry(self.repositoryId, entry)
         return page
+
+    def ensure_mermaid_asset(self) -> Path:
+        destination = self._resolve_managed_path(MERMAID_ASSET_OUTPUT_PATH)
+        source_bytes = MERMAID_ASSET_SOURCE_PATH.read_bytes()
+        if destination.exists() and destination.read_bytes() == source_bytes:
+            return destination
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source_bytes)
+        return destination
 
     def remove_page(self, page_id: str) -> None:
         entry = self.manifestStore.load_entry(page_id)

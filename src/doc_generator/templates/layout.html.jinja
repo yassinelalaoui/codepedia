@@ -12,6 +12,7 @@
   code { background: #f6f8fa; padding: 0.1rem 0.3rem; }
   table { border-collapse: collapse; }
   th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; }
+  pre.mermaid { background: none; text-align: center; }
 </style>
 </head>
 <body>
@@ -24,5 +25,11 @@
 <footer class="site-footer">
   <p>Generated locally by doc_generator on {{ generated_at }}.</p>
 </footer>
+<script src="{{ mermaid_script_href }}"></script>
+<script>
+  if (window.mermaid) {
+    mermaid.initialize({ startOnLoad: true });
+  }
+</script>
 </body>
 </html>
