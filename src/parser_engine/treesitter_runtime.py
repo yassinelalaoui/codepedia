@@ -63,8 +63,23 @@ class TreeSitterRuntime:
                     continue
         if language_value is None:
             return None
+        language_value = self._wrap_language(language_value)
+        if language_value is None:
+            return None
         self._language_cache[key] = language_value
         return language_value
+
+    def _wrap_language(self, language_value: Any) -> Any | None:
+        try:
+            from tree_sitter import Language as TreeSitterLanguage  # type: ignore
+        except Exception:
+            return language_value
+        if isinstance(language_value, TreeSitterLanguage):
+            return language_value
+        try:
+            return TreeSitterLanguage(language_value)
+        except Exception:
+            return language_value
 
     def _load_parser(self, language_key: str) -> Any | None:
         key = normalize_language_key(language_key)

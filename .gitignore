@@ -38,3 +38,4 @@ venv/
 .mypy_cache/
 .coverage
 htmlcov/
+*.egg-info/
