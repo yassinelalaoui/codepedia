@@ -44,6 +44,14 @@ htmlcov/
 node_modules/
 frontend/dist/
 
+### LaTeX (docs/pfa.tex) ###
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc
+docs/*.synctex.gz
+docs/pfa.pdf
+
 ### This project's local runtime state ###
 # Every component (repository_metadata, dependency_graph, vector_index,
 # doc_generator's page manifest) persists to its own caller-supplied SQLite file -
