@@ -1,0 +1,58 @@
+# Project Use Case Diagram
+
+**Scope**: the whole system, one diagram — every primary way a human (or the system's
+own automation) interacts with the tool.
+
+> Maintenance: update this diagram whenever a new user-facing capability is added.
+> See `README.md` in this folder.
+
+Mermaid has no native UML use-case diagram type, so this is a `flowchart` that mimics
+one: actor nodes linked to oval "use case" nodes inside a system-boundary `subgraph`,
+with `-->|include|` / `-->|extend|` labeled arrows standing in for UML's
+`<<include>>` / `<<extend>>` relationships.
+
+```mermaid
+flowchart LR
+    operator(["👤 Operator\n(runs the tool)"])
+    developer(["👤 Developer\n(edits code)"])
+    reader(["👤 Team member\n(browses / asks questions)"])
+    watcherActor(["🤖 Repository Watcher\n(background automation)"])
+
+    subgraph sys["Local Code Documentation Tool"]
+        ucIndex(["Index a repository\n(scan, parse, analyze)"])
+        ucSummarize(["Generate symbol summaries\nvia the local LLM"])
+        ucEmbed(["Build the searchable\nvector index"])
+        ucDocs(["Generate the documentation wiki"])
+        ucServe(["Serve the wiki + chat API locally"])
+        ucBrowse(["Browse documentation pages"])
+        ucSearch(["Search for a symbol by name"])
+        ucDiagram(["View & click through a module's\ndependency diagram"])
+        ucAsk(["Ask a question and get a\ncited, grounded answer"])
+        ucWatch(["Watch the repository for changes"])
+        ucReindex(["Incrementally re-index\njust what changed"])
+        ucFailClear(["Fail clearly instead of using\na remote/cloud service"])
+    end
+
+    operator --> ucIndex
+    ucIndex -->|include| ucSummarize
+    ucIndex -->|include| ucEmbed
+    ucIndex -->|include| ucDocs
+    operator --> ucServe
+
+    reader --> ucBrowse
+    reader --> ucSearch
+    reader --> ucDiagram
+    reader --> ucAsk
+    ucAsk -->|include| ucSearch
+
+    developer -.triggers.-> watcherActor
+    watcherActor --> ucWatch
+    ucWatch -->|include| ucReindex
+    ucReindex -->|include| ucSummarize
+    ucReindex -->|include| ucEmbed
+    ucReindex -->|include| ucDocs
+
+    ucSummarize -->|extend| ucFailClear
+    ucAsk -->|extend| ucFailClear
+    ucEmbed -->|extend| ucFailClear
+```

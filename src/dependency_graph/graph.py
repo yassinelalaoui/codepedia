@@ -112,6 +112,26 @@ class DependencyGraph:
             )
         )
 
+    def remove_source_file(self, source_file: str) -> None:
+        normalized = _normalize_path(source_file)
+        node_ids = {
+            node_id
+            for node_id, node in self.nodes.items()
+            if _normalize_path(node.sourceFile) == normalized
+        }
+        if not node_ids:
+            return
+        edge_keys = [key for key in self.edges if key[0] in node_ids or key[1] in node_ids]
+        for key in edge_keys:
+            edge = self.edges.pop(key)
+            self._outgoing[edge.sourceId].discard(key)
+            self._incoming[edge.targetId].discard(key)
+        for node_id in node_ids:
+            node = self.nodes.pop(node_id)
+            self._name_index[node.name].discard(node_id)
+            self._outgoing.pop(node_id, None)
+            self._incoming.pop(node_id, None)
+
     def ingest_inventory(self, inventory: FileSymbolInventory) -> None:
         self._ingest_inventory_nodes(inventory)
         self._ingest_inventory_relations(inventory)

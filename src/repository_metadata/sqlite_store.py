@@ -264,6 +264,12 @@ def _delete_source_file_records(connection: sqlite3.Connection, source_file_id: 
     connection.execute("DELETE FROM source_files WHERE id = ?", (source_file_id,))
 
 
+def delete_source_file(connection: sqlite3.Connection, *, repository_id: str, path: str | Path) -> None:
+    source_file_id = stable_source_file_id(repository_id, path)
+    with connection:
+        _delete_source_file_records(connection, source_file_id)
+
+
 def _insert_symbol_record(connection: sqlite3.Connection, source_file_id: str, symbol: Symbol) -> None:
     connection.execute(
         """

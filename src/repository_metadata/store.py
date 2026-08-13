@@ -13,6 +13,7 @@ from .models import DependencyEdge, Repository, RepositoryBundle, SourceFile as 
 from .models import Symbol
 from .sqlite_store import (
     connect,
+    delete_source_file as _delete_source_file,
     get_source_file_content_hash,
     load_repository,
     load_repository_bundle,
@@ -86,6 +87,11 @@ class RepositoryMetadataStore:
         with closing(connect(self.db_path)) as connection:
             stored_hash = get_source_file_content_hash(connection, repository_id=repository_id, path=path)
         return file_has_changed(stored_hash, current_hash)
+
+    def delete_source_file(self, repository_root: str | Path, path: str | Path) -> None:
+        repository_id = stable_repository_id(repository_root)
+        with closing(connect(self.db_path)) as connection:
+            _delete_source_file(connection, repository_id=repository_id, path=path)
 
     def load_repository(self, repository_root: str | Path) -> RepositoryBundle:
         repository_id = stable_repository_id(repository_root)

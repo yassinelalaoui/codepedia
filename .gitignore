@@ -43,3 +43,22 @@ htmlcov/
 ### Node.js (frontend/) ###
 node_modules/
 frontend/dist/
+
+### This project's local runtime state ###
+# Every component (repository_metadata, dependency_graph, vector_index,
+# doc_generator's page manifest) persists to its own caller-supplied SQLite file -
+# see docs/architecture.md "Storage architecture". None of these are meant to be
+# committed, whatever path/name a caller gives them.
+*.sqlite
+*.sqlite3
+*.db
+# Default local runtime-state directory used when indexing a repository in place
+# (see src/chat_api/server.py's --index-db/--metadata-db defaults).
+.repo-scanner/
+# Local-only configuration/secrets (e.g. overriding the local LLM/embedding
+# endpoint); nothing in this project reads a .env file today, but this project's
+# local-only, no-cloud-credentials design means none should ever be committed if
+# one is introduced.
+.env
+.env.*
+*.log
