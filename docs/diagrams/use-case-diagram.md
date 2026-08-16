@@ -26,6 +26,7 @@ flowchart LR
         ucServe(["repo-scanner serve\n(resume an indexed repo, watcher active)"])
         ucConfig(["repo-scanner config\n(choose local LLM/embedding model)"])
         ucCheckModels(["Verify local LLM/embedding\nmodel availability"])
+        ucCheckVersion(["repo-scanner --version\n(confirm the install worked)"])
         ucBrowse(["Browse documentation pages"])
         ucSearch(["Search for a symbol by name"])
         ucDiagram(["View & click through a module's\ndependency diagram"])
@@ -43,6 +44,7 @@ flowchart LR
     operator --> ucServe
     ucServe -->|include| ucCheckModels
     operator --> ucConfig
+    operator --> ucCheckVersion
 
     reader --> ucBrowse
     reader --> ucSearch

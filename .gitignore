@@ -40,6 +40,10 @@ venv/
 htmlcov/
 *.egg-info/
 
+### PyInstaller build output (packaging/build.py, specs/020-cli-packaging) ###
+/build/
+/dist/
+
 ### Node.js (frontend/) ###
 node_modules/
 frontend/dist/

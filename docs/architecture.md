@@ -168,6 +168,14 @@ Everything runs as **local processes on the developer's own machine**:
   deployment target. "Deploying" this project means running it on a laptop.
 - The local LLM and embedding services (Ollama or compatible) are expected to already
   be running locally; this project never installs or manages them.
+- **Getting `cli` onto that laptop** (020, `packaging/`): a standalone,
+  single-file binary built with PyInstaller — no separately installed
+  Python interpreter needed on the target machine — installed with one
+  platform-specific command (`packaging/install.sh` /
+  `packaging/install.ps1`) that downloads it from a GitHub Release of this
+  repository. An editable `pip install -e .` (019) remains the path for
+  contributors working on the source itself; it is not how an end user is
+  expected to obtain the tool.
 
 There is no cloud environment this system runs in. That is not a limitation to work
 around — it is the product's core guarantee (constitution 2.1): code never leaves the

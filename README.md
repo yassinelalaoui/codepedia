@@ -46,24 +46,73 @@ picture and *why* it's built this way.
 
 ## Prerequisites
 
-- **Python 3.11+**
-- A **local LLM and embedding service** for the AI features (summaries,
-  chat) — anything exposing an Ollama-compatible API on `localhost` (e.g.
-  [Ollama](https://ollama.com) itself). Scanning, parsing, and the
-  dependency graph work without one; summarization, embedding, and chat
-  require one running and will fail clearly (not silently fall back to a
-  remote service) if it isn't reachable.
+- **A supported OS/architecture for the standalone binary**: Windows,
+  macOS, or Linux, x86_64. This is the *only* thing the installer below
+  needs already present on the machine — no Python, no cloned repository,
+  no manually built development environment (specs/020-cli-packaging).
+- A **local LLM and embedding engine** for the AI-backed features
+  (summaries, chat) — anything exposing an Ollama-compatible API on
+  `localhost` (e.g. [Ollama](https://ollama.com) itself). This is a
+  **separate, external prerequisite the installer below does not and
+  cannot include** — a local LLM runtime is a large, independently
+  updated piece of software, not something a small CLI package should
+  vendor. Install and start it yourself; `repo-scanner index`/`serve`
+  detect and report clearly if it isn't reachable, rather than silently
+  falling back to a remote service.
+  - **Needs it**: `repo-scanner index`, and the AI-backed parts of
+    `repo-scanner serve` (summarization, embedding, chat).
+  - **Doesn't need it**: `repo-scanner scan`, `repo-scanner config`
+    (configuring or viewing your model choice works even before the
+    engine is installed).
 - **Node.js 18+ / npm** — only needed if you're working on the wiki UI
   (`frontend/`); the built UI bundle is already committed, so browsing a
   generated wiki doesn't need Node at all.
 
 ## Install
 
+Install `repo-scanner` as a standalone binary with one command — no
+Python, no `git clone`, no manually created virtual environment:
+
+```bash
+curl -fsSL https://github.com/yassinelalaoui/untitled/releases/latest/download/install.sh | sh
+```
+
+```powershell
+irm https://github.com/yassinelalaoui/untitled/releases/latest/download/install.ps1 | iex
+```
+
+Then verify it worked:
+
+```bash
+repo-scanner --version
+```
+
+Running the same command again upgrades an existing install to the latest
+release in place. To uninstall, delete the single installed file:
+
+```bash
+rm ~/.local/bin/repo-scanner                                     # macOS/Linux
+Remove-Item "$env:LOCALAPPDATA\repo-scanner\repo-scanner.exe"    # Windows
+```
+
+Per-repository state and configuration `repo-scanner` writes (see
+`~/.repo-scanner/` below) is untouched by either command.
+
+See `specs/020-cli-packaging/contracts/packaging-interface.md` for the
+full install/uninstall contract and [`packaging/README.md`](packaging/README.md)
+for how releases are built and published.
+
+### Installing from source (for contributors)
+
+Working on `repo-scanner` itself, rather than just using it, still uses an
+editable Python install:
+
 ```bash
 git clone <this repository>
 cd "repo scanner"
 pip install -e .          # runtime install
 pip install -e ".[test]"  # add pytest, to also run the test suite
+pip install -e ".[build]" # add PyInstaller, to build the standalone binary (packaging/build.py)
 ```
 
 For frontend work only:
@@ -163,6 +212,9 @@ src/            One Python package per feature (repo_scanner, parser_engine,
                  entry point ([project.scripts] in pyproject.toml).
 frontend/       The wiki UI (React + TypeScript + Vite), built into
                  src/doc_generator/assets/.
+packaging/      Standalone-binary packaging: the PyInstaller build spec,
+                 the maintainer build helper, and the install.sh/
+                 install.ps1 one-line installers - see packaging/README.md.
 tests/          unit/, integration/, contract/ - one set per package.
 specs/          Per-feature spec/plan/tasks, numbered in build order.
 docs/           architecture.md, stack.md, diagrams/ - kept in sync with

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +26,25 @@ app = typer.Typer(add_completion=False, help="Turn a local code repository into 
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
+
+
+def _version_callback(show_version: bool) -> None:
+    if show_version:
+        typer.echo(importlib.metadata.version("repo-scanner"))
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed repo-scanner version and exit.",
+    ),
+) -> None:
+    return
 
 
 @app.command("scan")
@@ -93,3 +113,11 @@ def config_command(
         )
     except ValueError as exc:
         report_and_exit(exc)
+
+
+if __name__ == "__main__":
+    # Lets `python -m cli.main` invoke the CLI directly, and gives the
+    # PyInstaller build (packaging/pyinstaller/repo-scanner.spec, 020) a real
+    # entry script to run - the `repo-scanner` console-script wrapper
+    # (pyproject.toml) already calls `app()` itself and doesn't need this.
+    app()

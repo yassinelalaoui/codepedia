@@ -128,6 +128,20 @@ for the whole backend. Keeps every package (`repo_scanner`, `parser_engine`,
 `dependency_graph`, ... `repo_watcher`) importable as siblings without path hacks
 (aside from `tests/conftest.py` inserting `src/` onto `sys.path` for test discovery).
 
+**PyInstaller** (020, build-time only — never a runtime dependency of the
+shipped binary) turns that same codebase into a standalone, single-file
+executable per OS, so an end user needs no Python interpreter at all (see
+`packaging/pyinstaller/repo-scanner.spec`, `packaging/build.py`). Chosen
+over Nuitka (needs a C compiler on every build machine; less predictable
+bundling multiple native tree-sitter grammar packages) and over cx_Freeze
+(smaller community, thinner docs for this native-extension-plus-data-file
+combination) — see `specs/020-cli-packaging/research.md` §2. This also
+surfaced a latent gap: `doc_generator`'s Jinja templates and static assets
+had no `[tool.setuptools.package-data]` declaration at all, so only
+*editable* installs (which read the source tree directly) happened to
+include them — a real built wheel or binary silently omitted them. Fixed
+alongside 020 (research.md §3).
+
 ## Two loose ends
 
 - **`pathspec`** and **`networkx`** are both declared in `pyproject.toml` but

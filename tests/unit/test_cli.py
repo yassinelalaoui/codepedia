@@ -1,15 +1,19 @@
-"""Unit tests for `cli.config`, `cli.paths`, and `cli.availability` in
-isolation (specs/019-cli-orchestrator)."""
+"""Unit tests for `cli.config`, `cli.paths`, `cli.availability`, and the
+`--version` flag (specs/019-cli-orchestrator, specs/020-cli-packaging)."""
 
 from __future__ import annotations
 
+import importlib.metadata
+
 import pytest
+from typer.testing import CliRunner
 
 import cli.config
 import cli.paths
 from cli.availability import check_ai_dependencies
 from cli.config import CLIConfiguration, load_config, save_config
 from cli.errors import LocalModelUnavailableError
+from cli.main import app
 from embedding_engine.models import EmbeddingAvailabilityStatus
 from local_llm.models import AvailabilityStatus
 
@@ -126,3 +130,12 @@ def test_check_ai_dependencies_raises_with_embedding_message_when_llm_is_fine():
 
     with pytest.raises(LocalModelUnavailableError, match="embedding model not installed"):
         check_ai_dependencies(llm, embedding)
+
+
+def test_version_flag_prints_the_installed_package_version_and_exits_zero():
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == importlib.metadata.version("repo-scanner")
