@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from local_llm import LocalLLMError
 from repo_scanner.models import RepositoryScanRequest
 from repo_scanner.output import serialize_scan_result
 from repo_scanner.scanner import scan_repository
+from repository_metadata import SummaryPipelineError
 
 from cli import config as config_module
 from cli.config_command import run_config
@@ -21,6 +23,15 @@ from cli.errors import (
 from cli.index_command import run_index
 from cli.serve_command import run_serve
 from cli.server import start_local_server
+
+# The pre-flight availability check (check_ai_dependencies, called inside
+# run_index/run_serve) only rules out an unreachable service or a missing
+# model *before* work starts. Once summarization is actually running, a slow
+# or misbehaving local model can still raise LocalLLMError (e.g. a generation
+# request that times out) or SummaryPipelineError - those need to be caught
+# here too, or they reach the terminal as a raw traceback instead of
+# report_and_exit's clean, actionable message (its own stated contract).
+_AI_PIPELINE_ERRORS = (LocalLLMError, SummaryPipelineError)
 
 app = typer.Typer(add_completion=False, help="Turn a local code repository into a browsable documentation wiki.")
 
@@ -70,7 +81,7 @@ def index(
     try:
         result = run_index(path, config=cfg)
         start_local_server(result.vectorIndex, result.embeddingEngine, result.llmEngine, result.docsRoot, host, port)
-    except (RepositoryNotFoundError, LocalModelUnavailableError, ServerBindError) as exc:
+    except (RepositoryNotFoundError, LocalModelUnavailableError, ServerBindError, *_AI_PIPELINE_ERRORS) as exc:
         report_and_exit(exc)
 
 
@@ -90,7 +101,13 @@ def serve(
         finally:
             if result.watcher is not None:
                 result.watcher.stop()
-    except (RepositoryNotFoundError, LocalModelUnavailableError, IndexNotFoundError, ServerBindError) as exc:
+    except (
+        RepositoryNotFoundError,
+        LocalModelUnavailableError,
+        IndexNotFoundError,
+        ServerBindError,
+        *_AI_PIPELINE_ERRORS,
+    ) as exc:
         report_and_exit(exc)
 
 

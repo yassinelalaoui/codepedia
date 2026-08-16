@@ -23,7 +23,7 @@ from cli.errors import IndexNotFoundError, LocalModelUnavailableError, Repositor
 from cli.index_command import run_index
 from cli.serve_command import run_serve
 from embedding_engine.models import EmbeddingAvailabilityStatus
-from local_llm import PromptEnvelope
+from local_llm import GenerationFailedError, PromptEnvelope
 from local_llm.models import AvailabilityStatus
 from repo_watcher import ChangeBatch, ChangeType, FileChange
 
@@ -520,6 +520,34 @@ def test_index_and_serve_fail_clearly_when_model_not_installed(tmp_path, cli_hom
     assert "qwen2.5-coder" in index_result.output
 
 
+def test_index_fails_clearly_when_generation_times_out_mid_run(tmp_path, cli_home, fake_engines, monkeypatch):
+    """Regression test: the pre-flight availability check passes (service
+    reachable, model installed), but real summary generation deep inside the
+    run raises GenerationFailedError (e.g. a slow local model timing out).
+    That must still reach the terminal as a clean, actionable message via
+    report_and_exit - this used to crash with a raw traceback because
+    `index`/`serve` only caught the upfront availability-check error type,
+    not failures from the generation calls made during summarization."""
+    root = _copy_fixture_repo(tmp_path)
+
+    def timed_out_summarize(self, *args, **kwargs):
+        raise GenerationFailedError(
+            "Local LLM at http://localhost:11434 did not respond within 120s "
+            "while generating with model 'test-llm'.",
+            endpointUrl="http://localhost:11434",
+            modelName="test-llm",
+        )
+
+    monkeypatch.setattr(cli.index_command.CodeSummaryPipeline, "summarizeRepository", timed_out_summarize)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.main.app, ["index", str(root)])
+
+    assert result.exit_code == 1
+    assert "did not respond within 120s" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_serve_bind_failure_reports_actionable_message_not_raw_exception(tmp_path, cli_home, fake_engines, monkeypatch):
     root = _copy_fixture_repo(tmp_path)
     indexed = run_index(root, config=CLIConfiguration())
@@ -539,7 +567,7 @@ def test_serve_bind_failure_reports_actionable_message_not_raw_exception(tmp_pat
     assert "Traceback" not in result.output
 
 
-def test_none_of_the_failure_scenarios_leak_a_traceback(tmp_path, cli_home, monkeypatch):
+def test_none_of_the_failure_scenarios_leak_a_traceback(tmp_path, cli_home, fake_engines, monkeypatch):
     root = _copy_fixture_repo(tmp_path)
     runner = CliRunner()
 
@@ -554,6 +582,18 @@ def test_none_of_the_failure_scenarios_leak_a_traceback(tmp_path, cli_home, monk
 
     monkeypatch.setattr(cli.index_command, "create_local_llm_engine", unreachable_llm_factory)
     monkeypatch.setattr(cli.index_command, "create_embedding_engine", lambda *a, **k: FakeEmbeddingEngine())
+    scenarios.append(runner.invoke(cli.main.app, ["index", str(root)]))
+
+    # Generation fails mid-run (after the availability check already passed).
+    monkeypatch.setattr(cli.index_command, "create_local_llm_engine", fake_engines[0])
+    monkeypatch.setattr(cli.index_command, "create_embedding_engine", fake_engines[1])
+
+    def timed_out_summarize(self, *args, **kwargs):
+        raise GenerationFailedError(
+            "Local LLM did not respond within 120s.", endpointUrl="http://localhost:11434", modelName="test-llm"
+        )
+
+    monkeypatch.setattr(cli.index_command.CodeSummaryPipeline, "summarizeRepository", timed_out_summarize)
     scenarios.append(runner.invoke(cli.main.app, ["index", str(root)]))
 
     for result in scenarios:

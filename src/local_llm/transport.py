@@ -65,6 +65,11 @@ def _model_is_installed(requested: str, installed: tuple[str, ...]) -> bool:
 class LocalLLMTransport:
     endpointUrl: str
     timeout: float = 5.0
+    # Real generation is a much slower call than the version/tags probes
+    # `timeout` governs (auto-regressive token-by-token inference, easily
+    # tens of seconds on CPU-only hardware or a cold model) - it gets its
+    # own, much more generous budget rather than sharing `timeout`.
+    generateTimeout: float = 120.0
 
     def __post_init__(self) -> None:
         self.endpointUrl = normalize_endpoint_url(self.endpointUrl)
@@ -117,7 +122,17 @@ class LocalLLMTransport:
     def generate(self, model_name: str, prompt: PromptEnvelope) -> GenerationResult:
         payload = prompt.to_request_payload(model_name)
         try:
-            response = _post_json(f"{self.endpointUrl}/api/generate", payload, timeout=self.timeout)
+            response = _post_json(f"{self.endpointUrl}/api/generate", payload, timeout=self.generateTimeout)
+        except TimeoutError:
+            raise GenerationFailedError(
+                f"Local LLM at {self.endpointUrl} did not respond within {self.generateTimeout:g}s "
+                f"while generating with model '{model_name}'. The service is reachable but generation "
+                "is taking longer than that - it may still be loading the model into memory, or the "
+                "model may be slow on this hardware. Wait for it to finish loading and try again, use "
+                "a smaller/faster model, or increase the generation timeout.",
+                endpointUrl=self.endpointUrl,
+                modelName=model_name,
+            ) from None
         except (HTTPError, URLError):
             raise GenerationFailedError(
                 _local_fallback_message(self.endpointUrl, model_name),

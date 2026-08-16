@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 from local_llm import (
+    GenerationFailedError,
     InvalidResponseError,
     LocalLLMEngine,
     ModelMissingError,
@@ -118,6 +120,34 @@ def test_engine_generates_text_from_local_backend():
         assert server.last_payload["model"] == "llama3"
         assert "System:" in server.last_payload["prompt"]
         assert "Context:" in server.last_payload["prompt"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_engine_raises_generation_failed_on_timeout_not_a_raw_timeout_error():
+    """Regression test: a local model that is reachable and installed but too
+    slow to respond within the generation timeout used to raise a raw
+    built-in TimeoutError out of `generate()` - uncaught by both `local_llm`
+    and the CLI's `index`/`serve` commands, crashing with a raw traceback
+    instead of report_and_exit's clean, actionable message. See the real
+    `repo-scanner index` run against a large repository that first
+    surfaced this."""
+
+    class SlowGenerateHandler(_OllamaHandler):
+        def do_POST(self):
+            if self.path == "/api/generate":
+                time.sleep(0.5)
+            super().do_POST()
+
+    server = _start_server(SlowGenerateHandler)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        engine = create_local_llm_engine("llama3", endpoint, timeout=1.0, generate_timeout=0.1)
+
+        assert engine.isAvailableLocally() is True  # reachable - not a service-down case
+        with pytest.raises(GenerationFailedError, match="did not respond within"):
+            engine.generate("hello")
     finally:
         server.shutdown()
         server.server_close()

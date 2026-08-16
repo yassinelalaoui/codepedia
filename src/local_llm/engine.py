@@ -27,12 +27,15 @@ class LocalLLMEngine:
     modelName: str
     endpointUrl: str = DEFAULT_ENDPOINT_URL
     timeout: float = 5.0
+    generateTimeout: float = 120.0
     _transport: LocalLLMTransport = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.modelName = normalize_model_name(self.modelName)
         self.endpointUrl = normalize_endpoint_url(self.endpointUrl)
-        self._transport = LocalLLMTransport(self.endpointUrl, timeout=self.timeout)
+        self._transport = LocalLLMTransport(
+            self.endpointUrl, timeout=self.timeout, generateTimeout=self.generateTimeout
+        )
 
     def checkAvailability(self) -> AvailabilityStatus:
         return self._transport.availability(self.modelName)
@@ -64,5 +67,11 @@ def create_local_llm_engine(
     endpoint_url: str = DEFAULT_ENDPOINT_URL,
     *,
     timeout: float = 5.0,
+    generate_timeout: float = 120.0,
 ) -> LocalLLMEngine:
-    return LocalLLMEngine(modelName=model_name, endpointUrl=endpoint_url, timeout=timeout)
+    return LocalLLMEngine(
+        modelName=model_name,
+        endpointUrl=endpoint_url,
+        timeout=timeout,
+        generateTimeout=generate_timeout,
+    )
