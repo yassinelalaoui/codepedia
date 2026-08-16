@@ -62,6 +62,10 @@ docs/pfa.pdf
 *.db
 # Default local runtime-state directory used when indexing a repository in place
 # (see src/chat_api/server.py's --index-db/--metadata-db defaults).
+# The `repo-scanner` CLI (019) does not use this in-repo location - its own
+# state and config live under the user's home directory (~/.repo-scanner/),
+# never inside an analyzed repository, so no separate ignore entry is needed
+# for it here.
 .repo-scanner/
 # Local-only configuration/secrets (e.g. overriding the local LLM/embedding
 # endpoint); nothing in this project reads a .env file today, but this project's

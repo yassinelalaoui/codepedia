@@ -19,11 +19,13 @@ flowchart LR
     watcherActor(["🤖 Repository Watcher\n(background automation)"])
 
     subgraph sys["Local Code Documentation Tool"]
-        ucIndex(["Index a repository\n(scan, parse, analyze)"])
+        ucIndex(["repo-scanner index\n(scan, parse, analyze, then serve)"])
         ucSummarize(["Generate symbol summaries\nvia the local LLM"])
         ucEmbed(["Build the searchable\nvector index"])
         ucDocs(["Generate the documentation wiki"])
-        ucServe(["Serve the wiki + chat API locally"])
+        ucServe(["repo-scanner serve\n(resume an indexed repo, watcher active)"])
+        ucConfig(["repo-scanner config\n(choose local LLM/embedding model)"])
+        ucCheckModels(["Verify local LLM/embedding\nmodel availability"])
         ucBrowse(["Browse documentation pages"])
         ucSearch(["Search for a symbol by name"])
         ucDiagram(["View & click through a module's\ndependency diagram"])
@@ -37,7 +39,10 @@ flowchart LR
     ucIndex -->|include| ucSummarize
     ucIndex -->|include| ucEmbed
     ucIndex -->|include| ucDocs
+    ucIndex -->|include| ucCheckModels
     operator --> ucServe
+    ucServe -->|include| ucCheckModels
+    operator --> ucConfig
 
     reader --> ucBrowse
     reader --> ucSearch
@@ -55,4 +60,5 @@ flowchart LR
     ucSummarize -->|extend| ucFailClear
     ucAsk -->|extend| ucFailClear
     ucEmbed -->|extend| ucFailClear
+    ucCheckModels -->|extend| ucFailClear
 ```

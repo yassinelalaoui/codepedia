@@ -93,6 +93,15 @@ Keeps the layers above current without a human re-running anything.
 | `repo_watcher` | Watch the repository in the background, debounce bursts of changes, hand off a stabilized batch of impacted files. |
 | `reindex_pipeline` | Consume that batch and re-run just the affected slice of layers 1–4: re-parse, update the graph/metadata, regenerate impacted summaries/embeddings/pages. |
 
+### 6. Entry Point
+
+The outermost layer: the one thing a developer actually runs. Depends on
+every layer above; nothing depends on it.
+
+| Package | Responsibility |
+|---|---|
+| `cli` | The `repo-scanner` command (`index`/`serve`/`config`/`scan`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active; `config` chooses the local LLM/embedding model (2) `index`/`serve` use. |
+
 ## Data flow
 
 Two flows, sharing the same underlying stages:
@@ -146,11 +155,14 @@ one file. All are plain files on local disk — no database server, per constitu
 
 Everything runs as **local processes on the developer's own machine**:
 
-- The CLI/indexing flow runs once (or is re-triggered) as a short-lived process.
-- The watcher + reindex pipeline run continuously, in-process alongside whatever
-  hosts them (today: nothing keeps 017 running standalone; it's designed to be
-  embedded in the same process as the web server or invoked by a CLI — see 017's
-  contract).
+- `repo-scanner index` (`cli`, layer 6) runs the full pipeline once as a
+  short-lived phase, then becomes the same long-running server process
+  described below for `chat_api`.
+- `repo-scanner serve` (`cli`) is the process that keeps the watcher +
+  reindex pipeline running continuously: it loads an already-indexed
+  repository's state, starts `repo_watcher` (5) in-process, and hosts the
+  same web server `index` does — the concrete case the watcher's own
+  contract (017) anticipated ("invoked by a CLI").
 - `chat_api` is the one long-running server process, bound to `127.0.0.1` by default
   (constitution 2.2) — no reverse proxy, no container orchestration, no remote
   deployment target. "Deploying" this project means running it on a laptop.
@@ -208,3 +220,5 @@ the layer table above. A new feature usually:
 
 - **Ingestion & Analysis, Local AI Services, Knowledge Derivation, Presentation,
   Automation**: implemented (specs 001–018).
+- **Entry Point**: implemented (spec 019) — `repo-scanner` is the project's
+  `[project.scripts]` console command.

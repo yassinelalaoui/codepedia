@@ -193,7 +193,46 @@ classDiagram
         IncrementalReindexPipeline ..> ReindexOutcome : returns
     }
 
+    namespace Cli {
+        class CLIConfiguration {
+            +str llmModel
+            +str llmEndpointUrl
+            +str embeddingModel
+            +str embeddingEndpointUrl
+        }
+        class IndexRunResult {
+            +Path docsRoot
+            +VectorIndex vectorIndex
+            +RepositoryWatcher watcher
+        }
+        class run_index {
+            <<function, index_command.py>>
+            +run_index(repo_path, config) IndexRunResult
+        }
+        class run_serve {
+            <<function, serve_command.py>>
+            +run_serve(repo_path, config) IndexRunResult
+        }
+        class run_config {
+            <<function, config_command.py>>
+            +run_config(llm_model, embedding_model, show)
+        }
+        run_index ..> CLIConfiguration : reads
+        run_serve ..> CLIConfiguration : reads
+        run_config ..> CLIConfiguration : reads/writes
+        run_index ..> IndexRunResult : returns
+        run_serve ..> IndexRunResult : returns
+    }
+
     %% Cross-package data flow
+    CLIConfiguration ..> LocalLLMEngine : modelName/endpointUrl
+    CLIConfiguration ..> EmbeddingEngine : modelName/endpointUrl
+    run_index ..> ScanResult : scan_repository()
+    run_index ..> DocGenerator : structure + content passes
+    run_index ..> CodeSummaryPipeline : summarizeRepository()
+    run_index ..> VectorIndex : update_embeddings() per file
+    run_serve ..> RepositoryWatcher : on_batch=pipeline.run
+    run_serve ..> IncrementalReindexPipeline : constructs
     ScanResult ..> FileSymbolInventory : each file is parsed into
     FileSymbolInventory ..> DependencyGraph : ingest_inventory()
     FileSymbolInventory ..> RepositoryMetadataStore : store_inventory()

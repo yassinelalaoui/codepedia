@@ -48,6 +48,9 @@ class EmbeddingEngine:
     def isAvailableLocally(self) -> bool:
         return self.checkAvailability().available
 
+    def listInstalledModels(self) -> tuple[str, ...]:
+        return self._transport.list_models()
+
     def embed(self, text: str) -> Vector:
         try:
             request_data = EmbeddingRequest(text=text, modelName=self.modelName)

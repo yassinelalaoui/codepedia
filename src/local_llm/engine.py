@@ -40,6 +40,9 @@ class LocalLLMEngine:
     def isAvailableLocally(self) -> bool:
         return self.checkAvailability().available
 
+    def listInstalledModels(self) -> tuple[str, ...]:
+        return self._transport.list_models()
+
     def generate(self, prompt: str | PromptEnvelope) -> str:
         envelope = prompt if isinstance(prompt, PromptEnvelope) else PromptEnvelope.from_prompt(prompt)
         status = self.checkAvailability()

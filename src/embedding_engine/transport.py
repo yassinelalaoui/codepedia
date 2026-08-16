@@ -77,6 +77,30 @@ class LocalEmbeddingTransport:
             return True
         return False
 
+    def list_models(self) -> tuple[str, ...]:
+        """Every installed model name known at this endpoint (via `/api/tags`).
+
+        Reports both the `name` and `model` fields Ollama's `/api/tags`
+        response may use per entry, matching `availability()`'s own matching
+        below, deduplicated.
+        """
+        tags = self._request_json("GET", "/api/tags")
+        models = tags.get("models", [])
+        if not isinstance(models, list):
+            raise InvalidResponseError(
+                "The local embedding runtime responded, but the model list could not be read.",
+                endpointUrl=self.endpointUrl,
+                modelName="",
+            )
+        names: list[str] = []
+        for entry in models:
+            if not isinstance(entry, dict):
+                continue
+            for candidate in (str(entry.get("name", "")), str(entry.get("model", ""))):
+                if candidate and candidate not in names:
+                    names.append(candidate)
+        return tuple(names)
+
     def availability(self, model_name: str) -> EmbeddingAvailabilityStatus:
         try:
             self._request_json("GET", "/api/version")
@@ -92,7 +116,7 @@ class LocalEmbeddingTransport:
             )
 
         try:
-            tags = self._request_json("GET", "/api/tags")
+            installed = self.list_models()
         except ServiceUnavailableError:
             return EmbeddingAvailabilityStatus(
                 False,
@@ -108,21 +132,8 @@ class LocalEmbeddingTransport:
                 "The local embedding runtime responded, but the model list could not be read.",
             )
 
-        models = tags.get("models", [])
-        if not isinstance(models, list):
-            return EmbeddingAvailabilityStatus(
-                False,
-                True,
-                False,
-                "The local embedding runtime returned an invalid model list.",
-            )
-
-        for entry in models:
-            if not isinstance(entry, dict):
-                continue
-            names = [str(entry.get("name", "")), str(entry.get("model", ""))]
-            if any(self._model_name_matches(model_name, candidate) for candidate in names if candidate):
-                return EmbeddingAvailabilityStatus(True, True, True, "The local embedding model is available.")
+        if any(self._model_name_matches(model_name, candidate) for candidate in installed):
+            return EmbeddingAvailabilityStatus(True, True, True, "The local embedding model is available.")
 
         return EmbeddingAvailabilityStatus(
             False,

@@ -30,7 +30,7 @@ dependencies = [
 test = ["pytest>=8.0"]
 
 [project.scripts]
-repo-scanner = "repo_scanner.cli:app"
+repo-scanner = "cli.main:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

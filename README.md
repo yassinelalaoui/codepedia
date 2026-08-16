@@ -75,39 +75,53 @@ npm install
 
 ## Running it
 
-Two pieces are wired up as runnable commands today:
+`repo-scanner` is the single command-line entry point, with four subcommands:
 
-**Scan a repository** (no local LLM needed) — prints a JSON inventory of
-its source files:
+**Index a repository** — the one-command path from a fresh repository to a
+browsable wiki. Scans, parses, extracts symbols, builds the dependency
+graph, generates summaries and embeddings, renders the wiki, then starts
+serving it and prints the local URL:
+
+```bash
+repo-scanner index /path/to/some/repository
+```
+
+This requires a local LLM and embedding service (e.g. [Ollama](https://ollama.com))
+to be running; `index` checks their availability up front and fails with a
+clear, actionable message (naming what's missing and how to fix it) before
+doing any work if either isn't reachable — never a silent fallback to a
+remote service. Which model each of them uses comes from `config` below
+(sensible defaults apply if you haven't run it).
+
+**Resume an indexed repository with live updates**: serves the wiki + chat
+API from the previous `index` run and activates the repository watcher, so
+saved edits are reflected automatically without re-running `index`:
+
+```bash
+repo-scanner serve /path/to/some/repository
+```
+
+**Choose the local LLM/embedding model** `index`/`serve` use:
+
+```bash
+repo-scanner config --llm-model <your-local-model-name> --embedding-model <your-embedding-model-name>
+repo-scanner config --show   # view the current configuration
+```
+
+**Scan a repository only** (no local LLM needed) — prints a JSON inventory
+of its source files, unchanged from the original scanner (001):
 
 ```bash
 repo-scanner scan /path/to/some/repository
 # or: python -m repo_scanner scan /path/to/some/repository
 ```
 
-**Serve an already-generated wiki + chat API**, bound to `127.0.0.1` by
-default:
-
-```bash
-python -m chat_api.server \
-  --repo /path/to/some/repository \
-  --llm-model <your-local-model-name> \
-  --docs-root /path/to/generated/wiki/output
-```
-
-**The rest of the pipeline — parsing, building the dependency graph,
-persisting metadata, generating summaries, embedding, and rendering the
-wiki — is exposed as tested library APIs, not yet wired into a single
-top-level "index my repo" command.** Every piece is independently usable
-from Python; see `tests/integration/test_reindex_pipeline.py`'s `Harness`
-class for a complete, working example that wires all of them together
-(scan → parse → graph → metadata → summarize → embed → generate docs)
-against a sample repository, and `docs/diagrams/sequence-diagrams/01-full-indexing.md`
-for the same flow as a diagram. Once you have a repository indexed and a
-wiki generated that way, `repo_watcher.RepositoryWatcher` +
-`reindex_pipeline.IncrementalReindexPipeline` (per
-`docs/diagrams/sequence-diagrams/02-incremental-reindex.md`) keep it
-current as files change.
+Both `index` and `serve` bind to `127.0.0.1` by default (`--host`/`--port`
+to override). See `specs/019-cli-orchestrator/contracts/cli-interface.md`
+for the full command contract, `docs/diagrams/sequence-diagrams/01-full-indexing.md`
+for `index`'s flow as a diagram, and
+`docs/diagrams/sequence-diagrams/02-incremental-reindex.md` for what `serve`
+keeps running in the background.
 
 ## Running the tests
 
@@ -144,8 +158,9 @@ npm run build   # produce the committed wiki-ui bundle
 src/            One Python package per feature (repo_scanner, parser_engine,
                  dependency_graph, repository_metadata, embedding_engine,
                  local_llm, chat, doc_generator, chat_api, repo_watcher,
-                 reindex_pipeline, vector_index) - see docs/architecture.md
-                 for what each one owns.
+                 reindex_pipeline, vector_index, cli) - see docs/architecture.md
+                 for what each one owns. cli/ is the repo-scanner console
+                 entry point ([project.scripts] in pyproject.toml).
 frontend/       The wiki UI (React + TypeScript + Vite), built into
                  src/doc_generator/assets/.
 tests/          unit/, integration/, contract/ - one set per package.

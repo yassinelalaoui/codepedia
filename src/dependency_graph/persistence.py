@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Iterable
 
@@ -183,18 +184,24 @@ def save_snapshot_to_path(
     edges: Iterable[DependencyEdge],
     snapshot_version: int = 1,
 ) -> GraphPersistenceRecord:
-    with sqlite3.connect(str(db_path)) as connection:
-        return save_snapshot(
-            connection,
-            graph_id=graph_id,
-            repository_root=repository_root,
-            created_at=created_at,
-            nodes=nodes,
-            edges=edges,
-            snapshot_version=snapshot_version,
-        )
+    # `with sqlite3.connect(...)` only manages the transaction (commit/rollback
+    # on exit) - it does not close the connection, which can leave the file
+    # locked (e.g. blocking a directory rename on Windows) until the
+    # connection object happens to be garbage-collected. `closing()` ensures
+    # it's actually closed once this function returns.
+    with closing(sqlite3.connect(str(db_path))) as connection:
+        with connection:
+            return save_snapshot(
+                connection,
+                graph_id=graph_id,
+                repository_root=repository_root,
+                created_at=created_at,
+                nodes=nodes,
+                edges=edges,
+                snapshot_version=snapshot_version,
+            )
 
 
 def load_snapshot_from_path(db_path: str | Path, *, graph_id: str) -> tuple[dict[str, object], list[DependencyNode], list[DependencyEdge]]:
-    with sqlite3.connect(str(db_path)) as connection:
+    with closing(sqlite3.connect(str(db_path))) as connection:
         return load_snapshot(connection, graph_id=graph_id)

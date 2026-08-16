@@ -20,8 +20,14 @@ option: it would have split the backend into two runtimes for one component.
 
 ## CLI
 
-**Typer** (`repo_scanner/cli.py`) — thin, typed CLI wrapper for a Python function.
-Standard choice for a local dev tool's entry point.
+**Typer** (`repo_scanner/cli.py`, now also `cli/main.py`) — thin, typed CLI
+wrapper for a Python function. Standard choice for a local dev tool's entry
+point. 019 (CLI orchestrator) reuses this same dependency for its `index`/
+`serve`/`config` commands — no new dependency was introduced — and moved the
+project's `[project.scripts]` console-script target from
+`repo_scanner.cli:app` to `cli.main:app`, which now also re-registers 001's
+`scan` command unchanged, so `repo-scanner` stays the single entry point for
+every command.
 
 ## Multi-language parsing
 

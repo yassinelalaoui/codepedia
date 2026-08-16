@@ -1,15 +1,18 @@
 # Major Function: Incremental Reindexing (Watcher-Triggered)
 
-**Specs**: 017, 018
+**Specs**: 017, 018, 019
 
 The self-updating flow: a saved edit reaches the browsable wiki in seconds, touching
-only what actually changed — never a full repository re-analysis.
+only what actually changed — never a full repository re-analysis. `repo-scanner
+serve <path>` (019) is the concrete process that loads an already-`index`ed
+repository's state and hosts the watcher below, in the same process as the
+web server, for as long as it keeps running.
 
 ```mermaid
 sequenceDiagram
     actor Developer
     participant FileSystem
-    participant RepositoryWatcher as "Repository Watcher (017)"
+    participant RepositoryWatcher as "Repository Watcher (017)\n(started by repo-scanner serve, 019)"
     participant Pipeline as "Incremental Reindex\nPipeline (018)"
     participant RepositoryMetadataStore as "Metadata Store (005)"
     participant ParserEngine as "Parser & Symbol\nExtractor (002/003)"
