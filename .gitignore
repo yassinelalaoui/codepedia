@@ -48,13 +48,21 @@ htmlcov/
 node_modules/
 frontend/dist/
 
-### LaTeX (docs/pfa.tex) ###
+### Personal internship report & presentation materials (not project docs) ###
+# pfa.tex/pfa.pdf (ENSET/CGI internship report) and the progress-presentation
+# .pptx/.docx are personal deliverables for the internship supervisor, not
+# documentation of this codebase - keep them out of the public repo entirely.
+# (architecture.md, stack.md, and diagrams/ remain tracked - those document
+# the project itself.)
+docs/pfa.tex
 docs/*.aux
 docs/*.log
 docs/*.out
 docs/*.toc
 docs/*.synctex.gz
 docs/pfa.pdf
+docs/*.pptx
+docs/*.docx
 
 ### This project's local runtime state ###
 # Every component (repository_metadata, dependency_graph, vector_index,
