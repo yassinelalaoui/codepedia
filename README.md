@@ -74,11 +74,11 @@ Install `repo-scanner` as a standalone binary with one command — no
 Python, no `git clone`, no manually created virtual environment:
 
 ```bash
-curl -fsSL https://github.com/yassinelalaoui/untitled/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/yassinelalaoui/repo-scanner/releases/latest/download/install.sh | sh
 ```
 
 ```powershell
-irm https://github.com/yassinelalaoui/untitled/releases/latest/download/install.ps1 | iex
+irm https://github.com/yassinelalaoui/repo-scanner/releases/latest/download/install.ps1 | iex
 ```
 
 Then verify it worked:

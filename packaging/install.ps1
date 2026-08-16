@@ -2,7 +2,7 @@
 # Usage: irm <release-url>/install.ps1 | iex
 #
 # Downloads the Windows/x86_64 release asset from the latest GitHub Release
-# of yassinelalaoui/untitled, installs it to
+# of yassinelalaoui/repo-scanner, installs it to
 # %LOCALAPPDATA%\repo-scanner\repo-scanner.exe, and adds that directory to
 # the user PATH if it isn't already there. Re-running this script upgrades
 # an existing install in place (research.md sections 5-6;
@@ -10,7 +10,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "yassinelalaoui/untitled"
+$Repo = "yassinelalaoui/repo-scanner"
 $InstallDir = Join-Path $env:LOCALAPPDATA "repo-scanner"
 $BinaryPath = Join-Path $InstallDir "repo-scanner.exe"
 
@@ -28,7 +28,15 @@ $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
 try {
     $release = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
 } catch {
-    Fail "Could not reach GitHub to resolve the latest release. Check your network connection and try again."
+    $statusCode = $null
+    if ($_.Exception.Response) {
+        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
+    }
+    if ($statusCode -eq 404) {
+        Fail "No release of $Repo has been published yet. See packaging/README.md for the release process, or check https://github.com/$Repo/releases."
+    } else {
+        Fail "Could not reach GitHub to resolve the latest release. Check your network connection and try again."
+    }
 }
 
 $asset = $release.assets | Where-Object { $_.name -match "^repo-scanner-.*-windows-x86_64\.exe$" } | Select-Object -First 1

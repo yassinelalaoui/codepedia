@@ -3,13 +3,13 @@
 # Usage: curl -fsSL <release-url>/install.sh | sh
 #
 # Downloads the release asset matching this machine's OS/arch from the
-# latest GitHub Release of yassinelalaoui/untitled, installs it to
+# latest GitHub Release of yassinelalaoui/repo-scanner, installs it to
 # ~/.local/bin/repo-scanner, and adds that directory to PATH if it isn't
 # already there. Re-running this script upgrades an existing install in
 # place (research.md §5-§6; contracts/packaging-interface.md).
 set -eu
 
-REPO="yassinelalaoui/untitled"
+REPO="yassinelalaoui/repo-scanner"
 INSTALL_DIR="$HOME/.local/bin"
 BINARY_NAME="repo-scanner"
 
@@ -34,7 +34,19 @@ case "$arch" in
 esac
 
 api_url="https://api.github.com/repos/${REPO}/releases/latest"
-release_json="$(curl -fsSL "$api_url")" || fail "Could not reach GitHub to resolve the latest release. Check your network connection and try again."
+tmp_release_json="$(mktemp)"
+trap 'rm -f "$tmp_release_json"' EXIT
+http_status="$(curl -sL -w '%{http_code}' -o "$tmp_release_json" "$api_url")" || fail "Could not reach GitHub to resolve the latest release. Check your network connection and try again."
+
+case "$http_status" in
+    200) ;;
+    404) fail "No release of ${REPO} has been published yet. See packaging/README.md for the release process, or check https://github.com/${REPO}/releases." ;;
+    *) fail "GitHub returned an unexpected response (HTTP $http_status) while resolving the latest release. Check your network connection and try again." ;;
+esac
+
+release_json="$(cat "$tmp_release_json")"
+rm -f "$tmp_release_json"
+trap - EXIT
 
 asset_pattern="repo-scanner-.*-${target_os}-${target_arch}\$"
 download_url="$(printf '%s' "$release_json" | grep -o '"browser_download_url": *"[^"]*"' | sed -E 's/.*"(https:[^"]+)"/\1/' | grep -E "$asset_pattern" | head -n1)"

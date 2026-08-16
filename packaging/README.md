@@ -45,7 +45,7 @@ asset naming" table, substituting the version from step 1:
 
 ## 4. Create the GitHub Release
 
-On `github.com/yassinelalaoui/untitled` (research.md section 7):
+On `github.com/yassinelalaoui/repo-scanner` (research.md section 7):
 
 1. Tag the commit from step 1 with the version (e.g. `v0.2.0`).
 2. Create a new GitHub Release from that tag.
@@ -56,12 +56,33 @@ On `github.com/yassinelalaoui/untitled` (research.md section 7):
 
 ### Troubleshooting: `RuntimeError: Execution of 'copyfile'/'set_exe_build_timestamp' failed`
 
-On Windows, real-time antivirus scanning a freshly written `.exe` can hold a
-brief lock past PyInstaller's own short retry budget, causing `packaging/
-build.py` to fail while copying/finalizing the binary even though nothing
-is wrong with the build itself. If this happens, retry, or temporarily
-exclude the repository's `build/`/`dist/` directories from real-time
-scanning for the duration of the build.
+Two distinct causes produce this same PyInstaller error on Windows:
+
+- **Real-time antivirus** briefly locking a freshly written `.exe` past
+  PyInstaller's own ~3.5-second retry budget (20 attempts). Nothing is
+  wrong with the build itself; retry, or temporarily exclude the
+  repository's `build/`/`dist/` directories from real-time scanning for
+  the duration of the build.
+- **A locked-down dev sandbox/container that blocks new executables.**
+  Confirmed while building this feature: in that environment, creating
+  *any* new `.exe` file failed immediately (`PermissionError: [Errno 13]`)
+  specifically inside the project's own working directory, even via a bare
+  `open(path, "wb")` with no PyInstaller involved — while the exact same
+  write succeeded one directory above it, in `%TEMP%`, and in the user
+  profile root. Windows Defender itself reported as disabled
+  (`Get-MpComputerStatus`) and no event was logged in the guest's own
+  Defender/Application event logs, meaning the block is enforced by
+  something outside the guest OS's own visible security stack (most
+  likely the sandbox host, not anything configurable from inside Windows).
+  Redirecting PyInstaller's output outside that directory
+  (`--distpath`/`--workpath` pointed at `%TEMP%\...`) let the build
+  progress all the way to its final, cosmetic timestamp-patching step —
+  but the completed executable then disappeared within about a second of
+  being written, before PyInstaller's own next read-back step, even
+  outside the working directory. There is no in-guest fix for this: it
+  is not an antivirus setting, a file permission, or anything this
+  project's `.spec`/`build.py` controls. If you hit this, build on a
+  regular (non-sandboxed) machine or CI runner instead.
 
 ## 5. Verify
 

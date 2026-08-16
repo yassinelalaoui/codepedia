@@ -190,7 +190,7 @@ commands").
 ## §7. Distribution hosting
 
 **Decision**: GitHub Releases of this project's own repository
-(`github.com/yassinelalaoui/untitled`).
+(`github.com/yassinelalaoui/repo-scanner`).
 
 **Rationale**: The project is already hosted there; GitHub Releases needs
 no new external account, no new hosted infrastructure, and no cost —
