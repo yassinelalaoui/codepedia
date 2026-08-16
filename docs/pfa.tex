@@ -587,76 +587,85 @@ du système et la boucle d'automatisation qui les maintient à jour.
                     minimum width=3.1cm, minimum height=1cm,
                     align=center, fill=gray!10, draw=gray!70,
                     font=\scriptsize, drop shadow},
-    arr/.style   = {-Latex, thick, draw=gray!70},
+    arr/.style   = {-Latex, thick, draw=gray!60},
+    iaarr/.style = {-Latex, thick, draw=orange!80},
     dasharr/.style = {-Latex, thick, dashed, draw=purple!70},
     lbl/.style   = {font=\tiny, fill=white, inner sep=1pt},
 ]
 
     % ── Entrée externe ──
-    \node[ext] (repo) at (0, 9) {D\'ep\^ot Git\\(lecture seule)};
+    \node[ext] (repo) at (0, 8.5) {D\'ep\^ot Git\\(lecture seule)};
 
-    % ── Couche 1 : Ingestion \& Analyse (y = 9) ──
-    \node[svc, fill=blue!10, draw=blue!60] (scan) at (4, 9) {repo\_scanner};
-    \node[svc, fill=blue!10, draw=blue!60] (parse) at (8, 9) {parser\_engine\\(Tree-sitter)};
-    \node[svc, fill=blue!10, draw=blue!60] (graph) at (12, 9) {dependency\_graph};
-    \node[svc, fill=blue!10, draw=blue!60] (meta) at (17, 9) {repository\_metadata\\(hash de contenu)};
+    % ── Couche 1 : Ingestion \& Analyse ──
+    \node[svc, fill=blue!10, draw=blue!60] (scan) at (4, 8.5) {repo\_scanner};
+    \node[svc, fill=blue!10, draw=blue!60] (parse) at (8, 8.5) {parser\_engine\\(Tree-sitter)};
+    \node[svc, fill=blue!10, draw=blue!60] (graph) at (12, 8.5) {dependency\_graph};
+    \node[svc, fill=blue!10, draw=blue!60] (meta) at (17, 8.5) {repository\_metadata\\(hash de contenu)};
 
-    % ── Couche 2 : Services IA locaux (y = 5.5) ──
-    \node[svc, fill=orange!10, draw=orange!80] (llm) at (7.5, 5.5) {local\_llm};
-    \node[svc, fill=orange!10, draw=orange!80] (emb) at (12.5, 5.5) {embedding\_engine};
+    % ── Couche 2 : Services IA locaux ──
+    \node[svc, fill=orange!10, draw=orange!80] (llm) at (7.5, 5.9) {local\_llm};
+    \node[svc, fill=orange!10, draw=orange!80] (emb) at (12.5, 5.9) {embedding\_engine};
 
-    % ── Endpoint local, entre les deux (y = 3) ──
-    \node[ext, fill=orange!8, draw=orange!70] (endpoint) at (10, 3) {Endpoint local\\Ollama-compatible\\(127.0.0.1:11434)};
+    % ── Endpoint local, entre les deux ──
+    \node[ext, fill=orange!8, draw=orange!70] (endpoint) at (10, 3.9) {Endpoint local\\Ollama-compatible\\(127.0.0.1:11434)};
 
-    % ── Couche 3 : Dérivation de connaissance (y = 0) ──
-    \node[svc, fill=teal!10, draw=teal!70] (summary) at (4, 0) {CodeSummaryPipeline};
-    \node[svc, fill=teal!10, draw=teal!70] (vec) at (8, 0) {vector\_index};
-    \node[svc, fill=teal!10, draw=teal!70] (chat) at (12, 0) {chat (RAG)};
+    % ── Couche 3 : Dérivation de connaissance ──
+    \node[svc, fill=teal!10, draw=teal!70] (summary) at (4, 1.6) {CodeSummaryPipeline};
+    \node[svc, fill=teal!10, draw=teal!70] (vec) at (8, 1.6) {vector\_index};
+    \node[svc, fill=teal!10, draw=teal!70] (chat) at (12, 1.6) {chat (RAG)};
 
-    % ── Couche 4 : Présentation (y = -4) ──
-    \node[svc, fill=green!10, draw=green!60!black] (doc) at (4, -4) {doc\_generator};
-    \node[svc, fill=green!10, draw=green!60!black] (api) at (8.5, -4) {chat\_api\\(FastAPI, :127.0.0.1)};
-    \node[svc, fill=green!10, draw=green!60!black] (ui) at (13, -4) {frontend\\(wiki-ui, React)};
+    % ── Couche 4 : Présentation ──
+    \node[svc, fill=green!10, draw=green!60!black] (doc) at (4, -1.8) {doc\_generator};
+    \node[svc, fill=green!10, draw=green!60!black] (api) at (8.5, -1.8) {chat\_api\\(FastAPI, :127.0.0.1)};
+    \node[svc, fill=green!10, draw=green!60!black] (ui) at (13, -1.8) {frontend\\(wiki-ui, React)};
 
-    % ── Couche 5 : Automatisation (y = -8) ──
-    \node[svc, fill=purple!10, draw=purple!70] (watch) at (4, -8) {repo\_watcher};
-    \node[svc, fill=purple!10, draw=purple!70] (reindex) at (8.5, -8) {reindex\_pipeline};
+    % ── Couche 5 : Automatisation ──
+    \node[svc, fill=purple!10, draw=purple!70] (watch) at (4, -5.2) {repo\_watcher};
+    \node[svc, fill=purple!10, draw=purple!70] (reindex) at (8.5, -5.2) {reindex\_pipeline};
 
-    \node[ext] (reader) at (13, -8) {Membre d'\'equipe\\(navigateur)};
+    \node[ext] (reader) at (13, -5.2) {Membre d'\'equipe\\(navigateur)};
 
-    % ── Flux d'indexation (gris) ──
+    % ── Flux d'indexation (gris) : couche 1 → couche 3, routé sous la
+    %    couche 3 (bande y ≈ 0.4..0.8, libre de tout nœud) pour ne jamais
+    %    traverser la zone des appels IA locaux (orange, au-dessus) ──
     \draw[arr] (repo) -- (scan);
     \draw[arr] (scan) -- (parse);
     \draw[arr] (parse) -- (graph);
     \draw[arr] (graph) -- (meta);
-    \draw[arr] (graph.south) -- ++(0,-2) -| node[lbl,pos=0.25,above]{contexte} (summary.north);
-    \draw[arr] (meta.south) -- ++(0,-1.7) -| (summary.north east);
+    \draw[arr] (graph.south) -- ++(0,-0.3) -- (15,7.7) -- (15,0.8)
+        -- node[lbl,pos=0.5,above]{contexte (dependents())} (2.2,0.8) -- (summary.west);
+    \draw[arr] (meta.south) -- (17,0.4)
+        -- node[lbl,pos=0.5,below]{m\'etadonn\'ees} (2.0,0.4) -- (summary.west);
     \draw[arr] (summary.east) -- (vec.west);
     \draw[arr] (vec.east) -- (chat.west);
     \draw[arr] (summary.south) -- (doc.north);
     \draw[arr] (doc) -- (api);
-    \draw[arr] (chat.south) -- ++(0,-1.3) -| (api.north east);
+    \draw[arr] (chat.south) -- ++(0,-0.9) -| (api.north east);
     \draw[arr] (api) -- (ui);
     \draw[arr] (ui) -- (reader);
 
-    % ── Appels IA locaux (orange) ──
-    \draw[arr, draw=orange!80] (summary.north) -- ++(0,1.4) -| node[lbl,pos=0.3,above]{generate()} (llm.south);
-    \draw[arr, draw=orange!80] (vec.north) -- ++(0,1.6) -| node[lbl,pos=0.3,above]{embed()} (emb.south);
-    \draw[arr, draw=orange!80] (chat.north) -- ++(0,1.8) -| (llm.south east);
-    \draw[arr, draw=orange!80] (llm) -- (endpoint);
-    \draw[arr, draw=orange!80] (emb) -- (endpoint);
+    % ── Appels IA locaux (orange) : bande verticale y ≈ 2.1..5.4, entre la
+    %    couche 3 et la couche 2, à l'écart de la bande "flux" ci-dessus ──
+    \draw[iaarr] (summary.north) -- ++(0,1.2) -| node[lbl,pos=0.3,above]{generate()} (llm.south west);
+    \draw[iaarr] (vec.north) -- ++(0,2.9) -| node[lbl,pos=0.5,above]{embed()} (emb.south);
+    \draw[iaarr] (chat.north) -- ++(0,3.1) -| node[lbl,pos=0.7,above]{generate()} (llm.south east);
+    \draw[iaarr] (llm) -- (endpoint);
+    \draw[iaarr] (emb) -- (endpoint);
 
-    % ── Boucle d'automatisation (violet, pointillé) ──
+    % ── Boucle d'automatisation (violet, pointillé) : marge de gauche
+    %    dédiée (x = -2.6), à l'écart de toutes les autres liaisons ──
     \draw[dasharr] (repo.south) |- node[lbl, pos=0.05, left]{surveille} (watch.west);
     \draw[dasharr] (watch) -- node[lbl, above]{lot de fichiers modifi\'es} (reindex);
     \draw[dasharr] (reindex.east) -| node[lbl, pos=0.85, above]{mise \`a jour cibl\'ee} (meta.south);
-    \draw[dasharr] (reindex.north) -- ++(0,1.5) -- ++(-9.5,0) -- ++(0,6) -- node[lbl,pos=0.9,above]{r\'eg\'en\`ere} (summary.west);
+    \draw[dasharr] (reindex.north) -- ++(0,0.7) -- ++(-11.1,0) -- ++(0,4.9)
+        -- node[lbl,pos=0.92,above]{r\'eg\'en\`ere} (summary.west);
 
-    % ── Légende ──
-    \node[anchor=north west, font=\tiny, text=gray] at (-1.5, -10.3) {%
-        \textcolor{gray!70}{\rule{0.6cm}{2pt}} Flux d'indexation \quad
-        \textcolor{orange!80}{\rule{0.6cm}{2pt}} Appels IA locaux (localhost) \quad
-        \textcolor{purple!70}{\rule[0.4ex]{0.6cm}{1pt}} Boucle de r\'e-indexation incr\'ementale
+    % ── Légende (encadrée) ──
+    \node[draw=gray!50, rounded corners=2pt, inner sep=7pt, font=\scriptsize,
+          anchor=north west, align=left, fill=white] at (-1.5, -7.3) {%
+        \textcolor{gray!60}{\rule{0.7cm}{2.4pt}}~Flux d'indexation \\[3pt]
+        \textcolor{orange!80}{\rule{0.7cm}{2.4pt}}~Appels IA locaux (localhost) \\[3pt]
+        \textcolor{purple!70}{\rule[0.4ex]{0.7cm}{1.6pt}}~Boucle de r\'e-indexation incr\'ementale
     };
 
 \end{tikzpicture}%
@@ -759,8 +768,6 @@ embeddings et pages de documentation concernés.
 \caption{Diagramme de séquence UML : ré-indexation incrémentale déclenchée par le watcher}
 \label{fig:uml_sequence}
 \end{figure}
-
-\newpage
 
 \section{Modélisation UML : Diagramme de Classes}
 Le diagramme de classes (Figure \ref{fig:uml_classes}) détaille les classes clés
@@ -889,8 +896,6 @@ avec les couches d'analyse et de dérivation de connaissance.
 \caption{Diagramme de classes UML des composants impliqués dans le pipeline d'indexation}
 \label{fig:uml_classes}
 \end{figure}
-
-\newpage
 
 \section{Modélisation UML : Diagramme de Cas d'Utilisation}
 Le diagramme de cas d'utilisation (Figure \ref{fig:uml_usecases}) définit les acteurs
@@ -1255,6 +1260,10 @@ points forts de la solution sont :
     \item \textbf{Une architecture modulaire en couches}, sans infrastructure
     lourde ni dépendance à un service externe, facile à auditer et à faire
     fonctionner hors ligne.
+    \item \textbf{Une distribution en binaire autonome} : l'outil en ligne de
+    commande est empaqueté via PyInstaller et publié automatiquement (GitHub
+    Actions) sous forme d'exécutable installable en une seule commande, sans
+    environnement Python à configurer manuellement.
 \end{itemize}
 
 \section{Perspectives d'Évolution}
