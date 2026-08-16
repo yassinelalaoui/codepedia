@@ -52,12 +52,14 @@ class RecordingLLMEngine:
         service_reachable: bool = True,
         model_installed: bool = True,
         installed_models: tuple[str, ...] = ("test-llm",),
+        generate_timeout: float = 120.0,
     ) -> None:
         self.modelName = model_name
         self.endpointUrl = endpoint_url
         self.service_reachable = service_reachable
         self.model_installed = model_installed
         self._installed_models = installed_models
+        self.generateTimeout = generate_timeout
         self.generate_calls = 0
 
     @property
@@ -151,12 +153,15 @@ def fake_engines(monkeypatch):
     not-installed warning (spec US3) has something real to detect.
     """
 
-    def llm_factory(model_name: str, endpoint_url: str = "http://localhost:11434", **_: object) -> RecordingLLMEngine:
+    def llm_factory(
+        model_name: str, endpoint_url: str = "http://localhost:11434", *, generate_timeout: float = 120.0, **_: object
+    ) -> RecordingLLMEngine:
         return RecordingLLMEngine(
             model_name=model_name,
             endpoint_url=endpoint_url,
             model_installed=model_name in INSTALLED_LLM_MODELS,
             installed_models=INSTALLED_LLM_MODELS,
+            generate_timeout=generate_timeout,
         )
 
     def embedding_factory(model_name: str = "test-embed", endpoint_url: str = "http://localhost:11434", **_: object) -> FakeEmbeddingEngine:
@@ -433,6 +438,29 @@ def test_configured_llm_model_is_used_by_a_subsequent_index_run(tmp_path, cli_ho
 
     result = run_index(root, config=config)
     assert result.llmEngine.modelName == "my-custom-model"
+
+
+def test_configured_llm_generate_timeout_is_shown_and_used_by_a_subsequent_index_run(tmp_path, cli_home, fake_engines):
+    """Regression test: the generation timeout used to be a hardcoded
+    constant with no `config` knob at all - a user whose local model
+    genuinely needs longer than the default had no way to raise it short of
+    editing source. `--llm-generate-timeout` closes that gap."""
+    runner = CliRunner()
+
+    show_result = runner.invoke(cli.main.app, ["config"])
+    assert show_result.exit_code == 0
+    assert "120" in show_result.output  # documented default (research.md)
+
+    save_result = runner.invoke(cli.main.app, ["config", "--llm-generate-timeout", "300"])
+    assert save_result.exit_code == 0
+    assert "300" in save_result.output
+
+    root = _copy_fixture_repo(tmp_path)
+    config = cli.config.load_config()
+    assert config.llmGenerateTimeout == 300.0
+
+    result = run_index(root, config=config)
+    assert result.llmEngine.generateTimeout == 300.0
     result.vectorIndex.close()
 
 

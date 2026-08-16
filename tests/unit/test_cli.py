@@ -58,6 +58,28 @@ def test_save_config_rejects_invalid_endpoint_before_writing_anything(cli_home):
     assert not cli.paths.config_path().exists()
 
 
+def test_llm_generate_timeout_defaults_and_round_trips(cli_home):
+    """Regression test: the LLM generation timeout used to be a hardcoded
+    5-second constant shared with the (much faster) availability check,
+    with no way for a user whose local model is genuinely slower than that
+    to configure it. It's now its own field, defaulting to a more realistic
+    120s, and configurable via `repo-scanner config --llm-generate-timeout`."""
+    default = load_config()
+    assert default.llmGenerateTimeout == 120.0
+
+    save_config(CLIConfiguration(llmGenerateTimeout=300.0))
+    reloaded = load_config()
+
+    assert reloaded.llmGenerateTimeout == 300.0
+
+
+def test_save_config_rejects_non_positive_generate_timeout(cli_home):
+    with pytest.raises(ValueError):
+        save_config(CLIConfiguration(llmGenerateTimeout=0))
+
+    assert not cli.paths.config_path().exists()
+
+
 def test_state_id_is_stable_and_filesystem_safe(tmp_path):
     root = tmp_path / "some-repo"
     first = cli.paths.state_id(root)

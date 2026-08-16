@@ -7,6 +7,12 @@ from urllib.parse import urlparse
 
 DEFAULT_ENDPOINT_URL = "http://localhost:11434"
 
+# Real generation (auto-regressive token-by-token inference) is much slower
+# than a version/tags probe, especially on CPU-only hardware or a model
+# that's still loading - 120s is a generous default, and still user-tunable
+# via `repo-scanner config --llm-generate-timeout` for slower setups.
+DEFAULT_GENERATE_TIMEOUT = 120.0
+
 
 def normalize_endpoint_url(endpoint_url: str) -> str:
     parsed = urlparse(endpoint_url)

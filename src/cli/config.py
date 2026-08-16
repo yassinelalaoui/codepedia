@@ -7,6 +7,7 @@ from embedding_engine.models import DEFAULT_ENDPOINT_URL as DEFAULT_EMBEDDING_EN
 from embedding_engine.models import DEFAULT_MODEL_NAME as DEFAULT_EMBEDDING_MODEL
 from embedding_engine.models import normalize_endpoint_url as normalize_embedding_endpoint_url
 from local_llm.models import DEFAULT_ENDPOINT_URL as DEFAULT_LLM_ENDPOINT_URL
+from local_llm.models import DEFAULT_GENERATE_TIMEOUT as DEFAULT_LLM_GENERATE_TIMEOUT
 from local_llm.models import normalize_endpoint_url as normalize_llm_endpoint_url
 
 from . import paths
@@ -21,6 +22,7 @@ DEFAULT_LLM_MODEL = "qwen2.5-coder"
 class CLIConfiguration:
     llmModel: str = DEFAULT_LLM_MODEL
     llmEndpointUrl: str = DEFAULT_LLM_ENDPOINT_URL
+    llmGenerateTimeout: float = DEFAULT_LLM_GENERATE_TIMEOUT
     embeddingModel: str = DEFAULT_EMBEDDING_MODEL
     embeddingEndpointUrl: str = DEFAULT_EMBEDDING_ENDPOINT_URL
 
@@ -37,6 +39,7 @@ def load_config() -> CLIConfiguration:
     return CLIConfiguration(
         llmModel=data.get("llmModel", defaults.llmModel),
         llmEndpointUrl=data.get("llmEndpointUrl", defaults.llmEndpointUrl),
+        llmGenerateTimeout=data.get("llmGenerateTimeout", defaults.llmGenerateTimeout),
         embeddingModel=data.get("embeddingModel", defaults.embeddingModel),
         embeddingEndpointUrl=data.get("embeddingEndpointUrl", defaults.embeddingEndpointUrl),
     )
@@ -45,10 +48,13 @@ def load_config() -> CLIConfiguration:
 def save_config(config: CLIConfiguration) -> None:
     # Raises ValueError before anything is written if either endpoint isn't a
     # valid local-only URL (008/009's own validation, reused rather than
-    # re-implemented).
+    # re-implemented) or the generation timeout isn't a positive number.
+    if config.llmGenerateTimeout <= 0:
+        raise ValueError("llmGenerateTimeout must be a positive number of seconds")
     normalized = CLIConfiguration(
         llmModel=config.llmModel,
         llmEndpointUrl=normalize_llm_endpoint_url(config.llmEndpointUrl),
+        llmGenerateTimeout=config.llmGenerateTimeout,
         embeddingModel=config.embeddingModel,
         embeddingEndpointUrl=normalize_embedding_endpoint_url(config.embeddingEndpointUrl),
     )

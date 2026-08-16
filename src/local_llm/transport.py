@@ -7,7 +7,14 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .errors import GenerationFailedError, InvalidResponseError
-from .models import AvailabilityStatus, GenerationResult, PromptEnvelope, normalize_endpoint_url, normalize_model_name
+from .models import (
+    DEFAULT_GENERATE_TIMEOUT,
+    AvailabilityStatus,
+    GenerationResult,
+    PromptEnvelope,
+    normalize_endpoint_url,
+    normalize_model_name,
+)
 
 
 def _local_fallback_message(endpoint_url: str, model_name: str) -> str:
@@ -69,7 +76,7 @@ class LocalLLMTransport:
     # `timeout` governs (auto-regressive token-by-token inference, easily
     # tens of seconds on CPU-only hardware or a cold model) - it gets its
     # own, much more generous budget rather than sharing `timeout`.
-    generateTimeout: float = 120.0
+    generateTimeout: float = DEFAULT_GENERATE_TIMEOUT
 
     def __post_init__(self) -> None:
         self.endpointUrl = normalize_endpoint_url(self.endpointUrl)

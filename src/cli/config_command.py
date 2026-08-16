@@ -13,6 +13,7 @@ def run_config(
     *,
     llm_model: Optional[str],
     llm_endpoint: Optional[str],
+    llm_generate_timeout: Optional[float],
     embedding_model: Optional[str],
     embedding_endpoint: Optional[str],
     show: bool,
@@ -23,7 +24,8 @@ def run_config(
     current = load_config()
 
     has_changes = not show and any(
-        value is not None for value in (llm_model, llm_endpoint, embedding_model, embedding_endpoint)
+        value is not None
+        for value in (llm_model, llm_endpoint, llm_generate_timeout, embedding_model, embedding_endpoint)
     )
     if not has_changes:
         _print_status(current)
@@ -32,6 +34,7 @@ def run_config(
     updated = CLIConfiguration(
         llmModel=llm_model if llm_model is not None else current.llmModel,
         llmEndpointUrl=llm_endpoint if llm_endpoint is not None else current.llmEndpointUrl,
+        llmGenerateTimeout=llm_generate_timeout if llm_generate_timeout is not None else current.llmGenerateTimeout,
         embeddingModel=embedding_model if embedding_model is not None else current.embeddingModel,
         embeddingEndpointUrl=embedding_endpoint if embedding_endpoint is not None else current.embeddingEndpointUrl,
     )
@@ -47,7 +50,9 @@ def run_config(
 
 
 def _print_status(config: CLIConfiguration) -> None:
-    llm_engine = create_local_llm_engine(config.llmModel, config.llmEndpointUrl)
+    llm_engine = create_local_llm_engine(
+        config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
+    )
     embedding_engine = create_embedding_engine(config.embeddingModel, config.embeddingEndpointUrl)
 
     llm_status = llm_engine.checkAvailability()
@@ -57,6 +62,7 @@ def _print_status(config: CLIConfiguration) -> None:
         f"LLM model: {config.llmModel} ({config.llmEndpointUrl}) - "
         f"{'available' if llm_status.available else 'unavailable'}: {llm_status.message}"
     )
+    typer.echo(f"LLM generation timeout: {config.llmGenerateTimeout:g}s")
     typer.echo(
         f"Embedding model: {config.embeddingModel} ({config.embeddingEndpointUrl}) - "
         f"{'available' if embedding_status.available else 'unavailable'}: {embedding_status.message}"

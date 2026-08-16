@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from .errors import GenerationFailedError, ModelMissingError, ServiceUnavailableError
 from .models import (
     DEFAULT_ENDPOINT_URL,
+    DEFAULT_GENERATE_TIMEOUT,
     AvailabilityStatus,
     GenerationResult,
     PromptEnvelope,
@@ -27,7 +28,7 @@ class LocalLLMEngine:
     modelName: str
     endpointUrl: str = DEFAULT_ENDPOINT_URL
     timeout: float = 5.0
-    generateTimeout: float = 120.0
+    generateTimeout: float = DEFAULT_GENERATE_TIMEOUT
     _transport: LocalLLMTransport = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -67,7 +68,7 @@ def create_local_llm_engine(
     endpoint_url: str = DEFAULT_ENDPOINT_URL,
     *,
     timeout: float = 5.0,
-    generate_timeout: float = 120.0,
+    generate_timeout: float = DEFAULT_GENERATE_TIMEOUT,
 ) -> LocalLLMEngine:
     return LocalLLMEngine(
         modelName=model_name,

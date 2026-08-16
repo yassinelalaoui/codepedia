@@ -27,7 +27,9 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     """
     root = validate_repo_path(repo_path)
 
-    llm_engine = create_local_llm_engine(config.llmModel, config.llmEndpointUrl)
+    llm_engine = create_local_llm_engine(
+        config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
+    )
     embedding_engine = create_embedding_engine(config.embeddingModel, config.embeddingEndpointUrl)
     check_ai_dependencies(llm_engine, embedding_engine)
 

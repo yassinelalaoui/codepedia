@@ -115,6 +115,11 @@ def serve(
 def config_command(
     llm_model: Optional[str] = typer.Option(None, "--llm-model", help="Local LLM model to use."),
     llm_endpoint: Optional[str] = typer.Option(None, "--llm-endpoint", help="Local LLM endpoint URL."),
+    llm_generate_timeout: Optional[float] = typer.Option(
+        None,
+        "--llm-generate-timeout",
+        help="Seconds to wait for the local LLM to finish generating a summary before failing (default: 120).",
+    ),
     embedding_model: Optional[str] = typer.Option(None, "--embedding-model", help="Local embedding model to use."),
     embedding_endpoint: Optional[str] = typer.Option(None, "--embedding-endpoint", help="Local embedding endpoint URL."),
     show: bool = typer.Option(False, "--show", help="Show the current configuration without changing it."),
@@ -124,6 +129,7 @@ def config_command(
         run_config(
             llm_model=llm_model,
             llm_endpoint=llm_endpoint,
+            llm_generate_timeout=llm_generate_timeout,
             embedding_model=embedding_model,
             embedding_endpoint=embedding_endpoint,
             show=show,

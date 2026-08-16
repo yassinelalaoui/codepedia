@@ -85,11 +85,16 @@ entry point (`repo-scanner`) this feature adds to the project, superseding
 - `1`: no prior index exists for `PATH`.
 - `1`: the web server could not bind to `--host`/`--port`.
 
-## Command: `repo-scanner config [--llm-model NAME] [--llm-endpoint URL] [--embedding-model NAME] [--embedding-endpoint URL] [--show]`
+## Command: `repo-scanner config [--llm-model NAME] [--llm-endpoint URL] [--llm-generate-timeout SECONDS] [--embedding-model NAME] [--embedding-endpoint URL] [--show]`
 
 **Inputs**: all optional.
 - `--llm-model` / `--llm-endpoint`: new values for the LLM side of
   `CLIConfiguration`.
+- `--llm-generate-timeout`: seconds to wait for the local LLM to finish
+  generating a summary before failing with a clean, actionable error
+  (`CLIConfiguration.llmGenerateTimeout`, default 120 — distinct from the
+  short timeout used for the availability probe, since real generation is
+  a much slower call). Must be a positive number.
 - `--embedding-model` / `--embedding-endpoint`: new values for the
   embedding side.
 - `--show`: print the current configuration and exit without changing
