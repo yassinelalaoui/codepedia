@@ -142,6 +142,14 @@ had no `[tool.setuptools.package-data]` declaration at all, so only
 include them — a real built wheel or binary silently omitted them. Fixed
 alongside 020 (research.md §3).
 
+**GitHub Actions** (020, `.github/workflows/release.yml`, tag-triggered
+only) runs `packaging/build.py` on real Windows/macOS(x86_64)/Linux
+runners and publishes the results as a GitHub Release. Added after this
+project's own development machine turned out to be unable to complete a
+local PyInstaller build at all (research.md §8's superseding decision) —
+`packaging/build.py` itself is unchanged and still works standalone on
+any unrestricted machine; CI is an additional path, not a replacement.
+
 ## Two loose ends
 
 - **`pathspec`** and **`networkx`** are both declared in `pyproject.toml` but

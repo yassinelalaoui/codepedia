@@ -45,7 +45,18 @@ Single project layout (`plan.md`'s Structure Decision): new `packaging/` directo
 - [X] T007 Create `packaging/build.py`: a maintainer-run helper that invokes PyInstaller with `packaging/pyinstaller/repo-scanner.spec` for the current OS, producing `dist/repo-scanner` (or `dist/repo-scanner.exe`), then runs `--version` and `scan` against a throwaway repository through the freshly built binary as a smoke check before reporting success (research.md §8, quickstart.md Scenario 1) — depends on T006
 - [X] T008 Write `packaging/README.md` documenting the maintainer build + release process: running `packaging/build.py` per OS, and manually uploading `dist/repo-scanner[.exe]` plus `packaging/install.sh`/`packaging/install.ps1` as assets to a new GitHub Release, named per `contracts/packaging-interface.md`'s "Release asset naming" table (research.md §7, §8) — depends on T007
 
-**Checkpoint**: A maintainer can build a verified binary and knows exactly how to release it — user story implementation can now begin.
+- [X] T035 [P] Create `.github/workflows/release.yml`: a tag-triggered
+  (`vX.Y.Z`) build matrix on `windows-latest`/`macos-13`/`ubuntu-latest`
+  that each runs `packaging/build.py`, renames the output per
+  `contracts/packaging-interface.md`'s asset-naming table, then a final
+  job publishes all three binaries plus `install.sh`/`install.ps1` as a
+  GitHub Release — added because this project's own dev machine was
+  found unable to complete a local PyInstaller build at all, on any
+  shell (research.md §8's superseding decision) — depends on T006, T007
+
+**Checkpoint**: A maintainer can build a verified binary (locally, or via
+CI if the local machine can't) and knows exactly how to release it — user
+story implementation can now begin.
 
 ---
 
@@ -60,7 +71,7 @@ Single project layout (`plan.md`'s Structure Decision): new `packaging/` directo
 - [X] T009 [P] [US1] Write `packaging/install.sh`: detects OS/arch, downloads the matching asset from the latest GitHub Release, installs to `~/.local/bin/repo-scanner`, adds that directory to `PATH` (current user's shell profile) if not already present, prints the installed version and how to verify it; exits non-zero with a distinct message for "no network access" and for "no release asset matches this OS/arch" (research.md §5, §7; contracts/packaging-interface.md)
 - [X] T010 [P] [US1] Write `packaging/install.ps1`: same behavior as T009 for Windows — installs to `%LOCALAPPDATA%\repo-scanner\repo-scanner.exe`, adds it to the user `Path` via the registry if missing, same distinct-error behavior for no network / unsupported arch (research.md §5; contracts/packaging-interface.md)
 - [X] T011 [P] [US1] Document the package's own baseline prerequisite (a supported OS: Windows/macOS/Linux, x86_64 — research.md §9) in `README.md`'s install section, clearly distinct from the separately-installed local LLM engine prerequisite (FR-004)
-- [ ] T012 [US1] Manually validate `quickstart.md` Scenario 1 (build) and Scenario 2 (clean-machine install + `--version`) on a throwaway machine or container with no Python installed — depends on T006, T007, T009, T010
+- [ ] T012 [US1] Manually validate `quickstart.md` Scenario 1 (build) and Scenario 2 (clean-machine install + `--version`) on a throwaway machine or container with no Python installed — depends on T006, T007, T009, T010, T035 (build may come from either a local `packaging/build.py` run or a CI-published release, per research.md §8's superseding decision)
 - [ ] T013 [US1] Manually validate `quickstart.md` Scenario 8 (`serve` and `config`, not just `index`/`scan`, are runnable immediately after install — FR-003) — depends on T012
 - [X] T014 [US1] Manually validate `quickstart.md` Scenario 9 (installing on an unsupported OS/arch fails with a clear, non-hanging error) — depends on T009, T010. Validated directly against `packaging/install.sh` (no real release needed - the OS/arch check runs before any network call): ran unmodified on this dev machine (git-bash reports `MINGW64_NT`, neither Linux nor macOS) and got a clear "Unsupported operating system" error, exit 1; separately re-ran with `uname` shimmed to report `Linux`/`arm64` and got a clear "Unsupported architecture" error, exit 1. Also exercised the "no matching release asset for this OS/arch" branch with a shimmed `curl` returning a real-shaped GitHub API response missing a linux-x86_64 asset - correct error, exit 1.
 - [X] T015 [US1] Manually validate `quickstart.md` Scenario 10 (installing with no network access fails with a clear, non-hanging error) — depends on T009, T010. Validated against `packaging/install.sh` with `uname` shimmed to report a supported Linux/x86_64 platform and `curl` shimmed to fail exactly as it would with no connectivity (`curl: (6) Could not resolve host`) - script produced the clear, actionable "Could not reach GitHub..." error and exited 1, no hang.

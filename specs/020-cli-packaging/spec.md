@@ -44,8 +44,14 @@ that remains an external prerequisite the user installs separately.
   error-messaging behavior (019); this feature only changes how the tool is
   obtained and installed.
 - Distribution through OS-specific package managers (e.g. Homebrew, apt,
-  Chocolatey) or an automated release/publishing pipeline; the single
-  install command is the only distribution path this feature guarantees.
+  Chocolatey); the single install command is the only distribution path
+  this feature guarantees.
+- An unattended, every-commit publishing pipeline; a maintainer must still
+  deliberately push a version tag to produce a release. (Cross-platform
+  *building* — as opposed to publishing — is delegated to CI; see
+  research.md §8's superseding decision. This was added after the
+  original non-goal was written, once local builds were found to be
+  unusable on this project's own development machine.)
 - Offline/air-gapped installation; a one-time network connection to fetch
   the package at install time is assumed to be available.
 - Auto-updating the tool after install.

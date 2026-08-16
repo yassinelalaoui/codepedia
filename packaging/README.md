@@ -1,8 +1,6 @@
 # Packaging & Release Process (maintainers)
 
-How a maintainer builds and publishes a `repo-scanner` release. This is a
-manual process by design — an automated release pipeline is an explicit
-non-goal of `specs/020-cli-packaging/spec.md` (research.md section 8).
+How a maintainer builds and publishes a `repo-scanner` release.
 
 See also: `specs/020-cli-packaging/research.md`,
 `specs/020-cli-packaging/contracts/packaging-interface.md`, and
@@ -12,12 +10,39 @@ See also: `specs/020-cli-packaging/research.md`,
 
 Update `[project].version` in `pyproject.toml` (the single source of truth
 `repo-scanner --version` reads at runtime via `importlib.metadata`,
-research.md section 4). Commit that change.
+research.md section 4). Commit and push that change to `main` first.
 
-## 2. Build a binary — once per target OS
+## 2. Build and publish via GitHub Actions (primary path)
 
-PyInstaller does not cross-compile, so this step runs on a real machine of
-each target OS (Windows, macOS, Linux — all x86_64, research.md section 9):
+Push a version tag matching the version from step 1:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+This triggers `.github/workflows/release.yml`, which builds
+`repo-scanner` on real Windows, macOS (x86_64), and Linux runners in
+parallel (PyInstaller does not cross-compile, so each OS genuinely builds
+its own binary — see research.md §9 for the x86_64-only scope), renames
+each per the release-asset naming contract, and then automatically
+creates a GitHub Release on that tag with all three binaries plus
+`install.sh`/`install.ps1` attached. Watch it run under the repository's
+**Actions** tab; nothing further to do once it's green.
+
+This path exists because building locally was found, during this
+feature's own implementation, to be unusable on this project's actual
+development machine — not merely inside an AI coding agent's own
+sandboxed tool calls, but from a plain interactive terminal on that same
+machine too (see Troubleshooting below). CI sidesteps whatever is causing
+that entirely, so it is the recommended way to produce a real release
+right now.
+
+## 2b. Build locally instead (fallback, if your machine isn't blocked)
+
+If you have a real, unrestricted machine for each target OS available,
+you can still run the same build `.github/workflows/release.yml` runs,
+by hand:
 
 ```bash
 python -m pip install -e ".[build]"
@@ -26,33 +51,10 @@ python packaging/build.py
 
 This produces `dist/repo-scanner` (`dist/repo-scanner.exe` on Windows) and
 smoke-tests it (`--version` and `scan` against a throwaway repository)
-before reporting success. Repeat on each OS, collecting each `dist/`
-binary somewhere you can gather them together (e.g. rename immediately
-after each build, since every OS writes to the same `dist/repo-scanner`
-path).
-
-## 3. Name each binary per the release-asset contract
-
-Rename each built binary to match
+before reporting success. Repeat on each OS, renaming each binary per
 `specs/020-cli-packaging/contracts/packaging-interface.md`'s "Release
-asset naming" table, substituting the version from step 1:
-
-| Built on | Rename to |
-| --- | --- |
-| Windows | `repo-scanner-<version>-windows-x86_64.exe` |
-| macOS | `repo-scanner-<version>-macos-x86_64` |
-| Linux | `repo-scanner-<version>-linux-x86_64` |
-
-## 4. Create the GitHub Release
-
-On `github.com/yassinelalaoui/repo-scanner` (research.md section 7):
-
-1. Tag the commit from step 1 with the version (e.g. `v0.2.0`).
-2. Create a new GitHub Release from that tag.
-3. Upload as release assets:
-   - The three renamed binaries from step 3.
-   - `packaging/install.sh` (unrenamed).
-   - `packaging/install.ps1` (unrenamed).
+asset naming" table (`repo-scanner-<version>-<os>-x86_64[.exe]`), then
+attach them plus `install.sh`/`install.ps1` to a GitHub Release yourself.
 
 ### Troubleshooting: `RuntimeError: Execution of 'copyfile'/'set_exe_build_timestamp' failed`
 
@@ -63,28 +65,33 @@ Two distinct causes produce this same PyInstaller error on Windows:
   wrong with the build itself; retry, or temporarily exclude the
   repository's `build/`/`dist/` directories from real-time scanning for
   the duration of the build.
-- **A locked-down dev sandbox/container that blocks new executables.**
-  Confirmed while building this feature: in that environment, creating
-  *any* new `.exe` file failed immediately (`PermissionError: [Errno 13]`)
-  specifically inside the project's own working directory, even via a bare
-  `open(path, "wb")` with no PyInstaller involved — while the exact same
-  write succeeded one directory above it, in `%TEMP%`, and in the user
-  profile root. Windows Defender itself reported as disabled
-  (`Get-MpComputerStatus`) and no event was logged in the guest's own
-  Defender/Application event logs, meaning the block is enforced by
-  something outside the guest OS's own visible security stack (most
-  likely the sandbox host, not anything configurable from inside Windows).
-  Redirecting PyInstaller's output outside that directory
-  (`--distpath`/`--workpath` pointed at `%TEMP%\...`) let the build
-  progress all the way to its final, cosmetic timestamp-patching step —
-  but the completed executable then disappeared within about a second of
-  being written, before PyInstaller's own next read-back step, even
-  outside the working directory. There is no in-guest fix for this: it
-  is not an antivirus setting, a file permission, or anything this
-  project's `.spec`/`build.py` controls. If you hit this, build on a
-  regular (non-sandboxed) machine or CI runner instead.
+- **Something else entirely, confirmed on this project's own real dev
+  machine** (not a sandboxed VM — confirmed directly with the machine's
+  owner). The exact same `RuntimeError: Execution of 'copyfile' failed`
+  happened both when the build ran through an AI coding agent's tool
+  calls *and* from a plain interactive PowerShell session on that same
+  real machine — not specific to any one tool or shell. Direct, isolated
+  diagnostics on that machine ruled out every locally-configurable cause:
+  Windows Defender real-time protection off (`Get-MpComputerStatus`), no
+  third-party AV registered (`Get-CimInstance ... AntivirusProduct`),
+  Controlled Folder Access not blocking (copying a real signed system
+  `.exe` into `dist/` succeeds), no Attack Surface Reduction rules
+  configured, Smart App Control off, no Device Guard/WDAC policy
+  enforced, and no recognizable EDR service/process running. Copying the
+  raw PyInstaller bootloader file standalone also succeeds. Only
+  PyInstaller's own final step — finishing a complete, previously-unseen
+  `repo-scanner.exe` — fails, consistently, every time. `icacls` on the
+  project folder showed a local group named `CodexSandboxUsers` with
+  Modify-only rights applied specifically to that folder, which is likely
+  the actual cause: something related to AI-coding-agent tooling
+  previously used on that machine appears to have applied a restrictive
+  ACL to this project's own directory. If you hit this and want to keep
+  building locally, check `icacls <project-root>` for a similar unexpected
+  group/ACE and investigate what added it before assuming it's
+  antivirus. Otherwise, use the GitHub Actions path above — it does not
+  depend on this machine at all.
 
-## 5. Verify
+## 3. Verify
 
 Follow `specs/020-cli-packaging/quickstart.md` Scenario 2 (and ideally
 3-10) against the new release before announcing it — in particular, confirm

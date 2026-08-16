@@ -207,24 +207,75 @@ not part of this feature.
 
 ## §8. Build process ownership
 
-**Decision**: A maintainer-run local build (`packaging/build.py`), not an
-automated CI/CD pipeline. A maintainer runs it once per target OS (it must
-run on a real machine of that OS, since PyInstaller does not cross-compile)
-to produce `dist/repo-scanner[.exe]`, then manually attaches that file plus
-`install.sh`/`install.ps1` as assets to a new GitHub Release tagged with
-the version being published.
+**Original decision (superseded below)**: A maintainer-run local build
+(`packaging/build.py`), not an automated CI/CD pipeline. A maintainer runs
+it once per target OS (it must run on a real machine of that OS, since
+PyInstaller does not cross-compile) to produce `dist/repo-scanner[.exe]`,
+then manually attaches that file plus `install.sh`/`install.ps1` as assets
+to a new GitHub Release tagged with the version being published.
 
-**Rationale**: The spec explicitly lists "an automated release/publishing
-pipeline" as a non-goal ("the single install command is the only
-distribution path this feature guarantees"). Building CI infrastructure
-(e.g. a new `.github/workflows/` release workflow spanning three OS
-runners) is real, ongoing infrastructure this feature does not need to
-introduce to satisfy any requirement or success criterion — all of them are
-about what happens after a release already exists, not how it gets built.
+**Original rationale**: The spec explicitly lists "an automated release/
+publishing pipeline" as a non-goal ("the single install command is the
+only distribution path this feature guarantees"). Building CI
+infrastructure (e.g. a new `.github/workflows/` release workflow spanning
+three OS runners) is real, ongoing infrastructure this feature does not
+need to introduce to satisfy any requirement or success criterion — all of
+them are about what happens after a release already exists, not how it
+gets built.
 
-**Alternatives considered**: A GitHub Actions release workflow — would
-satisfy the same requirements, and is a reasonable follow-up feature, but
-is explicitly out of scope here per the spec's own Non-Goals.
+**Original alternatives considered**: A GitHub Actions release workflow —
+would satisfy the same requirements, and is a reasonable follow-up
+feature, but is explicitly out of scope here per the spec's own Non-Goals.
+
+---
+
+**Superseding decision**: Build via GitHub Actions
+(`.github/workflows/release.yml`), triggered by a maintainer pushing a
+version tag (`vX.Y.Z`). A three-way build matrix (`windows-latest`,
+`macos-13`, `ubuntu-latest`) each runs `packaging/build.py` on a real
+runner of that OS, uploads the renamed binary as a build artifact, and a
+final job downloads all three plus `install.sh`/`install.ps1` and
+publishes them as a GitHub Release. `packaging/build.py` itself is
+unchanged and still works standalone on any real, unrestricted machine —
+CI is an additional path, not a replacement for the local one.
+
+**Superseding rationale**: This project's own development machine was
+found, during 020's own implementation, to be unable to complete a
+PyInstaller build at all — not merely in an agent's sandboxed tool-call
+context, but from a plain interactive terminal session on that same
+machine. Direct, isolated diagnostics ruled out every locally-configurable
+cause: Windows Defender real-time protection (confirmed off via
+`Get-MpComputerStatus`), any third-party antivirus (none registered via
+`Get-CimInstance ... AntivirusProduct`), Controlled Folder Access (copying
+a real signed system `.exe` into the output directory succeeds),
+Attack Surface Reduction rules (none configured), Smart App Control (off),
+Device Guard/WDAC policy (not enforced), and any recognizable EDR
+service/process. Copying the raw PyInstaller bootloader file standalone
+also succeeds. Only PyInstaller's own final step — finishing a complete,
+previously-unseen `repo-scanner.exe` — reliably fails
+(`RuntimeError: Execution of 'copyfile' failed`), every time, regardless
+of which shell or tool invokes it. `icacls` on the project folder also
+showed a sandbox-branded local group (`CodexSandboxUsers`) with
+Modify-only rights applied specifically to that folder — evidence this
+project has so far only ever been built on a managed/sandboxed dev
+machine, whatever the reason for the restriction turns out to be. Since a
+local build genuinely cannot be completed and verified on the only
+machine available for this project's own development, building on
+GitHub-hosted runners is no longer a "nice to have" — it is the only way
+to actually produce a working, distributable binary at all right now, and
+doing so does not conflict with the spec's non-goal in spirit: the spec's
+non-goal was about *not needing* CI to satisfy any requirement, not about
+never using it if the local path turns out to be unusable. Publishing
+still requires a maintainer's deliberate action (pushing a tag) — this is
+not an unattended, every-commit pipeline.
+
+**Superseding alternatives considered**: Building on a different, genuinely
+unrestricted machine — remains valid and is still what `packaging/build.py`
+supports directly; not mutually exclusive with CI, but not guaranteed to
+be available. Keeping the local-only process and treating the block as
+unfixable/out of scope — rejected, since it would leave this feature's
+core success criterion (SC-001: install-and-index in one command)
+permanently unverifiable and the tool permanently undistributed.
 
 ## §9. Target architecture scope
 
