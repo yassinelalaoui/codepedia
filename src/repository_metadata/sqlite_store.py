@@ -241,7 +241,25 @@ def upsert_source_file_bundle(
             ),
         )
         for symbol in symbols:
-            _insert_symbol_record(connection, file_record.id, symbol)
+            try:
+                _insert_symbol_record(connection, file_record.id, symbol)
+            except sqlite3.IntegrityError as exc:
+                conflicting = connection.execute(
+                    "SELECT source_file_id, kind, name, line_start, line_end FROM symbols WHERE id = ?",
+                    (symbol.id,),
+                ).fetchone()
+                conflict_detail = (
+                    f"already belongs to source_file_id={conflicting['source_file_id']!r} "
+                    f"({conflicting['kind']} {conflicting['name']!r} "
+                    f"lines {conflicting['line_start']}-{conflicting['line_end']})"
+                    if conflicting is not None
+                    else "no existing row found for that id (unexpected)"
+                )
+                raise sqlite3.IntegrityError(
+                    f"Duplicate symbol id {symbol.id!r} while inserting {symbol.kind} {symbol.name!r} "
+                    f"(lines {symbol.lineStart}-{symbol.lineEnd}) for source_file_id={file_record.id!r} "
+                    f"(path={file_record.path!r}): {conflict_detail}"
+                ) from exc
         for edge in edge_list:
             _insert_dependency_edge(connection, repository_id, edge)
     return file_record

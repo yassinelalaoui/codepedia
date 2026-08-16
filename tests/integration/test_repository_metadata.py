@@ -121,3 +121,42 @@ def test_file_change_detection_uses_content_hash(tmp_path):
 
     assert store.has_file_changed(repository_root=root, path=alpha_path, current_hash=compute_content_hash(alpha_path)) is False
     assert store.has_file_changed(repository_root=root, path=alpha_path, current_hash="different") is True
+
+
+def test_storing_a_file_with_nested_classes_does_not_raise_integrity_error(tmp_path):
+    """Regression test: a class nested inside another class or a function
+    used to be double-counted by the extractor (parser_engine), producing
+    two Symbol objects with the identical id and crashing this store's
+    `symbols.id` UNIQUE constraint on insert - exactly the failure a real
+    `repo-scanner index` run hit against a real-world repository."""
+    root = tmp_path / "nested-repo"
+    root.mkdir()
+    source_path = root / "nested.py"
+    source_path.write_text(
+        "class Outer:\n"
+        "    class Inner:\n"
+        "        pass\n"
+        "\n"
+        "\n"
+        "def factory():\n"
+        "    class Local:\n"
+        "        pass\n"
+        "\n"
+        "    return Local\n",
+        encoding="utf-8",
+    )
+    source_file = SourceFile(path=source_path, language="python")
+    inventory = extract_symbols(source_file)
+    store = RepositoryMetadataStore(tmp_path / "repo.sqlite")
+    store.ensure_repository(root, detected_languages=("python",))
+
+    stored = store.store_inventory(
+        repository_root=root,
+        source_file=source_file,
+        inventory=inventory,
+        content_hash=compute_content_hash(source_path),
+    )
+
+    bundle = store.load_source_file(repository_root=root, path=source_path)
+    assert stored.path.endswith("nested.py")
+    assert [item.name for item in bundle.classes] == ["Outer", "Inner", "Local"]

@@ -285,8 +285,7 @@ def _python_build_module(
             if isinstance(stmt, pyast.ClassDef):
                 nested_class_result = build_class(stmt)
                 nested_classes.append(nested_class_result.symbol)  # type: ignore[arg-type]
-                classes.append(nested_class_result.symbol)  # type: ignore[arg-type]
-                classes.extend(nested_class_result.classes)
+                nested_classes.extend(nested_class_result.classes)
                 functions.extend(nested_class_result.functions)
                 class_calls.extend(nested_class_result.calls)
                 class_inheritance.extend(nested_class_result.inheritance)
@@ -340,8 +339,7 @@ def _python_build_module(
             if isinstance(stmt, pyast.ClassDef):
                 nested_class_result = build_class(stmt)
                 nested_classes.append(nested_class_result.symbol)  # type: ignore[arg-type]
-                classes.append(nested_class_result.symbol)  # type: ignore[arg-type]
-                classes.extend(nested_class_result.classes)
+                nested_classes.extend(nested_class_result.classes)
                 functions.extend(nested_class_result.functions)
                 function_calls.extend(nested_class_result.calls)
                 function_inheritance.extend(nested_class_result.inheritance)

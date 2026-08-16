@@ -43,3 +43,41 @@ def test_extract_python_symbols_and_relations():
     assert any(rel.parentClassName == "Base" for rel in inventory.inheritanceRelations)
     assert any(rel.callerSymbolId == inventory.functions[0].id for rel in inventory.callRelations)
 
+
+NESTED_CLASS_SAMPLE = '''class Outer:
+    class Inner:
+        pass
+
+
+def factory():
+    class Local:
+        pass
+
+    return Local
+
+
+class WithNestedFactory:
+    def make(self):
+        class DeeplyNested:
+            pass
+
+        return DeeplyNested
+'''
+
+
+def test_nested_classes_are_not_duplicated_in_the_flattened_inventory():
+    """Regression test: a class nested inside another class, inside a
+    function, or inside a method used to be counted twice (once via a
+    direct append to the shared `classes` list inside `build_class`/
+    `build_function`, and again via the caller re-adding it from the
+    returned result), producing two Symbol objects with the identical
+    `id` - which crashed `repository_metadata`'s `symbols.id` UNIQUE
+    constraint on insert. See specs/020-cli-packaging follow-up fix."""
+    inventory = extract_symbols(SourceFile(path=Path("nested.py"), language="python", content=NESTED_CLASS_SAMPLE))
+
+    names = [item.name for item in inventory.classes]
+    assert names == ["Outer", "Inner", "Local", "WithNestedFactory", "DeeplyNested"]
+
+    ids = [item.id for item in inventory.classes]
+    assert len(ids) == len(set(ids)), f"duplicate class ids in flattened inventory: {ids}"
+
