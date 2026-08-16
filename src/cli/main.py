@@ -9,18 +9,18 @@ from repo_scanner.models import RepositoryScanRequest
 from repo_scanner.output import serialize_scan_result
 from repo_scanner.scanner import scan_repository
 
-from . import config as config_module
-from .config_command import run_config
-from .errors import (
+from cli import config as config_module
+from cli.config_command import run_config
+from cli.errors import (
     IndexNotFoundError,
     LocalModelUnavailableError,
     RepositoryNotFoundError,
     ServerBindError,
     report_and_exit,
 )
-from .index_command import run_index
-from .serve_command import run_serve
-from .server import start_local_server
+from cli.index_command import run_index
+from cli.serve_command import run_serve
+from cli.server import start_local_server
 
 app = typer.Typer(add_completion=False, help="Turn a local code repository into a browsable documentation wiki.")
 
