@@ -37,7 +37,7 @@ this file" or "just these symbols" as an alternative to "the whole repository."
 
 ## System layers
 
-Every package under `src/` belongs to one of five layers. Packages within a layer
+Every package under `src/` belongs to one of six layers. Packages within a layer
 don't depend on each other; dependencies only flow downward (a later layer depends on
 earlier ones, never the reverse) — see `docs/diagrams/class-diagram.md` for the
 cross-package relationships this produces.
