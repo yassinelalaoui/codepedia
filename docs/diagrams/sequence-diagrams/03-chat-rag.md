@@ -35,6 +35,6 @@ sequenceDiagram
         end
         ChatSession-->>ChatApiApp: ChatMessage
         ChatApiApp-->>Reader: AskQuestionResponse (answer, citedSymbolIds, citedFilePaths)
-        Reader->>Reader: render answer; each citation resolved\nto a clickable wiki page link
+        Reader->>Reader: render answer, each citation resolved\nto a clickable wiki page link
     end
 ```

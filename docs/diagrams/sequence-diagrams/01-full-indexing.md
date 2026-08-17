@@ -26,7 +26,7 @@ sequenceDiagram
     cli->>LocalLLMEngine: checkAvailability()
     cli->>EmbeddingEngine: checkAvailability()
     alt either unavailable
-        cli-->>Operator: actionable error (stop; no scanning/parsing/AI work done)
+        cli-->>Operator: actionable error (stop, no scanning/parsing/AI work done)
     end
 
     cli->>scan_repository: scan_repository(request)
@@ -45,7 +45,7 @@ sequenceDiagram
     CodeSummaryPipeline->>LocalLLMEngine: checkAvailability()
     alt local model unavailable
         LocalLLMEngine-->>CodeSummaryPipeline: unavailable
-        CodeSummaryPipeline-->>cli: raise LocalLLMUnavailableError (stop; no cloud fallback)
+        CodeSummaryPipeline-->>cli: raise LocalLLMUnavailableError (stop, no cloud fallback)
     else model ready
         loop for each in-scope symbol
             CodeSummaryPipeline->>DependencyGraph: dependents(), imports (context)
@@ -65,5 +65,5 @@ sequenceDiagram
     end
 
     cli->>cli: staging directory swapped in\n(prior successful state, if any, replaced atomically)
-    cli-->>Operator: local URL printed; wiki now served
+    cli-->>Operator: local URL printed, wiki now served
 ```

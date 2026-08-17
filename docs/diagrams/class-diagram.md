@@ -37,13 +37,13 @@ classDiagram
         class ModuleSymbol
         class ClassSymbol
         class FunctionSymbol
-        Symbol <|-- ModuleSymbol
-        Symbol <|-- ClassSymbol
-        Symbol <|-- FunctionSymbol
-        FileSymbolInventory *-- Symbol
     }
+    Symbol <|-- ModuleSymbol
+    Symbol <|-- ClassSymbol
+    Symbol <|-- FunctionSymbol
+    FileSymbolInventory *-- Symbol
 
-    namespace DependencyGraph {
+    namespace DependencyGraphPackage {
         class DependencyGraph {
             +dict~str,DependencyNode~ nodes
             +ingest_inventory(inventory)
@@ -61,9 +61,9 @@ classDiagram
             +str targetId
             +str type
         }
-        DependencyGraph *-- DependencyNode
-        DependencyGraph *-- DependencyEdge
     }
+    DependencyGraph *-- DependencyNode
+    DependencyGraph *-- DependencyEdge
 
     namespace RepositoryMetadata {
         class RepositoryMetadataStore {
@@ -80,9 +80,9 @@ classDiagram
             +str id
             +str rootPath
         }
-        RepositoryMetadataStore ..> RepositoryBundle : loads
-        RepositoryBundle *-- Repository
     }
+    RepositoryMetadataStore ..> RepositoryBundle : loads
+    RepositoryBundle *-- Repository
 
     namespace VectorIndexAndEmbeddings {
         class EmbeddingEngine {
@@ -99,9 +99,9 @@ classDiagram
             +tuple~float~ embedding
             +str sourceSymbolId
         }
-        VectorIndex *-- CodeChunk
-        VectorIndex ..> EmbeddingEngine : embeds query text
     }
+    VectorIndex *-- CodeChunk
+    VectorIndex ..> EmbeddingEngine : embeds query text
 
     namespace LocalLLM {
         class LocalLLMEngine {
@@ -110,7 +110,7 @@ classDiagram
         }
     }
 
-    namespace CodeSummaryPipeline {
+    namespace CodeSummaryPipelinePackage {
         class CodeSummaryPipeline {
             +summarizeRepository(root, incremental, changed_paths) list~SummaryResult~
             +isReady() bool
@@ -119,8 +119,8 @@ classDiagram
             +str symbolId
             +str generatedSummary
         }
-        CodeSummaryPipeline ..> SummaryResult : produces
     }
+    CodeSummaryPipeline ..> SummaryResult : produces
 
     namespace ChatRAG {
         class ChatSession {
@@ -133,10 +133,10 @@ classDiagram
             +str content
             +tuple~str~ citedSymbolIds
         }
-        ChatSession *-- ChatMessage
     }
+    ChatSession *-- ChatMessage
 
-    namespace DocGenerator {
+    namespace DocGeneratorPackage {
         class DocGenerator {
             +generateRepositoryDocumentation(root, incremental, changedPaths, changedSymbolIds, changedDependencyEdgeIds) DocumentationSet
         }
@@ -148,15 +148,15 @@ classDiagram
         class DocumentationSet {
             +tuple~DocPage~ pages
         }
-        DocGenerator ..> DocumentationSet : produces
-        DocumentationSet *-- DocPage
     }
+    DocGenerator ..> DocumentationSet : produces
+    DocumentationSet *-- DocPage
 
     namespace WebServer {
         class ChatApiApp {
             <<FastAPI app, chat_api/app.py>>
             +POST /sessions
-            +POST /sessions/{id}/messages
+            +POST /sessions/:id/messages
             +serves the wiki as static files
         }
     }
@@ -174,9 +174,9 @@ classDiagram
             +str relative_path
             +ChangeType change_type
         }
-        RepositoryWatcher ..> ChangeBatch : on_batch(batch)
-        ChangeBatch *-- FileChange
     }
+    RepositoryWatcher ..> ChangeBatch : on_batch(batch)
+    ChangeBatch *-- FileChange
 
     namespace ReindexPipeline {
         class IncrementalReindexPipeline {
@@ -190,8 +190,8 @@ classDiagram
             +tuple~str~ failedPaths
             +str summaryFailure
         }
-        IncrementalReindexPipeline ..> ReindexOutcome : returns
     }
+    IncrementalReindexPipeline ..> ReindexOutcome : returns
 
     namespace Cli {
         class CLIConfiguration {
@@ -217,12 +217,12 @@ classDiagram
             <<function, config_command.py>>
             +run_config(llm_model, embedding_model, show)
         }
-        run_index ..> CLIConfiguration : reads
-        run_serve ..> CLIConfiguration : reads
-        run_config ..> CLIConfiguration : reads/writes
-        run_index ..> IndexRunResult : returns
-        run_serve ..> IndexRunResult : returns
     }
+    run_index ..> CLIConfiguration : reads
+    run_serve ..> CLIConfiguration : reads
+    run_config ..> CLIConfiguration : reads/writes
+    run_index ..> IndexRunResult : returns
+    run_serve ..> IndexRunResult : returns
 
     %% Cross-package data flow
     CLIConfiguration ..> LocalLLMEngine : modelName/endpointUrl
