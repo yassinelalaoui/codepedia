@@ -30,7 +30,9 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     llm_engine = create_local_llm_engine(
         config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
     )
-    embedding_engine = create_embedding_engine(config.embeddingModel, config.embeddingEndpointUrl)
+    embedding_engine = create_embedding_engine(
+        config.embeddingModel, config.embeddingEndpointUrl, embed_timeout=config.embeddingGenerateTimeout
+    )
     check_ai_dependencies(llm_engine, embedding_engine)
 
     state_dir = paths.repo_state_dir(root)

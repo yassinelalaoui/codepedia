@@ -122,6 +122,11 @@ def config_command(
     ),
     embedding_model: Optional[str] = typer.Option(None, "--embedding-model", help="Local embedding model to use."),
     embedding_endpoint: Optional[str] = typer.Option(None, "--embedding-endpoint", help="Local embedding endpoint URL."),
+    embedding_generate_timeout: Optional[float] = typer.Option(
+        None,
+        "--embedding-generate-timeout",
+        help="Seconds to wait for the local embedding runtime to finish embedding before failing (default: 60).",
+    ),
     show: bool = typer.Option(False, "--show", help="Show the current configuration without changing it."),
 ) -> None:
     """View or change which local LLM/embedding model `index`/`serve` use."""
@@ -132,6 +137,7 @@ def config_command(
             llm_generate_timeout=llm_generate_timeout,
             embedding_model=embedding_model,
             embedding_endpoint=embedding_endpoint,
+            embedding_generate_timeout=embedding_generate_timeout,
             show=show,
         )
     except ValueError as exc:

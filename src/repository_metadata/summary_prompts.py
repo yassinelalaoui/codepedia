@@ -16,6 +16,10 @@ def build_module_summary_prompt(context: SummaryContext) -> PromptEnvelope:
     return _build_summary_prompt(context, symbol_label="module")
 
 
+def build_class_summary_prompt(context: SummaryContext) -> PromptEnvelope:
+    return _build_summary_prompt(context, symbol_label="class")
+
+
 def build_function_summary_prompt(context: SummaryContext) -> PromptEnvelope:
     return _build_summary_prompt(context, symbol_label="function")
 

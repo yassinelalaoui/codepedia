@@ -16,6 +16,7 @@ def run_config(
     llm_generate_timeout: Optional[float],
     embedding_model: Optional[str],
     embedding_endpoint: Optional[str],
+    embedding_generate_timeout: Optional[float],
     show: bool,
 ) -> None:
     """View or change `CLIConfiguration` (research.md §5, data-model.md's
@@ -25,7 +26,14 @@ def run_config(
 
     has_changes = not show and any(
         value is not None
-        for value in (llm_model, llm_endpoint, llm_generate_timeout, embedding_model, embedding_endpoint)
+        for value in (
+            llm_model,
+            llm_endpoint,
+            llm_generate_timeout,
+            embedding_model,
+            embedding_endpoint,
+            embedding_generate_timeout,
+        )
     )
     if not has_changes:
         _print_status(current)
@@ -37,6 +45,9 @@ def run_config(
         llmGenerateTimeout=llm_generate_timeout if llm_generate_timeout is not None else current.llmGenerateTimeout,
         embeddingModel=embedding_model if embedding_model is not None else current.embeddingModel,
         embeddingEndpointUrl=embedding_endpoint if embedding_endpoint is not None else current.embeddingEndpointUrl,
+        embeddingGenerateTimeout=(
+            embedding_generate_timeout if embedding_generate_timeout is not None else current.embeddingGenerateTimeout
+        ),
     )
     save_config(updated)  # raises ValueError before writing if an endpoint is invalid
     typer.echo("Configuration saved.")
@@ -53,7 +64,9 @@ def _print_status(config: CLIConfiguration) -> None:
     llm_engine = create_local_llm_engine(
         config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
     )
-    embedding_engine = create_embedding_engine(config.embeddingModel, config.embeddingEndpointUrl)
+    embedding_engine = create_embedding_engine(
+        config.embeddingModel, config.embeddingEndpointUrl, embed_timeout=config.embeddingGenerateTimeout
+    )
 
     llm_status = llm_engine.checkAvailability()
     embedding_status = embedding_engine.checkAvailability()
@@ -67,6 +80,7 @@ def _print_status(config: CLIConfiguration) -> None:
         f"Embedding model: {config.embeddingModel} ({config.embeddingEndpointUrl}) - "
         f"{'available' if embedding_status.available else 'unavailable'}: {embedding_status.message}"
     )
+    typer.echo(f"Embedding generation timeout: {config.embeddingGenerateTimeout:g}s")
 
     _print_other_installed_models("LLM", llm_engine, config.llmModel)
     _print_other_installed_models("embedding", embedding_engine, config.embeddingModel)

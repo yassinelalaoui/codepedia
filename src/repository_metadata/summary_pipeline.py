@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Callable, Iterable, Sequence
 
 from dependency_graph import DependencyGraph
 from local_llm import LocalLLMEngine
@@ -18,7 +18,13 @@ from .summary_context import (
     build_summary_job,
     context_hash,
 )
-from .summary_prompts import build_function_summary_prompt, build_module_summary_prompt
+from .summary_prompts import build_class_summary_prompt, build_function_summary_prompt, build_module_summary_prompt
+
+
+# Called as (completed_count, total_count, symbol) right before each symbol's
+# LLM summarization call starts, so a caller (e.g. the CLI) can print
+# progress during what's otherwise a long, silent, one-call-per-symbol loop.
+SummaryProgressCallback = Callable[[int, int, Symbol], None]
 
 
 class SummaryPipelineError(RuntimeError):
@@ -51,6 +57,7 @@ class CodeSummaryPipeline:
         incremental: bool = True,
         changed_paths: Iterable[str | Path] = (),
         changed_symbol_ids: Iterable[str] = (),
+        on_progress: SummaryProgressCallback | None = None,
     ) -> list[SummaryResult]:
         self._ensure_ready()
         repository_bundle = self.metadataStore.load_repository(repository_root)
@@ -60,7 +67,9 @@ class CodeSummaryPipeline:
             changed_symbol_ids=changed_symbol_ids,
             incremental=incremental,
         )
-        return self._summarize_bundle_list(repository_root, repository_bundle.files, impacted=impacted, incremental=incremental)
+        return self._summarize_bundle_list(
+            repository_root, repository_bundle.files, impacted=impacted, incremental=incremental, on_progress=on_progress
+        )
 
     def summarizeSourceFile(
         self,
@@ -68,6 +77,7 @@ class CodeSummaryPipeline:
         path: str | Path,
         *,
         incremental: bool = True,
+        on_progress: SummaryProgressCallback | None = None,
     ) -> list[SummaryResult]:
         self._ensure_ready()
         bundle = self.metadataStore.load_source_file(repository_root=repository_root, path=path)
@@ -77,12 +87,16 @@ class CodeSummaryPipeline:
             changedSymbolIds=tuple(symbol.id for symbol in bundle_symbols),
             dependentSymbolIds=tuple(sorted({dependent_id for symbol in bundle_symbols for dependent_id in self._dependent_symbol_ids(symbol.id)})),
         )
-        return self._summarize_bundle_list(repository_root, (bundle,), impacted=impacted, incremental=incremental)
+        return self._summarize_bundle_list(
+            repository_root, (bundle,), impacted=impacted, incremental=incremental, on_progress=on_progress
+        )
 
     def summarizeImpactedSymbols(
         self,
         repository_root: str | Path,
         symbol_ids: Iterable[str],
+        *,
+        on_progress: SummaryProgressCallback | None = None,
     ) -> list[SummaryResult]:
         self._ensure_ready()
         repository_bundle = self.metadataStore.load_repository(repository_root)
@@ -95,7 +109,9 @@ class CodeSummaryPipeline:
             changedSymbolIds=tuple(sorted(impacted_ids)),
             dependentSymbolIds=tuple(sorted(dependent_ids)),
         )
-        return self._summarize_bundle_list(repository_root, repository_bundle.files, impacted=impacted, incremental=True)
+        return self._summarize_bundle_list(
+            repository_root, repository_bundle.files, impacted=impacted, incremental=True, on_progress=on_progress
+        )
 
     def _ensure_ready(self) -> None:
         status = self.llmEngine.checkAvailability()
@@ -112,26 +128,39 @@ class CodeSummaryPipeline:
         *,
         impacted: ImpactedSymbolSet | None,
         incremental: bool,
+        on_progress: SummaryProgressCallback | None = None,
     ) -> list[SummaryResult]:
         impacted_ids = set(impacted.all_symbol_ids()) if impacted is not None else None
-        results: list[SummaryResult] = []
+        pending: list[tuple[SourceFileBundle, Symbol]] = []
         for bundle in bundles:
-            source_text = self._read_source_text(repository_root, bundle.file.path)
             for symbol in self._summarizable_symbols(bundle):
                 if impacted_ids is not None and symbol.id not in impacted_ids:
                     continue
-                result = self._summarize_symbol(
-                    repository_root,
-                    bundle,
-                    symbol,
-                    source_text=source_text,
-                    incremental=incremental,
-                )
-                results.append(result)
+                pending.append((bundle, symbol))
+
+        total = len(pending)
+        results: list[SummaryResult] = []
+        source_text_by_file_id: dict[str, str] = {}
+        for index, (bundle, symbol) in enumerate(pending, start=1):
+            source_text = source_text_by_file_id.get(bundle.file.id)
+            if source_text is None:
+                source_text = self._read_source_text(repository_root, bundle.file.path)
+                source_text_by_file_id[bundle.file.id] = source_text
+            if on_progress is not None:
+                on_progress(index, total, symbol)
+            result = self._summarize_symbol(
+                repository_root,
+                bundle,
+                symbol,
+                source_text=source_text,
+                incremental=incremental,
+            )
+            results.append(result)
         return results
 
     def _summarizable_symbols(self, bundle: SourceFileBundle) -> list[Symbol]:
         symbols: list[Symbol] = [bundle.module]
+        symbols.extend(bundle.classes)
         nested_function_ids = self._nested_function_ids(bundle)
         for function_symbol in bundle.functions:
             if function_symbol.id in nested_function_ids:
@@ -184,6 +213,8 @@ class CodeSummaryPipeline:
     def _build_prompt(self, context: SummaryContext):
         if context.symbolKind == "module":
             return build_module_summary_prompt(context)
+        if context.symbolKind == "class":
+            return build_class_summary_prompt(context)
         return build_function_summary_prompt(context)
 
     def _read_source_text(self, repository_root: str | Path, relative_path: str | Path) -> str:

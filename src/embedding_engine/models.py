@@ -8,6 +8,14 @@ from urllib.parse import urlparse
 
 DEFAULT_ENDPOINT_URL = "http://localhost:11434"
 DEFAULT_MODEL_NAME = "nomic-embed-text"
+
+# A real /api/embed call is much slower than a version/tags probe - it may
+# need to load or swap in the embedding model first (e.g. right after a
+# summarization pass evicts it for the LLM), which alone can exceed a few
+# seconds. It gets its own, more generous budget rather than sharing the
+# fast probe `timeout` (mirrors local_llm's timeout/generateTimeout split).
+DEFAULT_EMBED_TIMEOUT = 60.0
+
 Vector = tuple[float, ...]
 
 

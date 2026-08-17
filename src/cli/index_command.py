@@ -17,7 +17,7 @@ from parser_engine import SourceFile, extract_symbols
 from reindex_pipeline.embeddings import update_embeddings
 from repo_scanner.scanner import scan_repository
 from repo_watcher import RepositoryWatcher
-from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, compute_content_hash
+from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, Symbol, compute_content_hash
 from repository_metadata.sqlite_store import stable_repository_id
 from vector_index import VectorIndex
 
@@ -86,6 +86,10 @@ class IndexRunResult:
     watcher: Optional[RepositoryWatcher] = None
 
 
+def _echo_summary_progress(completed: int, total: int, symbol: Symbol) -> None:
+    typer.echo(f"  [{completed}/{total}] {symbol.kind} {symbol.name}")
+
+
 def validate_repo_path(repo_path: Path) -> Path:
     typer.echo(Stage.VALIDATING.value)
     resolved = Path(repo_path).expanduser().resolve()
@@ -112,7 +116,9 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     llm_engine = create_local_llm_engine(
         config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
     )
-    embedding_engine = create_embedding_engine(config.embeddingModel, config.embeddingEndpointUrl)
+    embedding_engine = create_embedding_engine(
+        config.embeddingModel, config.embeddingEndpointUrl, embed_timeout=config.embeddingGenerateTimeout
+    )
     check_ai_dependencies(llm_engine, embedding_engine)
 
     final_state_dir = paths.repo_state_dir(root)
@@ -191,7 +197,7 @@ def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: EmbeddingEng
 
     typer.echo(Stage.SUMMARIZING.value)
     summary_pipeline = CodeSummaryPipeline(metadataStore=metadata_store, dependencyGraph=graph, llmEngine=llm_engine)
-    summary_pipeline.summarizeRepository(root, incremental=False)
+    summary_pipeline.summarizeRepository(root, incremental=False, on_progress=_echo_summary_progress)
 
     typer.echo(Stage.GENERATING_DOCS_CONTENT.value)
     doc_generator.generateRepositoryDocumentation(root, incremental=False)

@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True, slots=True)
+# No slots=True: combined with frozen=True, it makes the dataclass decorator
+# rebuild this class as a new object, but the generated __setattr__ closes
+# over the pre-rebuild one. Any later attribute set on a subclass instance -
+# including Python's own exception machinery setting __traceback__/__cause__
+# while chaining/re-raising - then hits `super(old_class, self)` and raises
+# an unrelated TypeError instead of letting the real error surface.
+@dataclass(frozen=True)
 class LocalLLMError(RuntimeError):
     kind: str
     message: str

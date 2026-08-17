@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 
+from embedding_engine.models import DEFAULT_EMBED_TIMEOUT as DEFAULT_EMBEDDING_GENERATE_TIMEOUT
 from embedding_engine.models import DEFAULT_ENDPOINT_URL as DEFAULT_EMBEDDING_ENDPOINT_URL
 from embedding_engine.models import DEFAULT_MODEL_NAME as DEFAULT_EMBEDDING_MODEL
 from embedding_engine.models import normalize_endpoint_url as normalize_embedding_endpoint_url
@@ -25,6 +26,7 @@ class CLIConfiguration:
     llmGenerateTimeout: float = DEFAULT_LLM_GENERATE_TIMEOUT
     embeddingModel: str = DEFAULT_EMBEDDING_MODEL
     embeddingEndpointUrl: str = DEFAULT_EMBEDDING_ENDPOINT_URL
+    embeddingGenerateTimeout: float = DEFAULT_EMBEDDING_GENERATE_TIMEOUT
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -42,6 +44,7 @@ def load_config() -> CLIConfiguration:
         llmGenerateTimeout=data.get("llmGenerateTimeout", defaults.llmGenerateTimeout),
         embeddingModel=data.get("embeddingModel", defaults.embeddingModel),
         embeddingEndpointUrl=data.get("embeddingEndpointUrl", defaults.embeddingEndpointUrl),
+        embeddingGenerateTimeout=data.get("embeddingGenerateTimeout", defaults.embeddingGenerateTimeout),
     )
 
 
@@ -51,12 +54,15 @@ def save_config(config: CLIConfiguration) -> None:
     # re-implemented) or the generation timeout isn't a positive number.
     if config.llmGenerateTimeout <= 0:
         raise ValueError("llmGenerateTimeout must be a positive number of seconds")
+    if config.embeddingGenerateTimeout <= 0:
+        raise ValueError("embeddingGenerateTimeout must be a positive number of seconds")
     normalized = CLIConfiguration(
         llmModel=config.llmModel,
         llmEndpointUrl=normalize_llm_endpoint_url(config.llmEndpointUrl),
         llmGenerateTimeout=config.llmGenerateTimeout,
         embeddingModel=config.embeddingModel,
         embeddingEndpointUrl=normalize_embedding_endpoint_url(config.embeddingEndpointUrl),
+        embeddingGenerateTimeout=config.embeddingGenerateTimeout,
     )
     path = paths.config_path()
     path.parent.mkdir(parents=True, exist_ok=True)

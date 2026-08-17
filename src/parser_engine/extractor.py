@@ -456,6 +456,13 @@ def _extract_brace_inventory(*, source_file: SourceFile, text: str, language: st
             functions.append(symbol)
             item_to_symbol[index] = symbol
     _attach_brace_relationships(items, item_to_symbol)
+    # _attach_brace_relationships replaces each item.symbol with a new,
+    # relationship-populated object (ClassSymbol/FunctionSymbol are frozen,
+    # so it can't update them in place) - classes/functions collected above
+    # still hold the pre-attachment objects (empty `methods`), so rebuild
+    # both from the now-final item.symbol values.
+    classes = [item.symbol for item in items if isinstance(item.symbol, ClassSymbol)]
+    functions = [item.symbol for item in items if isinstance(item.symbol, FunctionSymbol)]
     for item in items:
         if isinstance(item.symbol, ClassSymbol) and item.parent_class:
             inheritance.append(

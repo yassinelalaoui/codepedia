@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 
 from .errors import EmbeddingFailedError, InvalidResponseError, ModelMissingError, ServiceUnavailableError
 from .models import (
+    DEFAULT_EMBED_TIMEOUT,
     EmbeddingAvailabilityStatus,
     EmbeddingRequest,
     EmbeddingResult,
@@ -23,11 +24,17 @@ def _build_url(endpoint_url: str, path: str) -> str:
 class LocalEmbeddingTransport:
     endpointUrl: str
     timeout: float = 5.0
+    # Real embedding is a much slower call than the version/tags probes
+    # `timeout` governs (may need to load or swap the model in first) - it
+    # gets its own, more generous budget rather than sharing `timeout`.
+    embedTimeout: float = DEFAULT_EMBED_TIMEOUT
 
     def __post_init__(self) -> None:
         self.endpointUrl = normalize_endpoint_url(self.endpointUrl)
 
-    def _request_json(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _request_json(
+        self, method: str, path: str, payload: dict[str, Any] | None = None, *, timeout: float | None = None
+    ) -> dict[str, Any]:
         body = None
         headers = {"Accept": "application/json"}
         if payload is not None:
@@ -35,7 +42,7 @@ class LocalEmbeddingTransport:
             headers["Content-Type"] = "application/json"
         req = request.Request(_build_url(self.endpointUrl, path), data=body, headers=headers, method=method)
         try:
-            with request.urlopen(req, timeout=self.timeout) as response:
+            with request.urlopen(req, timeout=timeout if timeout is not None else self.timeout) as response:
                 raw = response.read()
                 if not raw:
                     return {}
@@ -46,7 +53,16 @@ class LocalEmbeddingTransport:
         except error.HTTPError as exc:
             detail = self._read_error_body(exc)
             raise InvalidResponseError(detail, endpointUrl=self.endpointUrl, modelName=str(payload.get("model", "")) if payload else "") from exc
-        except (error.URLError, TimeoutError) as exc:
+        except TimeoutError as exc:
+            used_timeout = timeout if timeout is not None else self.timeout
+            raise ServiceUnavailableError(
+                f"Local embedding runtime at {self.endpointUrl} did not respond within {used_timeout:g}s. "
+                "The service is reachable but this may still be loading or swapping in the embedding model - "
+                "wait for it to finish loading and try again, or increase the embedding timeout.",
+                endpointUrl=self.endpointUrl,
+                modelName=str(payload.get("model", "")) if payload else "",
+            ) from exc
+        except error.URLError as exc:
             raise ServiceUnavailableError(
                 "The local embedding runtime is unavailable. Start the local service and try again.",
                 endpointUrl=self.endpointUrl,
@@ -145,7 +161,7 @@ class LocalEmbeddingTransport:
     def embed(self, request_data: EmbeddingRequest) -> EmbeddingResult:
         payload = request_data.to_prompt_payload()
         try:
-            response = self._request_json("POST", "/api/embed", payload)
+            response = self._request_json("POST", "/api/embed", payload, timeout=self.embedTimeout)
         except InvalidResponseError as exc:
             raise InvalidResponseError(
                 "The local embedding runtime returned an invalid embedding response.",

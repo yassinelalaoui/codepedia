@@ -10,6 +10,7 @@ from .errors import (
     ServiceUnavailableError,
 )
 from .models import (
+    DEFAULT_EMBED_TIMEOUT,
     DEFAULT_ENDPOINT_URL,
     DEFAULT_MODEL_NAME,
     EmbeddingAvailabilityStatus,
@@ -35,12 +36,13 @@ class EmbeddingEngine:
     modelName: str = DEFAULT_MODEL_NAME
     endpointUrl: str = DEFAULT_ENDPOINT_URL
     timeout: float = 5.0
+    embedTimeout: float = DEFAULT_EMBED_TIMEOUT
     _transport: LocalEmbeddingTransport = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.modelName = normalize_model_name(self.modelName)
         self.endpointUrl = normalize_endpoint_url(self.endpointUrl)
-        self._transport = LocalEmbeddingTransport(self.endpointUrl, timeout=self.timeout)
+        self._transport = LocalEmbeddingTransport(self.endpointUrl, timeout=self.timeout, embedTimeout=self.embedTimeout)
 
     def checkAvailability(self) -> EmbeddingAvailabilityStatus:
         return self._transport.availability(self.modelName)
@@ -91,5 +93,6 @@ def create_embedding_engine(
     endpoint_url: str = DEFAULT_ENDPOINT_URL,
     *,
     timeout: float = 5.0,
+    embed_timeout: float = DEFAULT_EMBED_TIMEOUT,
 ) -> EmbeddingEngine:
-    return EmbeddingEngine(modelName=model_name, endpointUrl=endpoint_url, timeout=timeout)
+    return EmbeddingEngine(modelName=model_name, endpointUrl=endpoint_url, timeout=timeout, embedTimeout=embed_timeout)

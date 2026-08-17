@@ -90,7 +90,7 @@ def test_summary_pipeline_generates_and_persists_summaries(tmp_path):
     reopened = store.load_repository(root)
 
     assert pipeline.isReady() is True
-    assert len(results) == 7
+    assert len(results) == 9
     assert "inner" not in {result.symbolName for result in results}
     assert all(result.generatedSummary.endswith("summary") for result in results)
 
@@ -101,9 +101,11 @@ def test_summary_pipeline_generates_and_persists_summaries(tmp_path):
     assert alpha_bundle.module.generatedSummary == "alpha summary"
     assert alpha_bundle.functions[0].generatedSummary == "alpha_entry summary"
     assert beta_bundle.module.generatedSummary == "beta summary"
+    assert beta_bundle.classes[0].generatedSummary == "Child summary"
     assert beta_bundle.functions[0].generatedSummary == "run summary"
     assert beta_bundle.functions[1].generatedSummary == "beta_helper summary"
     assert gamma_bundle.module.generatedSummary == "gamma summary"
+    assert gamma_bundle.classes[0].generatedSummary == "BaseThing summary"
     assert gamma_bundle.functions[0].generatedSummary == "shared_value summary"
     assert any("Imports:" in prompt and "beta_helper" in prompt for prompt in engine.prompts)
     assert any("Direct callers:" in prompt and "alpha_entry" in prompt for prompt in engine.prompts)
