@@ -6,7 +6,7 @@ participant here is a whole subsystem (not a class); see the per-function diagra
 this folder for the detail behind each block.
 
 > Maintenance: update this diagram whenever a major phase of the system's lifecycle
-> changes. See `README.md` in this folder.
+> changes.
 
 ```mermaid
 sequenceDiagram

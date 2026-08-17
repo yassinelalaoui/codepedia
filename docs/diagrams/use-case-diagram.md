@@ -4,12 +4,10 @@
 own automation) interacts with the tool.
 
 > Maintenance: update this diagram whenever a new user-facing capability is added.
-> See `README.md` in this folder.
-
-Mermaid has no native UML use-case diagram type, so this is a `flowchart` that mimics
-one: actor nodes linked to oval "use case" nodes inside a system-boundary `subgraph`,
-with `-->|include|` / `-->|extend|` labeled arrows standing in for UML's
-`<<include>>` / `<<extend>>` relationships.
+> Mermaid has no native UML use-case diagram type, so this is a `flowchart` that mimics
+> one: actor nodes linked to oval "use case" nodes inside a system-boundary `subgraph`,
+> with `-->|include|` / `-->|extend|` labeled arrows standing in for UML's
+> `<<include>>` / `<<extend>>` relationships.
 
 ```mermaid
 flowchart LR

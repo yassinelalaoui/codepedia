@@ -6,7 +6,7 @@ flows from a raw repository to a browsable, self-updating wiki are shown — not
 field or method (see each package's own module docstrings/tests for full detail).
 
 > Maintenance: update this diagram whenever a class is added, removed, or its
-> cross-package relationships change. See `README.md` in this folder.
+> cross-package relationships change.
 
 ```mermaid
 classDiagram
