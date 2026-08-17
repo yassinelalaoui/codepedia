@@ -17,6 +17,7 @@ flowchart LR
     watcherActor(["🤖 Repository Watcher\n(background automation)"])
 
     subgraph sys["Local Code Documentation Tool"]
+        ucScan(["repo-scanner scan\n(file inventory only, no AI needed)"])
         ucIndex(["repo-scanner index\n(scan, parse, analyze, then serve)"])
         ucSummarize(["Generate symbol summaries\nvia the local LLM"])
         ucEmbed(["Build the searchable\nvector index"])
@@ -34,6 +35,7 @@ flowchart LR
         ucFailClear(["Fail clearly instead of using\na remote/cloud service"])
     end
 
+    operator --> ucScan
     operator --> ucIndex
     ucIndex -->|include| ucSummarize
     ucIndex -->|include| ucEmbed

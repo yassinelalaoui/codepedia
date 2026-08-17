@@ -16,7 +16,7 @@ sequenceDiagram
     Reader->>ChatApiApp: POST /sessions
     ChatApiApp-->>Reader: sessionId
 
-    Reader->>ChatApiApp: POST /sessions/{id}/messages { question }
+    Reader->>ChatApiApp: POST /sessions/{session_id}/messages { question }
     ChatApiApp->>ChatSession: ask(question)
     ChatSession->>ChatSession: ensure local embedding + LLM are available
     alt either is unavailable

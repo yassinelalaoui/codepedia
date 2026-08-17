@@ -156,7 +156,7 @@ classDiagram
         class ChatApiApp {
             <<FastAPI app, chat_api/app.py>>
             +POST /sessions
-            +POST /sessions/:id/messages
+            +POST /sessions/:session_id/messages
             +serves the wiki as static files
         }
     }
@@ -215,7 +215,11 @@ classDiagram
         }
         class run_config {
             <<function, config_command.py>>
-            +run_config(llm_model, embedding_model, show)
+            +run_config(llm_model, llm_endpoint, llm_generate_timeout, embedding_model, embedding_endpoint, embedding_generate_timeout, show)
+        }
+        class scan {
+            <<function, main.py>>
+            +scan(repo_path) ScanResult
         }
     }
     run_index ..> CLIConfiguration : reads
@@ -223,6 +227,7 @@ classDiagram
     run_config ..> CLIConfiguration : reads/writes
     run_index ..> IndexRunResult : returns
     run_serve ..> IndexRunResult : returns
+    scan ..> ScanResult : scan_repository()
 
     %% Cross-package data flow
     CLIConfiguration ..> LocalLLMEngine : modelName/endpointUrl
