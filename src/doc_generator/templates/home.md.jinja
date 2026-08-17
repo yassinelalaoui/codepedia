@@ -16,6 +16,10 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 {% endfor %}
 {% endif %}
 
+{% if class_diagram_link %}
+[View the repository class diagram]({{ class_diagram_link.relativePath }})
+
+{% endif %}
 ## Modules
 
 {% if module_entries %}

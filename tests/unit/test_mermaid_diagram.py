@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dependency_graph import DependencyNode, DiagramExport
 
-from doc_generator.mermaid_diagram import build_mermaid_source
+from doc_generator.class_diagram import ClassDiagramSelection, SelectedClass, SelectedMethod
+from doc_generator.mermaid_diagram import build_class_diagram_mermaid_source, build_mermaid_source
 
 
 def test_build_mermaid_source_handles_zero_edges():
@@ -83,3 +84,71 @@ def test_build_mermaid_source_omits_click_for_unresolved_node():
     assert len(result.clickTargets) == 1
     assert "click n1" not in result.sourceText
     assert "click n0" in result.sourceText
+
+
+def test_build_class_diagram_mermaid_source_renders_classes_and_inheritance():
+    selection = ClassDiagramSelection(
+        includedClasses=(
+            SelectedClass(classId="parent", name="Parent", methods=(SelectedMethod(name="run"),)),
+            SelectedClass(classId="child", name="Child", methods=(SelectedMethod(name="run"), SelectedMethod(name="extra"))),
+        ),
+        inheritanceEdges=(("child", "parent"),),
+        omittedClassCount=0,
+    )
+
+    result = build_class_diagram_mermaid_source(selection)
+
+    assert result.sourceText.startswith("classDiagram")
+    assert 'class c0["Parent"]' in result.sourceText
+    assert 'class c1["Child"]' in result.sourceText
+    assert "+run()" in result.sourceText
+    assert "+extra()" in result.sourceText
+    # Parent must come first: Mermaid's <|-- hollow arrowhead points at the
+    # parent/base class (`Parent <|-- Child` means "Child inherits from
+    # Parent"), matching this repo's own docs/diagrams/class-diagram.md.
+    assert "c0 <|-- c1" in result.sourceText
+    assert result.includedClassIds == ("parent", "child")
+    assert result.omittedClassCount == 0
+    assert "no attribute" not in result.sourceText.lower()
+
+
+def test_build_class_diagram_mermaid_source_renders_class_with_no_methods():
+    selection = ClassDiagramSelection(
+        includedClasses=(SelectedClass(classId="lonely", name="Lonely", methods=()),),
+        inheritanceEdges=(),
+        omittedClassCount=0,
+    )
+
+    result = build_class_diagram_mermaid_source(selection)
+
+    assert 'class c0["Lonely"]' in result.sourceText
+    assert "{" not in result.sourceText
+    assert "}" not in result.sourceText
+
+
+def test_build_class_diagram_mermaid_source_drops_inheritance_edge_to_excluded_class():
+    selection = ClassDiagramSelection(
+        includedClasses=(SelectedClass(classId="child", name="Child", methods=()),),
+        inheritanceEdges=(("child", "excluded-parent"),),
+        omittedClassCount=1,
+    )
+
+    result = build_class_diagram_mermaid_source(selection)
+
+    assert "<|--" not in result.sourceText
+
+
+def test_build_class_diagram_mermaid_source_sanitizes_semicolons():
+    selection = ClassDiagramSelection(
+        includedClasses=(
+            SelectedClass(classId="c1", name="Foo;Bar", methods=(SelectedMethod(name="do;It"),)),
+        ),
+        inheritanceEdges=(),
+        omittedClassCount=0,
+    )
+
+    result = build_class_diagram_mermaid_source(selection)
+
+    assert ";" not in result.sourceText
+    assert 'class c0["Foo,Bar"]' in result.sourceText
+    assert "+do,It()" in result.sourceText

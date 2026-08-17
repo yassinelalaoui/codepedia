@@ -139,6 +139,7 @@ classDiagram
     namespace DocGeneratorPackage {
         class DocGenerator {
             +generateRepositoryDocumentation(root, incremental, changedPaths, changedSymbolIds, changedDependencyEdgeIds) DocumentationSet
+            +generateClassDiagramPage() DocPage
         }
         class DocPage {
             +str id
@@ -148,9 +149,31 @@ classDiagram
         class DocumentationSet {
             +tuple~DocPage~ pages
         }
+        class ClassDiagramSelection {
+            +tuple~SelectedClass~ includedClasses
+            +tuple~tuple~str,str~~ inheritanceEdges
+            +int omittedClassCount
+        }
+        class SelectedClass {
+            +str classId
+            +str name
+            +tuple~SelectedMethod~ methods
+        }
+        class SelectedMethod {
+            +str name
+        }
+        class ClassDiagramSource {
+            +str sourceText
+            +tuple~str~ includedClassIds
+            +int omittedClassCount
+        }
     }
     DocGenerator ..> DocumentationSet : produces
     DocumentationSet *-- DocPage
+    ClassDiagramSelection *-- SelectedClass
+    SelectedClass *-- SelectedMethod
+    DocGenerator ..> ClassDiagramSelection : select_major_classes()
+    ClassDiagramSelection ..> ClassDiagramSource : build_class_diagram_mermaid_source()
 
     namespace WebServer {
         class ChatApiApp {

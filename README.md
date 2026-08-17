@@ -21,8 +21,9 @@ picture and *why* it's built this way.
   context.
 - **Embeds and indexes** code so it can be found by meaning, not just
   keyword.
-- **Renders a browsable wiki**: a home page, one page per module, and
-  clickable dependency diagrams.
+- **Renders a browsable wiki**: a home page, one page per module, clickable
+  dependency diagrams, and a repository-wide class diagram of its
+  structurally major classes.
 - **Answers questions in chat**, grounded in the indexed code, with
   clickable citations back to the wiki.
 - **Watches the repository** in the background and **incrementally

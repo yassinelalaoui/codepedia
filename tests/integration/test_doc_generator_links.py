@@ -41,11 +41,17 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
     generator = _build_generator(tmp_path, root, store, graph)
     doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
 
-    assert len(doc_set.pages) == 7  # 1 home + 3 modules + 3 diagrams
+    assert len(doc_set.pages) == 8  # 1 home + 3 modules + 3 diagrams + 1 class diagram
     home_page = next(page for page in doc_set.pages if page.kind == "home")
     assert "alpha" in home_page.contentMarkdown
     assert "beta" in home_page.contentMarkdown
     assert "gamma" in home_page.contentMarkdown
+    assert "diagrams/class-overview.md" in home_page.contentMarkdown
+
+    class_diagram_page = next(page for page in doc_set.pages if page.kind == "class-diagram")
+    assert "Child" in class_diagram_page.contentMarkdown
+    assert "BaseThing" in class_diagram_page.contentMarkdown
+    assert "<|--" in class_diagram_page.contentMarkdown
 
     alpha_page = next(page for page in doc_set.pages if page.kind == "module" and page.title == "alpha")
     assert "alpha_entry" in alpha_page.contentMarkdown
@@ -107,16 +113,23 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
 
     doc_set = generator.generateRepositoryDocumentation(root, incremental=True, changedPaths=[str(beta_path)])
 
+    # beta.py contains a class (Child), so this change also touches the
+    # repository-wide class diagram, which always refreshes on any qualifying
+    # change (research.md Decision 3) - not just the module page.
     regenerated_kinds = {page.kind for page in doc_set.pages}
-    assert regenerated_kinds == {"module"}
-    assert len(doc_set.pages) == 1
-    assert doc_set.pages[0].title == "beta"
+    assert regenerated_kinds == {"module", "class-diagram"}
+    assert len(doc_set.pages) == 2
+    module_page = next(page for page in doc_set.pages if page.kind == "module")
+    assert module_page.title == "beta"
 
     after_mtimes = {path: path.stat().st_mtime_ns for path in output_root.rglob("*") if path.is_file()}
     changed_paths = {path for path in before_mtimes if before_mtimes[path] != after_mtimes.get(path)}
+    class_diagram_page = next(page for page in doc_set.pages if page.kind == "class-diagram")
     assert changed_paths == {
-        output_root / "modules" / Path(doc_set.pages[0].outputPathMarkdown).name,
-        output_root / "modules" / Path(doc_set.pages[0].outputPathHtml).name,
+        output_root / "modules" / Path(module_page.outputPathMarkdown).name,
+        output_root / "modules" / Path(module_page.outputPathHtml).name,
+        output_root / Path(class_diagram_page.outputPathMarkdown),
+        output_root / Path(class_diagram_page.outputPathHtml),
     }
 
     repository_id = stable_repository_id(root)

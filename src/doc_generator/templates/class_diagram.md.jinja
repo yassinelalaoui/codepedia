@@ -1,0 +1,9 @@
+# Repository Class Diagram
+
+{% if class_diagram_source.omittedClassCount %}
+_Showing the repository's {{ class_diagram_source.includedClassIds | length }} most structurally significant class{{ '' if class_diagram_source.includedClassIds | length == 1 else 'es' }}; {{ class_diagram_source.omittedClassCount }} additional class{{ '' if class_diagram_source.omittedClassCount == 1 else 'es' }} omitted for legibility._
+
+{% endif %}
+```mermaid
+{{ class_diagram_source.sourceText }}
+```

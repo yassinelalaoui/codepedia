@@ -80,7 +80,7 @@ Turns the analyzed/derived knowledge into something a human reads or interacts w
 
 | Package | Responsibility |
 |---|---|
-| `doc_generator` | Render the wiki: a home page, one page per module, dependency-diagram pages; regenerate only the pages a change actually affects. |
+| `doc_generator` | Render the wiki: a home page, one page per module, dependency-diagram pages, and a single repository-wide class diagram (its structurally major classes, capped for legibility); regenerate only the pages a change actually affects. |
 | `chat_api` | The one local process (FastAPI) that serves the generated wiki as static files and exposes the chat session endpoints the browser UI calls. |
 | `frontend/` (`wiki-ui`) | The React UI running in the browser: symbol search, dependency-diagram click-through, chat panel. |
 

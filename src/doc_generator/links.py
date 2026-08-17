@@ -9,6 +9,10 @@ HOME_PAGE_ID = "home"
 HOME_OUTPUT_MARKDOWN = "index.md"
 HOME_OUTPUT_HTML = "index.html"
 
+CLASS_DIAGRAM_PAGE_ID = "diagram:class-overview"
+CLASS_DIAGRAM_OUTPUT_MARKDOWN = "diagrams/class-overview.md"
+CLASS_DIAGRAM_OUTPUT_HTML = "diagrams/class-overview.html"
+
 
 def module_page_id(module_id: str) -> str:
     return f"module:{module_id}"
@@ -16,6 +20,14 @@ def module_page_id(module_id: str) -> str:
 
 def diagram_page_id(module_id: str) -> str:
     return f"diagram:{module_id}"
+
+
+def class_diagram_page_id() -> str:
+    return CLASS_DIAGRAM_PAGE_ID
+
+
+def class_diagram_output_paths() -> tuple[str, str]:
+    return CLASS_DIAGRAM_OUTPUT_MARKDOWN, CLASS_DIAGRAM_OUTPUT_HTML
 
 
 def slugify(name: str) -> str:

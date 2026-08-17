@@ -9,12 +9,13 @@ from repository_metadata.models import RepositoryBundle, SourceFileBundle
 from repository_metadata.sqlite_store import stable_repository_id
 
 from . import links
+from .class_diagram import select_major_classes
 from .diagrams import build_module_diagram
 from .html_render import render_page_html
 from .impact import compute_regeneration_impact
 from .manifest_store import DocPageManifestStore
 from .markdown_render import render_markdown_template
-from .mermaid_diagram import build_mermaid_source
+from .mermaid_diagram import build_class_diagram_mermaid_source, build_mermaid_source
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
 from .search_index import build_search_index
 from .writer import DocumentationWriter
@@ -56,12 +57,24 @@ class DocGenerator:
         self._bundle_by_module_id: dict[str, SourceFileBundle] = {}
         self._bundle_by_file_path: dict[str, SourceFileBundle] = {}
 
-    def generateOverviewPage(self, repository: Repository) -> DocPage:
+    def generateOverviewPage(self, repository: Repository, *, classDiagramPage: DocPage | None = None) -> DocPage:
         bundle = self._ensure_bundle()
         modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
         architecture_summary = self._build_architecture_summary(bundle.files)
 
         page_links: list[PageLink] = []
+        class_diagram_link: PageLink | None = None
+        if classDiagramPage is not None:
+            class_diagram_link = links.build_page_link(
+                from_page_id=links.HOME_PAGE_ID,
+                from_output_path_markdown=links.HOME_OUTPUT_MARKDOWN,
+                to_page_id=classDiagramPage.id,
+                to_output_path_markdown=classDiagramPage.outputPathMarkdown,
+                label="Repository class diagram",
+            )
+            if class_diagram_link:
+                page_links.append(class_diagram_link)
+
         module_entries = []
         for module in modules:
             module_key = module.sourceFileId
@@ -96,6 +109,7 @@ class DocGenerator:
             repository_name=repository_name,
             module_entries=module_entries,
             architecture_summary=architecture_summary,
+            class_diagram_link=class_diagram_link,
         )
         html = render_page_html(title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML)
 
@@ -255,6 +269,37 @@ class DocGenerator:
             links=tuple(page_links),
         )
 
+    def generateClassDiagramPage(self) -> DocPage | None:
+        bundle = self._ensure_bundle()
+        selection = select_major_classes(bundle, self.dependencyGraph)
+        if not selection.includedClasses:
+            return None
+
+        class_diagram_source = build_class_diagram_mermaid_source(selection)
+        output_md, output_html = links.class_diagram_output_paths()
+        page_id = links.class_diagram_page_id()
+        title = "Repository Class Diagram"
+
+        content = render_markdown_template(
+            "class_diagram.md.jinja",
+            class_diagram_source=class_diagram_source,
+        )
+        html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+
+        return DocPage(
+            id=page_id,
+            title=title,
+            contentMarkdown=content,
+            relatedSymbols=class_diagram_source.includedClassIds,
+            kind="class-diagram",
+            sourceEntityId="",
+            contentSymbolIds=class_diagram_source.includedClassIds,
+            renderedHtml=html,
+            outputPathMarkdown=output_md,
+            outputPathHtml=output_html,
+            links=(),
+        )
+
     def generateRepositoryDocumentation(
         self,
         repositoryRoot: str | Path,
@@ -292,10 +337,21 @@ class DocGenerator:
 
         pages: list[DocPage] = []
 
+        # Computed once per run regardless of which pages actually regenerate:
+        # the home page needs to know whether a class-diagram page currently
+        # exists to decide whether to link it, and this is a cheap in-memory
+        # graph scan (not a source re-parse), per research.md Decision 3.
+        class_diagram_page = self.generateClassDiagramPage()
+
         if target_page_ids is None or links.HOME_PAGE_ID in target_page_ids:
-            home_page = self.generateOverviewPage(bundle.repository)
+            home_page = self.generateOverviewPage(bundle.repository, classDiagramPage=class_diagram_page)
             self._writer.write_page(home_page)
             pages.append(home_page)
+
+        class_diagram_page_id = links.class_diagram_page_id()
+        if class_diagram_page is not None and (target_page_ids is None or class_diagram_page_id in target_page_ids):
+            self._writer.write_page(class_diagram_page)
+            pages.append(class_diagram_page)
 
         for file_bundle in bundle.files:
             module = file_bundle.module

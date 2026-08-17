@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-PageKind = Literal["home", "module", "diagram"]
+PageKind = Literal["home", "module", "diagram", "class-diagram"]
 
 
 @dataclass(frozen=True, slots=True)
