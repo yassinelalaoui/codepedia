@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import markdown as markdown_lib
 
-from .links import HOME_OUTPUT_HTML, relative_output_link
+from .links import DIAGRAMS_INDEX_OUTPUT_HTML, HOME_OUTPUT_HTML, relative_output_link
 from .markdown_render import render_html_template
 from .writer import (
     MERMAID_ASSET_OUTPUT_PATH,
@@ -44,6 +44,7 @@ def render_page_html(*, title: str, content_markdown: str, output_path_html: str
     content_html = _MERMAID_FENCE_PATTERN.sub(r'<pre class="mermaid">\1</pre>', content_html)
     content_html = _rewrite_internal_links_to_html(content_html)
     home_href = relative_output_link(from_output_path=output_path_html, to_output_path=HOME_OUTPUT_HTML)
+    diagrams_href = relative_output_link(from_output_path=output_path_html, to_output_path=DIAGRAMS_INDEX_OUTPUT_HTML)
     mermaid_script_href = relative_output_link(
         from_output_path=output_path_html, to_output_path=MERMAID_ASSET_OUTPUT_PATH
     )
@@ -57,6 +58,7 @@ def render_page_html(*, title: str, content_markdown: str, output_path_html: str
         title=title,
         content_html=content_html,
         home_href=home_href or HOME_OUTPUT_HTML,
+        diagrams_href=diagrams_href or DIAGRAMS_INDEX_OUTPUT_HTML,
         mermaid_script_href=mermaid_script_href,
         ui_script_href=ui_script_href,
         ui_style_href=ui_style_href,

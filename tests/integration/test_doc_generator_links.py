@@ -44,8 +44,8 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
     # 1 home + 3 modules + 3 diagrams + 1 class diagram + 3 entry-point sequence
     # diagrams (alpha_entry, Child.run, shared_value - beta_helper is called by
     # both alpha_entry and Child.run, so it does not itself qualify) + 1
-    # repository-wide use-case diagram.
-    assert len(doc_set.pages) == 12
+    # repository-wide use-case diagram + 1 diagrams-index page.
+    assert len(doc_set.pages) == 13
     home_page = next(page for page in doc_set.pages if page.kind == "home")
     assert "alpha" in home_page.contentMarkdown
     assert "beta" in home_page.contentMarkdown
@@ -61,6 +61,12 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
     use_case_diagram_page = next(page for page in doc_set.pages if page.kind == "use-case-diagram")
     assert "flowchart LR" in use_case_diagram_page.contentMarkdown
     assert "External Caller" in use_case_diagram_page.contentMarkdown
+
+    diagrams_index_page = next(page for page in doc_set.pages if page.kind == "diagrams-index")
+    assert "Class diagram" in diagrams_index_page.contentMarkdown
+    assert "Use-case diagram" in diagrams_index_page.contentMarkdown
+    assert "Entry point sequence diagrams" in diagrams_index_page.contentMarkdown
+    assert "Module dependency diagrams" in diagrams_index_page.contentMarkdown
 
     alpha_page = next(page for page in doc_set.pages if page.kind == "module" and page.title == "alpha")
     assert "alpha_entry" in alpha_page.contentMarkdown

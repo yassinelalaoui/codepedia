@@ -1,0 +1,34 @@
+# Diagrams
+
+{% if class_diagram_link or use_case_diagram_link or sequence_diagram_links or dependency_diagram_links %}
+{% if class_diagram_link %}
+## Class diagram
+
+- [{{ class_diagram_link.label }}]({{ class_diagram_link.relativePath }})
+
+{% endif %}
+{% if use_case_diagram_link %}
+## Use-case diagram
+
+- [{{ use_case_diagram_link.label }}]({{ use_case_diagram_link.relativePath }})
+
+{% endif %}
+{% if sequence_diagram_links %}
+## Entry point sequence diagrams
+
+{% for link in sequence_diagram_links %}
+- [{{ link.label }}]({{ link.relativePath }})
+{% endfor %}
+
+{% endif %}
+{% if dependency_diagram_links %}
+## Module dependency diagrams
+
+{% for link in dependency_diagram_links %}
+- [{{ link.label }}]({{ link.relativePath }})
+{% endfor %}
+
+{% endif %}
+{% else %}
+_No diagrams yet._
+{% endif %}

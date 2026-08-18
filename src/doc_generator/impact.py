@@ -104,13 +104,16 @@ def compute_regeneration_impact(
     current_diagram_page_ids = {links.diagram_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_class_diagram_page_ids = {links.class_diagram_page_id()} if has_any_class else set()
     current_use_case_diagram_page_ids = {links.use_case_diagram_page_id()} if has_any_entry_point else set()
+    # The diagrams-index page (024) is always generated once at all (never
+    # conditionally present like the class/use-case diagram pages), so its id
+    # is unconditionally current - it must never appear in removedPageIds.
     current_page_ids = (
         current_module_page_ids
         | current_diagram_page_ids
         | current_class_diagram_page_ids
         | current_sequence_diagram_page_ids
         | current_use_case_diagram_page_ids
-        | {links.HOME_PAGE_ID}
+        | {links.HOME_PAGE_ID, links.diagrams_index_page_id()}
     )
     removed_page_ids = {entry.pageId for entry in entries} - current_page_ids
 
@@ -122,6 +125,22 @@ def compute_regeneration_impact(
     previous_module_page_ids = {entry.pageId for entry in entries if entry.kind == "module"}
     requires_home_regeneration = previous_module_page_ids != current_module_page_ids
 
+    # The diagrams-index page (024, research.md Decision 6) reflects four
+    # independent, repository-wide facts: the module-page set, the
+    # sequence-diagram-page set, and whether a class-diagram/use-case-diagram
+    # page currently exists. It refreshes whenever any of them differs from
+    # the previous manifest snapshot.
+    previous_sequence_diagram_page_ids = {entry.pageId for entry in entries if entry.kind == "sequence-diagram"}
+    previous_page_ids = {entry.pageId for entry in entries}
+    previous_class_diagram_exists = links.class_diagram_page_id() in previous_page_ids
+    previous_use_case_diagram_exists = links.use_case_diagram_page_id() in previous_page_ids
+    requires_diagrams_index_regeneration = (
+        previous_module_page_ids != current_module_page_ids
+        or previous_sequence_diagram_page_ids != current_sequence_diagram_page_ids
+        or previous_class_diagram_exists != has_any_class
+        or previous_use_case_diagram_exists != has_any_entry_point
+    )
+
     return RegenerationImpactSet(
         changedFileIds=tuple(sorted(changed_file_ids)),
         changedSymbolIds=tuple(sorted(direct_symbol_ids)),
@@ -129,6 +148,7 @@ def compute_regeneration_impact(
         impactedPageIds=tuple(sorted(impacted_page_ids)),
         removedPageIds=tuple(sorted(removed_page_ids)),
         requiresHomePageRegeneration=requires_home_regeneration,
+        requiresDiagramsIndexRegeneration=requires_diagrams_index_regeneration,
     )
 
 

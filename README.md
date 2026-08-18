@@ -25,8 +25,10 @@ picture and *why* it's built this way.
   dependency diagrams, a repository-wide class diagram of its structurally
   major classes, one bounded call-sequence diagram per identified entry
   point (CLI command, API route handler, or uncalled public function/method),
-  and a repository-wide use-case diagram (one shared actor per entry-point
-  exposure kind, linked to its use cases).
+  a repository-wide use-case diagram (one shared actor per entry-point
+  exposure kind, linked to its use cases), and a single "Diagrams" page
+  reachable in one click from anywhere in the wiki that lists every diagram
+  above.
 - **Answers questions in chat**, grounded in the indexed code, with
   clickable citations back to the wiki.
 - **Watches the repository** in the background and **incrementally

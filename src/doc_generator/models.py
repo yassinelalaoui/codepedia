@@ -4,7 +4,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-PageKind = Literal["home", "module", "diagram", "class-diagram", "sequence-diagram", "use-case-diagram"]
+PageKind = Literal[
+    "home", "module", "diagram", "class-diagram", "sequence-diagram", "use-case-diagram", "diagrams-index"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +101,7 @@ class RegenerationImpactSet:
     impactedPageIds: tuple[str, ...] = ()
     removedPageIds: tuple[str, ...] = ()
     requiresHomePageRegeneration: bool = False
+    requiresDiagramsIndexRegeneration: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,4 +111,5 @@ class RegenerationImpactSet:
             "impactedPageIds": list(self.impactedPageIds),
             "removedPageIds": list(self.removedPageIds),
             "requiresHomePageRegeneration": self.requiresHomePageRegeneration,
+            "requiresDiagramsIndexRegeneration": self.requiresDiagramsIndexRegeneration,
         }

@@ -19,6 +19,10 @@ USE_CASE_DIAGRAM_PAGE_ID = "diagram:use-case-overview"
 USE_CASE_DIAGRAM_OUTPUT_MARKDOWN = "diagrams/use-case-overview.md"
 USE_CASE_DIAGRAM_OUTPUT_HTML = "diagrams/use-case-overview.html"
 
+DIAGRAMS_INDEX_PAGE_ID = "diagrams-index"
+DIAGRAMS_INDEX_OUTPUT_MARKDOWN = "diagrams-index.md"
+DIAGRAMS_INDEX_OUTPUT_HTML = "diagrams-index.html"
+
 
 def module_page_id(module_id: str) -> str:
     return f"module:{module_id}"
@@ -46,6 +50,14 @@ def use_case_diagram_page_id() -> str:
 
 def use_case_diagram_output_paths() -> tuple[str, str]:
     return USE_CASE_DIAGRAM_OUTPUT_MARKDOWN, USE_CASE_DIAGRAM_OUTPUT_HTML
+
+
+def diagrams_index_page_id() -> str:
+    return DIAGRAMS_INDEX_PAGE_ID
+
+
+def diagrams_index_output_paths() -> tuple[str, str]:
+    return DIAGRAMS_INDEX_OUTPUT_MARKDOWN, DIAGRAMS_INDEX_OUTPUT_HTML
 
 
 def slugify(name: str) -> str:

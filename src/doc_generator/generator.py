@@ -105,7 +105,7 @@ class DocGenerator:
             module_key = module.sourceFileId
             slug = links.page_slug(module.name, module_key)
             module_md, _ = links.module_output_paths(slug)
-            diagram_md, _ = links.diagram_output_paths(slug)
+            diagram_page_id, diagram_md, _ = self._dependency_diagram_identity(module)
             module_link = links.build_page_link(
                 from_page_id=links.HOME_PAGE_ID,
                 from_output_path_markdown=links.HOME_OUTPUT_MARKDOWN,
@@ -116,7 +116,7 @@ class DocGenerator:
             diagram_link = links.build_page_link(
                 from_page_id=links.HOME_PAGE_ID,
                 from_output_path_markdown=links.HOME_OUTPUT_MARKDOWN,
-                to_page_id=links.diagram_page_id(module_key),
+                to_page_id=diagram_page_id,
                 to_output_path_markdown=diagram_md,
                 label=f"{module.name} dependencies",
             )
@@ -425,6 +425,94 @@ class DocGenerator:
             )
         return tuple(pages)
 
+    def generateDiagramsIndexPage(
+        self,
+        *,
+        classDiagramPage: DocPage | None,
+        useCaseDiagramPage: DocPage | None,
+        entryPointPages: tuple[DocPage, ...],
+        modules: tuple[ModuleSymbol, ...],
+    ) -> DocPage:
+        page_id = links.diagrams_index_page_id()
+        output_md, output_html = links.diagrams_index_output_paths()
+        title = "Diagrams"
+
+        page_links: list[PageLink] = []
+
+        class_diagram_link: PageLink | None = None
+        if classDiagramPage is not None:
+            class_diagram_link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=output_md,
+                to_page_id=classDiagramPage.id,
+                to_output_path_markdown=classDiagramPage.outputPathMarkdown,
+                label="Repository class diagram",
+            )
+            if class_diagram_link:
+                page_links.append(class_diagram_link)
+
+        use_case_diagram_link: PageLink | None = None
+        if useCaseDiagramPage is not None:
+            use_case_diagram_link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=output_md,
+                to_page_id=useCaseDiagramPage.id,
+                to_output_path_markdown=useCaseDiagramPage.outputPathMarkdown,
+                label="Repository use-case diagram",
+            )
+            if use_case_diagram_link:
+                page_links.append(use_case_diagram_link)
+
+        sequence_diagram_links: list[PageLink] = []
+        for entry_point_page in entryPointPages:
+            link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=output_md,
+                to_page_id=entry_point_page.id,
+                to_output_path_markdown=entry_point_page.outputPathMarkdown,
+                label=entry_point_page.title,
+            )
+            if link:
+                sequence_diagram_links.append(link)
+                page_links.append(link)
+
+        dependency_diagram_links: list[PageLink] = []
+        for module in sorted(modules, key=lambda module: module.name):
+            diagram_page_id, diagram_md, _ = self._dependency_diagram_identity(module)
+            link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=output_md,
+                to_page_id=diagram_page_id,
+                to_output_path_markdown=diagram_md,
+                label=f"{module.name} dependencies",
+            )
+            if link:
+                dependency_diagram_links.append(link)
+                page_links.append(link)
+
+        content = render_markdown_template(
+            "diagrams_index.md.jinja",
+            class_diagram_link=class_diagram_link,
+            use_case_diagram_link=use_case_diagram_link,
+            sequence_diagram_links=sequence_diagram_links,
+            dependency_diagram_links=dependency_diagram_links,
+        )
+        html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+
+        return DocPage(
+            id=page_id,
+            title=title,
+            contentMarkdown=content,
+            relatedSymbols=(),
+            kind="diagrams-index",
+            sourceEntityId="",
+            contentSymbolIds=(),
+            renderedHtml=html,
+            outputPathMarkdown=output_md,
+            outputPathHtml=output_html,
+            links=tuple(page_links),
+        )
+
     def generateRepositoryDocumentation(
         self,
         repositoryRoot: str | Path,
@@ -480,6 +568,18 @@ class DocGenerator:
         entry_point_pages = self.generateEntryPointSequenceDiagramPages()
         entry_point_pages_by_symbol = {page.sourceEntityId: page for page in entry_point_pages}
 
+        # Always computed and always written when targeted (research.md
+        # Decision 2 of 024): unlike the class/use-case diagram pages, the
+        # diagrams-index page always exists once generated, so its nav link
+        # (html_render.py) is never dangling.
+        modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
+        diagrams_index_page = self.generateDiagramsIndexPage(
+            classDiagramPage=class_diagram_page,
+            useCaseDiagramPage=use_case_diagram_page,
+            entryPointPages=entry_point_pages,
+            modules=tuple(modules),
+        )
+
         if target_page_ids is None or links.HOME_PAGE_ID in target_page_ids:
             home_page = self.generateOverviewPage(
                 bundle.repository,
@@ -505,6 +605,11 @@ class DocGenerator:
             if target_page_ids is None or entry_point_page.id in target_page_ids:
                 self._writer.write_page(entry_point_page)
                 pages.append(entry_point_page)
+
+        diagrams_index_page_id = links.diagrams_index_page_id()
+        if target_page_ids is None or impact.requiresDiagramsIndexRegeneration or diagrams_index_page_id in target_page_ids:
+            self._writer.write_page(diagrams_index_page)
+            pages.append(diagrams_index_page)
 
         for file_bundle in bundle.files:
             module = file_bundle.module
@@ -562,6 +667,13 @@ class DocGenerator:
         self._ensure_bundle()
         file_bundle = self._bundle_by_file_path.get(_normalize_path(file_path))
         return (file_bundle.module.sourceFileId, file_bundle.module.name) if file_bundle else None
+
+    def _dependency_diagram_identity(self, module: ModuleSymbol) -> tuple[str, str, str]:
+        """Return (page_id, output_path_markdown, output_path_html) for a module's dependency-diagram page."""
+        module_key = module.sourceFileId
+        slug = links.page_slug(module.name, module_key)
+        diagram_md, diagram_html = links.diagram_output_paths(slug)
+        return links.diagram_page_id(module_key), diagram_md, diagram_html
 
     def _related_modules(self, moduleSymbol: ModuleSymbol) -> list[tuple[str, str]]:
         neighbors = self.dependencyGraph.dependencies(

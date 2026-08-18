@@ -142,6 +142,7 @@ classDiagram
             +generateClassDiagramPage() DocPage
             +generateEntryPointSequenceDiagramPages() tuple~DocPage~
             +generateUseCaseDiagramPage() DocPage
+            +generateDiagramsIndexPage() DocPage
         }
         class DocPage {
             +str id
