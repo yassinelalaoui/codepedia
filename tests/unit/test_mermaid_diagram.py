@@ -8,7 +8,9 @@ from doc_generator.mermaid_diagram import (
     build_class_diagram_mermaid_source,
     build_mermaid_source,
     build_sequence_diagram_mermaid_source,
+    build_use_case_diagram_mermaid_source,
 )
+from doc_generator.use_case_diagram import Actor, UseCase, UseCaseDiagramSelection
 
 
 def test_build_mermaid_source_handles_zero_edges():
@@ -238,3 +240,56 @@ def test_build_sequence_diagram_mermaid_source_sanitizes_semicolons_and_quotes()
 
     assert ";" not in result.sourceText
     assert '"' not in result.sourceText
+
+
+def test_build_use_case_diagram_mermaid_source_renders_actors_and_use_cases_in_order():
+    selection = UseCaseDiagramSelection(
+        actors=(
+            Actor(kind="cli-command", label="CLI"),
+            Actor(kind="api-route", label="API"),
+        ),
+        useCases=(
+            UseCase(entryPointStableKey="key1", label="cli.run_index", actorKind="cli-command"),
+            UseCase(entryPointStableKey="key2", label="api.get_sessions", actorKind="api-route"),
+        ),
+    )
+
+    result = build_use_case_diagram_mermaid_source(selection)
+
+    assert result.sourceText.startswith("flowchart LR")
+    assert result.actorNodeIds == ("a0", "a1")
+    assert result.useCaseNodeIds == ("u0", "u1")
+    assert 'a0(["CLI"])' in result.sourceText
+    assert 'a1(["API"])' in result.sourceText
+    assert 'u0(["cli.run_index"])' in result.sourceText
+    assert 'u1(["api.get_sessions"])' in result.sourceText
+    assert "a0 --> u0" in result.sourceText
+    assert "a1 --> u1" in result.sourceText
+
+
+def test_build_use_case_diagram_mermaid_source_multiple_use_cases_share_one_actor():
+    selection = UseCaseDiagramSelection(
+        actors=(Actor(kind="cli-command", label="CLI"),),
+        useCases=(
+            UseCase(entryPointStableKey="key1", label="cli.run_a", actorKind="cli-command"),
+            UseCase(entryPointStableKey="key2", label="cli.run_b", actorKind="cli-command"),
+        ),
+    )
+
+    result = build_use_case_diagram_mermaid_source(selection)
+
+    assert result.actorNodeIds == ("a0",)
+    assert "a0 --> u0" in result.sourceText
+    assert "a0 --> u1" in result.sourceText
+
+
+def test_build_use_case_diagram_mermaid_source_sanitizes_quotes():
+    selection = UseCaseDiagramSelection(
+        actors=(Actor(kind="function", label='External"Caller'),),
+        useCases=(UseCase(entryPointStableKey="key1", label='mod.do"Thing', actorKind="function"),),
+    )
+
+    result = build_use_case_diagram_mermaid_source(selection)
+
+    assert '"Caller' not in result.sourceText
+    assert '"Thing' not in result.sourceText

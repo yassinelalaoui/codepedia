@@ -15,6 +15,10 @@ CLASS_DIAGRAM_OUTPUT_HTML = "diagrams/class-overview.html"
 
 SEQUENCE_DIAGRAM_PAGE_ID_PREFIX = "sequence:"
 
+USE_CASE_DIAGRAM_PAGE_ID = "diagram:use-case-overview"
+USE_CASE_DIAGRAM_OUTPUT_MARKDOWN = "diagrams/use-case-overview.md"
+USE_CASE_DIAGRAM_OUTPUT_HTML = "diagrams/use-case-overview.html"
+
 
 def module_page_id(module_id: str) -> str:
     return f"module:{module_id}"
@@ -34,6 +38,14 @@ def class_diagram_output_paths() -> tuple[str, str]:
 
 def sequence_diagram_page_id(key: str) -> str:
     return f"{SEQUENCE_DIAGRAM_PAGE_ID_PREFIX}{key}"
+
+
+def use_case_diagram_page_id() -> str:
+    return USE_CASE_DIAGRAM_PAGE_ID
+
+
+def use_case_diagram_output_paths() -> tuple[str, str]:
+    return USE_CASE_DIAGRAM_OUTPUT_MARKDOWN, USE_CASE_DIAGRAM_OUTPUT_HTML
 
 
 def slugify(name: str) -> str:

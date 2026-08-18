@@ -43,18 +43,24 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
 
     # 1 home + 3 modules + 3 diagrams + 1 class diagram + 3 entry-point sequence
     # diagrams (alpha_entry, Child.run, shared_value - beta_helper is called by
-    # both alpha_entry and Child.run, so it does not itself qualify).
-    assert len(doc_set.pages) == 11
+    # both alpha_entry and Child.run, so it does not itself qualify) + 1
+    # repository-wide use-case diagram.
+    assert len(doc_set.pages) == 12
     home_page = next(page for page in doc_set.pages if page.kind == "home")
     assert "alpha" in home_page.contentMarkdown
     assert "beta" in home_page.contentMarkdown
     assert "gamma" in home_page.contentMarkdown
     assert "diagrams/class-overview.md" in home_page.contentMarkdown
+    assert "diagrams/use-case-overview.md" in home_page.contentMarkdown
 
     class_diagram_page = next(page for page in doc_set.pages if page.kind == "class-diagram")
     assert "Child" in class_diagram_page.contentMarkdown
     assert "BaseThing" in class_diagram_page.contentMarkdown
     assert "<|--" in class_diagram_page.contentMarkdown
+
+    use_case_diagram_page = next(page for page in doc_set.pages if page.kind == "use-case-diagram")
+    assert "flowchart LR" in use_case_diagram_page.contentMarkdown
+    assert "External Caller" in use_case_diagram_page.contentMarkdown
 
     alpha_page = next(page for page in doc_set.pages if page.kind == "module" and page.title == "alpha")
     assert "alpha_entry" in alpha_page.contentMarkdown
@@ -122,10 +128,12 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
     # touches every entry-point sequence diagram whose recorded call sequence
     # includes a symbol from beta.py: Child.run (its own body changed) and
     # alpha_entry (its sequence includes beta_helper, which beta.py's edit
-    # also touches, per research.md Decision 8).
+    # also touches, per research.md Decision 8). The repository-wide use-case
+    # diagram refreshes too, for the same "any qualifying change" reason as
+    # the class diagram (research.md Decision 6 of 023).
     regenerated_kinds = {page.kind for page in doc_set.pages}
-    assert regenerated_kinds == {"module", "class-diagram", "sequence-diagram"}
-    assert len(doc_set.pages) == 4
+    assert regenerated_kinds == {"module", "class-diagram", "sequence-diagram", "use-case-diagram"}
+    assert len(doc_set.pages) == 5
     module_page = next(page for page in doc_set.pages if page.kind == "module")
     assert module_page.title == "beta"
     sequence_diagram_pages = [page for page in doc_set.pages if page.kind == "sequence-diagram"]
@@ -134,11 +142,14 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
     after_mtimes = {path: path.stat().st_mtime_ns for path in output_root.rglob("*") if path.is_file()}
     changed_paths = {path for path in before_mtimes if before_mtimes[path] != after_mtimes.get(path)}
     class_diagram_page = next(page for page in doc_set.pages if page.kind == "class-diagram")
+    use_case_diagram_page = next(page for page in doc_set.pages if page.kind == "use-case-diagram")
     expected_changed_paths = {
         output_root / "modules" / Path(module_page.outputPathMarkdown).name,
         output_root / "modules" / Path(module_page.outputPathHtml).name,
         output_root / Path(class_diagram_page.outputPathMarkdown),
         output_root / Path(class_diagram_page.outputPathHtml),
+        output_root / Path(use_case_diagram_page.outputPathMarkdown),
+        output_root / Path(use_case_diagram_page.outputPathHtml),
     }
     for sequence_diagram_page in sequence_diagram_pages:
         expected_changed_paths.add(output_root / Path(sequence_diagram_page.outputPathMarkdown))

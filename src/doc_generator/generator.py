@@ -20,9 +20,11 @@ from .mermaid_diagram import (
     build_class_diagram_mermaid_source,
     build_mermaid_source,
     build_sequence_diagram_mermaid_source,
+    build_use_case_diagram_mermaid_source,
 )
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
 from .search_index import build_search_index
+from .use_case_diagram import select_use_cases
 from .writer import DocumentationWriter
 
 
@@ -62,7 +64,13 @@ class DocGenerator:
         self._bundle_by_module_id: dict[str, SourceFileBundle] = {}
         self._bundle_by_file_path: dict[str, SourceFileBundle] = {}
 
-    def generateOverviewPage(self, repository: Repository, *, classDiagramPage: DocPage | None = None) -> DocPage:
+    def generateOverviewPage(
+        self,
+        repository: Repository,
+        *,
+        classDiagramPage: DocPage | None = None,
+        useCaseDiagramPage: DocPage | None = None,
+    ) -> DocPage:
         bundle = self._ensure_bundle()
         modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
         architecture_summary = self._build_architecture_summary(bundle.files)
@@ -79,6 +87,18 @@ class DocGenerator:
             )
             if class_diagram_link:
                 page_links.append(class_diagram_link)
+
+        use_case_diagram_link: PageLink | None = None
+        if useCaseDiagramPage is not None:
+            use_case_diagram_link = links.build_page_link(
+                from_page_id=links.HOME_PAGE_ID,
+                from_output_path_markdown=links.HOME_OUTPUT_MARKDOWN,
+                to_page_id=useCaseDiagramPage.id,
+                to_output_path_markdown=useCaseDiagramPage.outputPathMarkdown,
+                label="Repository use-case diagram",
+            )
+            if use_case_diagram_link:
+                page_links.append(use_case_diagram_link)
 
         module_entries = []
         for module in modules:
@@ -115,6 +135,7 @@ class DocGenerator:
             module_entries=module_entries,
             architecture_summary=architecture_summary,
             class_diagram_link=class_diagram_link,
+            use_case_diagram_link=use_case_diagram_link,
         )
         html = render_page_html(title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML)
 
@@ -324,6 +345,38 @@ class DocGenerator:
             links=(),
         )
 
+    def generateUseCaseDiagramPage(self) -> DocPage | None:
+        bundle = self._ensure_bundle()
+        selection = select_use_cases(bundle, self.dependencyGraph)
+        if not selection.useCases:
+            return None
+
+        use_case_diagram_source = build_use_case_diagram_mermaid_source(selection)
+        output_md, output_html = links.use_case_diagram_output_paths()
+        page_id = links.use_case_diagram_page_id()
+        title = "Repository Use Case Diagram"
+
+        content = render_markdown_template(
+            "use_case_diagram.md.jinja",
+            use_case_diagram_source=use_case_diagram_source,
+        )
+        html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+
+        related_symbols = tuple(use_case.entryPointStableKey for use_case in selection.useCases)
+        return DocPage(
+            id=page_id,
+            title=title,
+            contentMarkdown=content,
+            relatedSymbols=related_symbols,
+            kind="use-case-diagram",
+            sourceEntityId="",
+            contentSymbolIds=related_symbols,
+            renderedHtml=html,
+            outputPathMarkdown=output_md,
+            outputPathHtml=output_html,
+            links=(),
+        )
+
     def generateEntryPointSequenceDiagramPages(self) -> tuple[DocPage, ...]:
         bundle = self._ensure_bundle()
         entry_points = identify_entry_points(bundle, self.dependencyGraph)
@@ -415,6 +468,10 @@ class DocGenerator:
         # graph scan (not a source re-parse), per research.md Decision 3.
         class_diagram_page = self.generateClassDiagramPage()
 
+        # Same reasoning: the home page needs to know whether a use-case-
+        # diagram page currently exists to decide whether to link it.
+        use_case_diagram_page = self.generateUseCaseDiagramPage()
+
         # Same reasoning: module pages need to know each of their functions'
         # sequence-diagram page identity/output path to link to it, even on an
         # incremental run where that particular sequence-diagram page itself
@@ -424,7 +481,11 @@ class DocGenerator:
         entry_point_pages_by_symbol = {page.sourceEntityId: page for page in entry_point_pages}
 
         if target_page_ids is None or links.HOME_PAGE_ID in target_page_ids:
-            home_page = self.generateOverviewPage(bundle.repository, classDiagramPage=class_diagram_page)
+            home_page = self.generateOverviewPage(
+                bundle.repository,
+                classDiagramPage=class_diagram_page,
+                useCaseDiagramPage=use_case_diagram_page,
+            )
             self._writer.write_page(home_page)
             pages.append(home_page)
 
@@ -432,6 +493,13 @@ class DocGenerator:
         if class_diagram_page is not None and (target_page_ids is None or class_diagram_page_id in target_page_ids):
             self._writer.write_page(class_diagram_page)
             pages.append(class_diagram_page)
+
+        use_case_diagram_page_id = links.use_case_diagram_page_id()
+        if use_case_diagram_page is not None and (
+            target_page_ids is None or use_case_diagram_page_id in target_page_ids
+        ):
+            self._writer.write_page(use_case_diagram_page)
+            pages.append(use_case_diagram_page)
 
         for entry_point_page in entry_point_pages:
             if target_page_ids is None or entry_point_page.id in target_page_ids:

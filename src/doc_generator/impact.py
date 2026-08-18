@@ -93,14 +93,23 @@ def compute_regeneration_impact(
         if entry.kind == "sequence-diagram" and set(entry.sourceSymbolIds) & direct_symbol_ids:
             impacted_page_ids.add(entry.pageId)
 
+    # The use-case diagram is repository-wide, keyed off the same
+    # already-computed entry-point list, the same "refresh on any qualifying
+    # change" rule as the class diagram above (research.md Decision 6).
+    has_any_entry_point = bool(entry_points)
+    if has_any_entry_point and (direct_symbol_ids or changed_edges):
+        impacted_page_ids.add(links.use_case_diagram_page_id())
+
     current_module_page_ids = {links.module_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_diagram_page_ids = {links.diagram_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_class_diagram_page_ids = {links.class_diagram_page_id()} if has_any_class else set()
+    current_use_case_diagram_page_ids = {links.use_case_diagram_page_id()} if has_any_entry_point else set()
     current_page_ids = (
         current_module_page_ids
         | current_diagram_page_ids
         | current_class_diagram_page_ids
         | current_sequence_diagram_page_ids
+        | current_use_case_diagram_page_ids
         | {links.HOME_PAGE_ID}
     )
     removed_page_ids = {entry.pageId for entry in entries} - current_page_ids

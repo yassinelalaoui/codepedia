@@ -8,6 +8,7 @@ from dependency_graph import DiagramExport
 from . import links
 from .class_diagram import ClassDiagramSelection
 from .entry_point_diagram import SequenceDiagramSelection
+from .use_case_diagram import UseCaseDiagramSelection
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,3 +201,50 @@ def _call_step_label(step) -> str:
 
 def _sanitize_sequence_diagram_label(name: str) -> str:
     return name.replace('"', "'").replace(";", ",")
+
+
+@dataclass(frozen=True, slots=True)
+class UseCaseDiagramSource:
+    sourceText: str
+    actorNodeIds: tuple[str, ...] = ()
+    useCaseNodeIds: tuple[str, ...] = ()
+
+
+def build_use_case_diagram_mermaid_source(selection: UseCaseDiagramSelection) -> UseCaseDiagramSource:
+    """Render a UseCaseDiagramSelection as a Mermaid flowchart use-case-diagram workaround.
+
+    Mermaid has no native UML use-case-diagram grammar, so this reuses the
+    same convention already established for this project's own hand-authored
+    documentation (``docs/diagrams/use-case-diagram.md``): an oval node per
+    actor placed outside a system-boundary ``subgraph``, an oval node per use
+    case placed inside it, and a plain ``-->`` arrow from each use case's
+    actor to that use case - no ``include``/``extend``-labeled edges, since
+    an entry point has no such relationship with another (Research
+    Decision 2). Actor/use-case ids are short synthetic ids (``a0``/``u0``,
+    ...), mirroring ``build_class_diagram_mermaid_source``'s ``c0`` convention
+    - real labels are not guaranteed unique, so are never used as ids.
+    """
+    actor_node_id_by_kind: dict[str, str] = {}
+    actor_lines: list[str] = []
+    for index, actor in enumerate(selection.actors):
+        synthetic_id = f"a{index}"
+        actor_node_id_by_kind[actor.kind] = synthetic_id
+        actor_lines.append(f'    {synthetic_id}(["{_escape_label(actor.label)}"])')
+
+    use_case_node_ids: list[str] = []
+    use_case_lines: list[str] = []
+    arrow_lines: list[str] = []
+    for index, use_case in enumerate(selection.useCases):
+        synthetic_id = f"u{index}"
+        use_case_node_ids.append(synthetic_id)
+        use_case_lines.append(f'        {synthetic_id}(["{_escape_label(use_case.label)}"])')
+        actor_id = actor_node_id_by_kind[use_case.actorKind]
+        arrow_lines.append(f"    {actor_id} --> {synthetic_id}")
+
+    lines: list[str] = ["flowchart LR", *actor_lines, "", '    subgraph sys["Use Cases"]', *use_case_lines, "    end", "", *arrow_lines]
+
+    return UseCaseDiagramSource(
+        sourceText="\n".join(lines),
+        actorNodeIds=tuple(actor_node_id_by_kind.values()),
+        useCaseNodeIds=tuple(use_case_node_ids),
+    )

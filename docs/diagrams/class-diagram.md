@@ -141,6 +141,7 @@ classDiagram
             +generateRepositoryDocumentation(root, incremental, changedPaths, changedSymbolIds, changedDependencyEdgeIds) DocumentationSet
             +generateClassDiagramPage() DocPage
             +generateEntryPointSequenceDiagramPages() tuple~DocPage~
+            +generateUseCaseDiagramPage() DocPage
         }
         class DocPage {
             +str id
@@ -193,6 +194,24 @@ classDiagram
             +tuple~str~ participantIds
             +int stepCount
         }
+        class Actor {
+            +str kind
+            +str label
+        }
+        class UseCase {
+            +str entryPointStableKey
+            +str label
+            +str actorKind
+        }
+        class UseCaseDiagramSelection {
+            +tuple~Actor~ actors
+            +tuple~UseCase~ useCases
+        }
+        class UseCaseDiagramSource {
+            +str sourceText
+            +tuple~str~ actorNodeIds
+            +tuple~str~ useCaseNodeIds
+        }
     }
     DocGenerator ..> DocumentationSet : produces
     DocumentationSet *-- DocPage
@@ -204,6 +223,10 @@ classDiagram
     SequenceDiagramSelection *-- CallStep
     DocGenerator ..> SequenceDiagramSelection : identify_entry_points() + build_entry_point_call_sequence()
     SequenceDiagramSelection ..> SequenceDiagramSource : build_sequence_diagram_mermaid_source()
+    UseCaseDiagramSelection *-- Actor
+    UseCaseDiagramSelection *-- UseCase
+    DocGenerator ..> UseCaseDiagramSelection : select_use_cases()
+    UseCaseDiagramSelection ..> UseCaseDiagramSource : build_use_case_diagram_mermaid_source()
 
     namespace WebServer {
         class ChatApiApp {
