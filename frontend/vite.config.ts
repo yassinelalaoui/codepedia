@@ -9,6 +9,13 @@ import react from "@vitejs/plugin-react";
 // that directory already holds mermaid.min.js and must not be wiped.
 export default defineConfig({
   plugins: [react()],
+  // Vite's automatic `process.env.NODE_ENV` replacement only applies to app
+  // builds, not `build.lib` output - without this, the reference react-dom
+  // makes to it survives into the browser bundle unresolved and crashes on
+  // load with "ReferenceError: process is not defined".
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
   build: {
     outDir: resolve(__dirname, "../src/doc_generator/assets"),
     emptyOutDir: false,
