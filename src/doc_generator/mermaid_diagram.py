@@ -7,6 +7,7 @@ from dependency_graph import DiagramExport
 
 from . import links
 from .class_diagram import ClassDiagramSelection
+from .entry_point_diagram import SequenceDiagramSelection
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,4 +134,69 @@ def build_class_diagram_mermaid_source(selection: ClassDiagramSelection) -> Clas
 
 
 def _sanitize_class_diagram_label(name: str) -> str:
+    return name.replace('"', "'").replace(";", ",")
+
+
+@dataclass(frozen=True, slots=True)
+class SequenceDiagramSource:
+    sourceText: str
+    participantIds: tuple[str, ...] = ()
+    stepCount: int = 0
+
+
+def build_sequence_diagram_mermaid_source(selection: SequenceDiagramSelection) -> SequenceDiagramSource:
+    """Render a SequenceDiagramSelection as Mermaid sequenceDiagram text.
+
+    Each distinct symbol (the entry point plus every call step's callee) gets
+    a short synthetic id (``p0``, ``p1``, ...) in first-appearance order - real
+    symbol names are not guaranteed unique across modules, so are never used
+    directly as Mermaid ids (same reasoning as
+    ``build_class_diagram_mermaid_source``). A step's caller is always an
+    already-registered participant: the traversal that produced ``selection``
+    is pre-order, so a caller is either the entry point or a callee from an
+    earlier step.
+    """
+    participant_id_by_symbol: dict[str, str] = {}
+    lines: list[str] = ["sequenceDiagram"]
+
+    def ensure_participant(symbol_id: str, label: str) -> str:
+        synthetic_id = participant_id_by_symbol.get(symbol_id)
+        if synthetic_id is None:
+            synthetic_id = f"p{len(participant_id_by_symbol)}"
+            participant_id_by_symbol[symbol_id] = synthetic_id
+            lines.append(f"    participant {synthetic_id} as {_sanitize_sequence_diagram_label(label)}")
+        return synthetic_id
+
+    entry_point = selection.entryPoint
+    ensure_participant(entry_point.symbolId, _entry_point_label(entry_point))
+
+    message_lines: list[str] = []
+    for step in selection.steps:
+        caller_id = participant_id_by_symbol[step.callerSymbolId]
+        callee_id = ensure_participant(step.calleeSymbolId, _call_step_label(step))
+        message_lines.append(f"    {caller_id}->>{callee_id}: {_sanitize_sequence_diagram_label(step.calleeName)}()")
+    lines.extend(message_lines)
+
+    return SequenceDiagramSource(
+        sourceText="\n".join(lines),
+        participantIds=tuple(participant_id_by_symbol.values()),
+        stepCount=len(selection.steps),
+    )
+
+
+def _entry_point_label(entry_point) -> str:
+    if entry_point.className:
+        return f"{entry_point.moduleName}.{entry_point.className}.{entry_point.name}"
+    return f"{entry_point.moduleName}.{entry_point.name}"
+
+
+def _call_step_label(step) -> str:
+    if not step.calleeModuleName:
+        return step.calleeName
+    if step.calleeClassName:
+        return f"{step.calleeModuleName}.{step.calleeClassName}.{step.calleeName}"
+    return f"{step.calleeModuleName}.{step.calleeName}"
+
+
+def _sanitize_sequence_diagram_label(name: str) -> str:
     return name.replace('"', "'").replace(";", ",")

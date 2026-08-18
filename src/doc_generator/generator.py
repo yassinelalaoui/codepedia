@@ -11,11 +11,16 @@ from repository_metadata.sqlite_store import stable_repository_id
 from . import links
 from .class_diagram import select_major_classes
 from .diagrams import build_module_diagram
+from .entry_point_diagram import build_entry_point_call_sequence, build_method_class_index, identify_entry_points
 from .html_render import render_page_html
 from .impact import compute_regeneration_impact
 from .manifest_store import DocPageManifestStore
 from .markdown_render import render_markdown_template
-from .mermaid_diagram import build_class_diagram_mermaid_source, build_mermaid_source
+from .mermaid_diagram import (
+    build_class_diagram_mermaid_source,
+    build_mermaid_source,
+    build_sequence_diagram_mermaid_source,
+)
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
 from .search_index import build_search_index
 from .writer import DocumentationWriter
@@ -127,7 +132,9 @@ class DocGenerator:
             links=tuple(page_links),
         )
 
-    def generateModulePage(self, moduleSymbol: ModuleSymbol) -> DocPage:
+    def generateModulePage(
+        self, moduleSymbol: ModuleSymbol, *, entryPointPages: dict[str, DocPage] | None = None
+    ) -> DocPage:
         file_bundle = self._module_bundle(moduleSymbol)
         module_key = moduleSymbol.sourceFileId
         slug = links.page_slug(moduleSymbol.name, module_key)
@@ -135,7 +142,7 @@ class DocGenerator:
         page_id = links.module_page_id(module_key)
 
         related_modules = self._related_modules(moduleSymbol)
-        page_links: list[PageLink] = []
+        related_links: list[PageLink] = []
         for related_key, related_name in related_modules:
             related_slug = links.page_slug(related_name, related_key)
             related_md, _ = links.module_output_paths(related_slug)
@@ -147,7 +154,8 @@ class DocGenerator:
                 label=related_name,
             )
             if link:
-                page_links.append(link)
+                related_links.append(link)
+        page_links: list[PageLink] = list(related_links)
 
         diagram_md, _ = links.diagram_output_paths(slug)
         diagram_link = links.build_page_link(
@@ -159,6 +167,21 @@ class DocGenerator:
         )
         if diagram_link:
             page_links.append(diagram_link)
+
+        entry_point_links: dict[str, PageLink] = {}
+        own_function_ids = {function.id for function in file_bundle.functions} if file_bundle else set()
+        for symbol_id in own_function_ids & (entryPointPages or {}).keys():
+            entry_page = entryPointPages[symbol_id]
+            entry_link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=module_md,
+                to_page_id=entry_page.id,
+                to_output_path_markdown=entry_page.outputPathMarkdown,
+                label="View call sequence",
+            )
+            if entry_link:
+                entry_point_links[symbol_id] = entry_link
+                page_links.append(entry_link)
 
         classes = self._classes_with_methods(file_bundle) if file_bundle else ()
         functions = self._documented_functions(file_bundle) if file_bundle else ()
@@ -174,8 +197,9 @@ class DocGenerator:
             module=moduleSymbol,
             classes=classes,
             functions=functions,
-            related_links=[link for link in page_links if link is not diagram_link],
+            related_links=related_links,
             diagram_link=diagram_link,
+            entry_point_links=entry_point_links,
         )
         html = render_page_html(title=moduleSymbol.name, content_markdown=content, output_path_html=module_html)
 
@@ -300,6 +324,54 @@ class DocGenerator:
             links=(),
         )
 
+    def generateEntryPointSequenceDiagramPages(self) -> tuple[DocPage, ...]:
+        bundle = self._ensure_bundle()
+        entry_points = identify_entry_points(bundle, self.dependencyGraph)
+        if not entry_points:
+            return ()
+
+        method_class_index = build_method_class_index(bundle)
+        pages: list[DocPage] = []
+        for entry_point in entry_points:
+            selection = build_entry_point_call_sequence(
+                self.dependencyGraph,
+                entry_point,
+                resolve_module=self._resolve_module_key_by_path,
+                resolve_class_name=method_class_index.get,
+            )
+            sequence_diagram_source = build_sequence_diagram_mermaid_source(selection)
+
+            slug = links.page_slug(entry_point.name, entry_point.stableKey)
+            output_md, output_html = links.diagram_output_paths(slug)
+            page_id = links.sequence_diagram_page_id(entry_point.stableKey)
+            title = f"{entry_point.name} — Call sequence"
+
+            content = render_markdown_template(
+                "sequence_diagram.md.jinja",
+                entry_point=entry_point,
+                selection=selection,
+                sequence_diagram_source=sequence_diagram_source,
+            )
+            html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+
+            related_symbols = tuple(dict.fromkeys(step.calleeSymbolId for step in selection.steps))
+            pages.append(
+                DocPage(
+                    id=page_id,
+                    title=title,
+                    contentMarkdown=content,
+                    relatedSymbols=related_symbols,
+                    kind="sequence-diagram",
+                    sourceEntityId=entry_point.symbolId,
+                    contentSymbolIds=(entry_point.symbolId, *related_symbols),
+                    renderedHtml=html,
+                    outputPathMarkdown=output_md,
+                    outputPathHtml=output_html,
+                    links=(),
+                )
+            )
+        return tuple(pages)
+
     def generateRepositoryDocumentation(
         self,
         repositoryRoot: str | Path,
@@ -343,6 +415,14 @@ class DocGenerator:
         # graph scan (not a source re-parse), per research.md Decision 3.
         class_diagram_page = self.generateClassDiagramPage()
 
+        # Same reasoning: module pages need to know each of their functions'
+        # sequence-diagram page identity/output path to link to it, even on an
+        # incremental run where that particular sequence-diagram page itself
+        # doesn't regenerate this run (entry-point membership is recomputed
+        # fresh every run - research.md Decision 8).
+        entry_point_pages = self.generateEntryPointSequenceDiagramPages()
+        entry_point_pages_by_symbol = {page.sourceEntityId: page for page in entry_point_pages}
+
         if target_page_ids is None or links.HOME_PAGE_ID in target_page_ids:
             home_page = self.generateOverviewPage(bundle.repository, classDiagramPage=class_diagram_page)
             self._writer.write_page(home_page)
@@ -353,6 +433,11 @@ class DocGenerator:
             self._writer.write_page(class_diagram_page)
             pages.append(class_diagram_page)
 
+        for entry_point_page in entry_point_pages:
+            if target_page_ids is None or entry_point_page.id in target_page_ids:
+                self._writer.write_page(entry_point_page)
+                pages.append(entry_point_page)
+
         for file_bundle in bundle.files:
             module = file_bundle.module
             module_key = module.sourceFileId
@@ -360,7 +445,7 @@ class DocGenerator:
             diagram_page_id = links.diagram_page_id(module_key)
 
             if target_page_ids is None or module_page_id in target_page_ids:
-                module_page = self.generateModulePage(module)
+                module_page = self.generateModulePage(module, entryPointPages=entry_point_pages_by_symbol)
                 self._writer.write_page(module_page)
                 pages.append(module_page)
 

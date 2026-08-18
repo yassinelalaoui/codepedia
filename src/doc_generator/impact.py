@@ -7,6 +7,7 @@ from dependency_graph import DependencyGraph
 from repository_metadata.models import RepositoryBundle
 
 from . import links
+from .entry_point_diagram import identify_entry_points
 from .manifest_store import PageManifestEntry
 from .models import EdgeId, RegenerationImpactSet
 
@@ -80,11 +81,27 @@ def compute_regeneration_impact(
     if has_any_class and (direct_symbol_ids or changed_edges):
         impacted_page_ids.add(links.class_diagram_page_id())
 
+    # Entry-point set membership is recomputed fresh every run rather than
+    # incrementally diffed (research.md Decision 8, mirroring 021's major-class
+    # ranking precedent) - cheap, in-memory, no source re-parse.
+    entry_points = identify_entry_points(bundle, dependency_graph)
+    current_sequence_diagram_page_ids = {links.sequence_diagram_page_id(entry_point.stableKey) for entry_point in entry_points}
+    for entry_point in entry_points:
+        if entry_point.symbolId in direct_symbol_ids:
+            impacted_page_ids.add(links.sequence_diagram_page_id(entry_point.stableKey))
+    for entry in entries:
+        if entry.kind == "sequence-diagram" and set(entry.sourceSymbolIds) & direct_symbol_ids:
+            impacted_page_ids.add(entry.pageId)
+
     current_module_page_ids = {links.module_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_diagram_page_ids = {links.diagram_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_class_diagram_page_ids = {links.class_diagram_page_id()} if has_any_class else set()
     current_page_ids = (
-        current_module_page_ids | current_diagram_page_ids | current_class_diagram_page_ids | {links.HOME_PAGE_ID}
+        current_module_page_ids
+        | current_diagram_page_ids
+        | current_class_diagram_page_ids
+        | current_sequence_diagram_page_ids
+        | {links.HOME_PAGE_ID}
     )
     removed_page_ids = {entry.pageId for entry in entries} - current_page_ids
 

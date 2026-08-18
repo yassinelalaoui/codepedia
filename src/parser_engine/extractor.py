@@ -357,6 +357,7 @@ def _python_build_module(
             returnType=_python_unparse(node.returns) if getattr(node, "returns", None) else None,
             nestedSymbols=tuple(nested_symbols),
             owner=owner,
+            decorators=tuple(_python_unparse(decorator) for decorator in node.decorator_list),
         )
         return _PythonBuildResult(
             symbol=function_symbol,

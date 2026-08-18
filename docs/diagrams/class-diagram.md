@@ -140,6 +140,7 @@ classDiagram
         class DocGenerator {
             +generateRepositoryDocumentation(root, incremental, changedPaths, changedSymbolIds, changedDependencyEdgeIds) DocumentationSet
             +generateClassDiagramPage() DocPage
+            +generateEntryPointSequenceDiagramPages() tuple~DocPage~
         }
         class DocPage {
             +str id
@@ -167,6 +168,31 @@ classDiagram
             +tuple~str~ includedClassIds
             +int omittedClassCount
         }
+        class EntryPoint {
+            +str symbolId
+            +str stableKey
+            +str name
+            +str moduleKey
+            +str className
+            +str kind
+        }
+        class CallStep {
+            +int depth
+            +str callerSymbolId
+            +str calleeSymbolId
+            +str calleeName
+            +int order
+        }
+        class SequenceDiagramSelection {
+            +EntryPoint entryPoint
+            +tuple~CallStep~ steps
+            +bool truncatedAtMaxDepth
+        }
+        class SequenceDiagramSource {
+            +str sourceText
+            +tuple~str~ participantIds
+            +int stepCount
+        }
     }
     DocGenerator ..> DocumentationSet : produces
     DocumentationSet *-- DocPage
@@ -174,6 +200,10 @@ classDiagram
     SelectedClass *-- SelectedMethod
     DocGenerator ..> ClassDiagramSelection : select_major_classes()
     ClassDiagramSelection ..> ClassDiagramSource : build_class_diagram_mermaid_source()
+    SequenceDiagramSelection *-- EntryPoint
+    SequenceDiagramSelection *-- CallStep
+    DocGenerator ..> SequenceDiagramSelection : identify_entry_points() + build_entry_point_call_sequence()
+    SequenceDiagramSelection ..> SequenceDiagramSource : build_sequence_diagram_mermaid_source()
 
     namespace WebServer {
         class ChatApiApp {

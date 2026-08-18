@@ -1,0 +1,9 @@
+# {{ entry_point.name }} — Call sequence
+
+{% if selection.truncatedAtMaxDepth %}
+_This diagram is bounded to a maximum call depth; some deeper calls are omitted for legibility._
+
+{% endif %}
+```mermaid
+{{ sequence_diagram_source.sourceText }}
+```

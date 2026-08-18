@@ -3,7 +3,12 @@ from __future__ import annotations
 from dependency_graph import DependencyNode, DiagramExport
 
 from doc_generator.class_diagram import ClassDiagramSelection, SelectedClass, SelectedMethod
-from doc_generator.mermaid_diagram import build_class_diagram_mermaid_source, build_mermaid_source
+from doc_generator.entry_point_diagram import CallStep, EntryPoint, SequenceDiagramSelection
+from doc_generator.mermaid_diagram import (
+    build_class_diagram_mermaid_source,
+    build_mermaid_source,
+    build_sequence_diagram_mermaid_source,
+)
 
 
 def test_build_mermaid_source_handles_zero_edges():
@@ -152,3 +157,84 @@ def test_build_class_diagram_mermaid_source_sanitizes_semicolons():
     assert ";" not in result.sourceText
     assert 'class c0["Foo,Bar"]' in result.sourceText
     assert "+do,It()" in result.sourceText
+
+
+def _entry_point(name: str = "entry", class_name: str | None = None) -> EntryPoint:
+    return EntryPoint(
+        symbolId="ep1",
+        stableKey=f"file1::module::{name}",
+        name=name,
+        moduleKey="file1",
+        moduleName="mod",
+        className=class_name,
+        kind="function",
+    )
+
+
+def test_build_sequence_diagram_mermaid_source_renders_participants_and_messages_in_order():
+    entry_point = _entry_point()
+    steps = (
+        CallStep(
+            depth=1,
+            callerSymbolId="ep1",
+            calleeSymbolId="c1",
+            calleeName="process",
+            calleeModuleKey="file2",
+            calleeModuleName="service",
+            calleeClassName=None,
+            order=0,
+        ),
+        CallStep(
+            depth=2,
+            callerSymbolId="c1",
+            calleeSymbolId="c2",
+            calleeName="save",
+            calleeModuleKey="file3",
+            calleeModuleName="repository",
+            calleeClassName=None,
+            order=1,
+        ),
+    )
+    selection = SequenceDiagramSelection(entryPoint=entry_point, steps=steps, truncatedAtMaxDepth=False)
+
+    result = build_sequence_diagram_mermaid_source(selection)
+
+    assert result.sourceText.startswith("sequenceDiagram")
+    assert result.participantIds == ("p0", "p1", "p2")
+    assert "participant p0 as mod.entry" in result.sourceText
+    assert "participant p1 as service.process" in result.sourceText
+    assert "participant p2 as repository.save" in result.sourceText
+    assert "p0->>p1: process()" in result.sourceText
+    assert "p1->>p2: save()" in result.sourceText
+    assert result.stepCount == 2
+
+
+def test_build_sequence_diagram_mermaid_source_zero_steps_renders_minimal_diagram():
+    selection = SequenceDiagramSelection(entryPoint=_entry_point("noop"), steps=(), truncatedAtMaxDepth=False)
+
+    result = build_sequence_diagram_mermaid_source(selection)
+
+    assert result.sourceText.startswith("sequenceDiagram")
+    assert result.sourceText.count("participant ") == 1
+    assert "->>" not in result.sourceText
+    assert result.stepCount == 0
+
+
+def test_build_sequence_diagram_mermaid_source_sanitizes_semicolons_and_quotes():
+    entry_point = _entry_point('Foo;Bar"Baz')
+    step = CallStep(
+        depth=1,
+        callerSymbolId="ep1",
+        calleeSymbolId="c1",
+        calleeName='do;It"Now',
+        calleeModuleKey=None,
+        calleeModuleName=None,
+        calleeClassName=None,
+        order=0,
+    )
+    selection = SequenceDiagramSelection(entryPoint=entry_point, steps=(step,), truncatedAtMaxDepth=False)
+
+    result = build_sequence_diagram_mermaid_source(selection)
+
+    assert ";" not in result.sourceText
+    assert '"' not in result.sourceText

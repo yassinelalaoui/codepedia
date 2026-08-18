@@ -372,7 +372,11 @@ def _convert_function_symbol(source_file_id: str, function_symbol: ExtractedFunc
         lineEnd=function_symbol.lineEnd,
         docstring=function_symbol.docstring,
         generatedSummary=function_symbol.generatedSummary,
-        metadata={"owner": function_symbol.owner, "returnType": function_symbol.returnType},
+        metadata={
+            "owner": function_symbol.owner,
+            "returnType": function_symbol.returnType,
+            "decorators": list(function_symbol.decorators),
+        },
         parameters=function_symbol.parameters,
         returnType=function_symbol.returnType,
         nestedSymbols=tuple(item.id for item in function_symbol.nestedSymbols if hasattr(item, "id")),

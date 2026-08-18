@@ -66,6 +66,7 @@ class FunctionSymbol(Symbol):
     returnType: str | None = None
     nestedSymbols: tuple[Any, ...] = field(default_factory=tuple)
     owner: str = "module"
+    decorators: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def symbol_type(self) -> str:

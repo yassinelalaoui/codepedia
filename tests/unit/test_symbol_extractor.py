@@ -65,6 +65,40 @@ class WithNestedFactory:
 '''
 
 
+DECORATED_SAMPLE = '''app = object()
+
+
+@app.command("index")
+def index_command():
+    pass
+
+
+@app.get("/sessions")
+def get_sessions():
+    pass
+
+
+def plain():
+    pass
+
+
+class Service:
+    @app.command("run")
+    def run(self):
+        pass
+'''
+
+
+def test_python_functions_capture_decorator_text():
+    inventory = extract_symbols(SourceFile(path=Path("decorated.py"), language="python", content=DECORATED_SAMPLE))
+
+    functions_by_name = {item.name: item for item in inventory.functions}
+    assert any("app.command" in decorator for decorator in functions_by_name["index_command"].decorators)
+    assert any("app.get" in decorator for decorator in functions_by_name["get_sessions"].decorators)
+    assert functions_by_name["plain"].decorators == ()
+    assert any("app.command" in decorator for decorator in functions_by_name["run"].decorators)
+
+
 def test_nested_classes_are_not_duplicated_in_the_flattened_inventory():
     """Regression test: a class nested inside another class, inside a
     function, or inside a method used to be counted twice (once via a

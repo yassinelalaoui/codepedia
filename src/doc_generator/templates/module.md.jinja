@@ -34,6 +34,10 @@
 {% endif %}
 {% if method.generatedSummary %}{{ method.generatedSummary }}{% else %}_Summary pending — this method has not been summarized yet._{% endif %}
 
+{% if entry_point_links.get(method.id) %}
+[View call sequence]({{ entry_point_links[method.id].relativePath }})
+{% endif %}
+
 {% endfor %}
 {% endif %}
 {% endfor %}
@@ -51,6 +55,10 @@ _No classes in this module._
 
 {% endif %}
 {% if function.generatedSummary %}{{ function.generatedSummary }}{% else %}_Summary pending — this function has not been summarized yet._{% endif %}
+
+{% if entry_point_links.get(function.id) %}
+[View call sequence]({{ entry_point_links[function.id].relativePath }})
+{% endif %}
 
 {% endfor %}
 {% else %}

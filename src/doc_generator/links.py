@@ -13,6 +13,8 @@ CLASS_DIAGRAM_PAGE_ID = "diagram:class-overview"
 CLASS_DIAGRAM_OUTPUT_MARKDOWN = "diagrams/class-overview.md"
 CLASS_DIAGRAM_OUTPUT_HTML = "diagrams/class-overview.html"
 
+SEQUENCE_DIAGRAM_PAGE_ID_PREFIX = "sequence:"
+
 
 def module_page_id(module_id: str) -> str:
     return f"module:{module_id}"
@@ -28,6 +30,10 @@ def class_diagram_page_id() -> str:
 
 def class_diagram_output_paths() -> tuple[str, str]:
     return CLASS_DIAGRAM_OUTPUT_MARKDOWN, CLASS_DIAGRAM_OUTPUT_HTML
+
+
+def sequence_diagram_page_id(key: str) -> str:
+    return f"{SEQUENCE_DIAGRAM_PAGE_ID_PREFIX}{key}"
 
 
 def slugify(name: str) -> str:

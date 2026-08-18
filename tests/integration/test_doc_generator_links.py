@@ -41,7 +41,10 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
     generator = _build_generator(tmp_path, root, store, graph)
     doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
 
-    assert len(doc_set.pages) == 8  # 1 home + 3 modules + 3 diagrams + 1 class diagram
+    # 1 home + 3 modules + 3 diagrams + 1 class diagram + 3 entry-point sequence
+    # diagrams (alpha_entry, Child.run, shared_value - beta_helper is called by
+    # both alpha_entry and Child.run, so it does not itself qualify).
+    assert len(doc_set.pages) == 11
     home_page = next(page for page in doc_set.pages if page.kind == "home")
     assert "alpha" in home_page.contentMarkdown
     assert "beta" in home_page.contentMarkdown
@@ -115,22 +118,32 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
 
     # beta.py contains a class (Child), so this change also touches the
     # repository-wide class diagram, which always refreshes on any qualifying
-    # change (research.md Decision 3) - not just the module page.
+    # change (research.md Decision 3) - not just the module page. It also
+    # touches every entry-point sequence diagram whose recorded call sequence
+    # includes a symbol from beta.py: Child.run (its own body changed) and
+    # alpha_entry (its sequence includes beta_helper, which beta.py's edit
+    # also touches, per research.md Decision 8).
     regenerated_kinds = {page.kind for page in doc_set.pages}
-    assert regenerated_kinds == {"module", "class-diagram"}
-    assert len(doc_set.pages) == 2
+    assert regenerated_kinds == {"module", "class-diagram", "sequence-diagram"}
+    assert len(doc_set.pages) == 4
     module_page = next(page for page in doc_set.pages if page.kind == "module")
     assert module_page.title == "beta"
+    sequence_diagram_pages = [page for page in doc_set.pages if page.kind == "sequence-diagram"]
+    assert {page.title.split(" ")[0] for page in sequence_diagram_pages} == {"run", "alpha_entry"}
 
     after_mtimes = {path: path.stat().st_mtime_ns for path in output_root.rglob("*") if path.is_file()}
     changed_paths = {path for path in before_mtimes if before_mtimes[path] != after_mtimes.get(path)}
     class_diagram_page = next(page for page in doc_set.pages if page.kind == "class-diagram")
-    assert changed_paths == {
+    expected_changed_paths = {
         output_root / "modules" / Path(module_page.outputPathMarkdown).name,
         output_root / "modules" / Path(module_page.outputPathHtml).name,
         output_root / Path(class_diagram_page.outputPathMarkdown),
         output_root / Path(class_diagram_page.outputPathHtml),
     }
+    for sequence_diagram_page in sequence_diagram_pages:
+        expected_changed_paths.add(output_root / Path(sequence_diagram_page.outputPathMarkdown))
+        expected_changed_paths.add(output_root / Path(sequence_diagram_page.outputPathHtml))
+    assert changed_paths == expected_changed_paths
 
     repository_id = stable_repository_id(root)
     _assert_zero_broken_links(generator.manifestStore, repository_id)
