@@ -44,10 +44,6 @@ def graph_db_path(state_dir: Path) -> Path:
     return state_dir / "dependency-graph.sqlite"
 
 
-def vector_index_db_path(state_dir: Path) -> Path:
-    return state_dir / "vector-index.sqlite"
-
-
 def vector_metadata_db_path(state_dir: Path) -> Path:
     return state_dir / "vector-metadata.sqlite"
 

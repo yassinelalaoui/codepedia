@@ -52,7 +52,6 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     docs_root = paths.docs_output_dir(state_dir)
     vector_index = VectorIndex(
         root,
-        paths.vector_index_db_path(state_dir),
         paths.vector_metadata_db_path(state_dir),
         embedding_engine=embedding_engine,
     )

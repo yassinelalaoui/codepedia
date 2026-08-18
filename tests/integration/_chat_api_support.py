@@ -47,7 +47,6 @@ def build_test_app(
 
     index = VectorIndex(
         tmp_path / "repo",
-        tmp_path / "index.sqlite",
         tmp_path / "meta.sqlite",
         embedding_engine=embedding_engine,
     )

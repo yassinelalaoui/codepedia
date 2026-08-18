@@ -15,7 +15,7 @@ def test_public_api_exposes_core_types():
 
 
 def test_vector_index_supports_expected_methods(tmp_path):
-    index = VectorIndex(tmp_path / "repo", tmp_path / "index.sqlite", tmp_path / "meta.sqlite")
+    index = VectorIndex(tmp_path / "repo", tmp_path / "meta.sqlite")
 
     for method_name in ["addChunk", "addChunks", "removeChunksForFile", "reindexFile", "search", "save", "close"]:
         assert hasattr(index, method_name)

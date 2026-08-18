@@ -70,7 +70,6 @@ class Harness:
         self.root = _copy_fixture_repo(tmp_path, repo_name)
         self.metadata_db = tmp_path / f"{repo_name}-metadata.sqlite"
         self.graph_path = tmp_path / f"{repo_name}-graph.sqlite"
-        self.vector_index_db = tmp_path / f"{repo_name}-vectors.sqlite"
         self.vector_metadata_db = tmp_path / f"{repo_name}-vector-meta.sqlite"
         self.manifest_db = tmp_path / f"{repo_name}-manifest.sqlite"
         self.output_root = tmp_path / f"{repo_name}-docs"
@@ -79,7 +78,7 @@ class Harness:
         self.store.ensure_repository(self.root, detected_languages=("python",))
         self.llm = RecordingLLMEngine()
         self.embedding_engine = FakeEmbeddingEngine()
-        self.vector_index = VectorIndex(self.root, self.vector_index_db, self.vector_metadata_db, embedding_engine=self.embedding_engine)
+        self.vector_index = VectorIndex(self.root, self.vector_metadata_db, embedding_engine=self.embedding_engine)
         self.graph = DependencyGraph(id=self._graph_id(), sourceFile=str(self.root))
 
         self.manifest_store = open_doc_manifest_store(self.manifest_db)

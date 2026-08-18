@@ -35,7 +35,6 @@ def _blocked_urlopen(*args, **kwargs):
 def _build_index(tmp_path, engine: FakeEmbeddingEngine) -> VectorIndex:
     index = VectorIndex(
         tmp_path / "repo",
-        tmp_path / "index.sqlite",
         tmp_path / "meta.sqlite",
         embedding_engine=engine,
     )

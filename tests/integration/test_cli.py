@@ -213,9 +213,6 @@ def test_run_index_populates_repository_state(tmp_path, cli_home, fake_engines):
 
     assert (state_dir / "repository-metadata.sqlite").exists()
     assert (state_dir / "dependency-graph.sqlite").exists()
-    # vector_index (006/007) only ever writes a real sqlite file at its
-    # metadataPath; indexPath is recorded as a string field inside it, not
-    # a separate file on disk.
     assert (state_dir / "vector-metadata.sqlite").exists()
     assert (state_dir / "doc-manifest.sqlite").exists()
     assert (state_dir / "docs" / "index.html").exists()

@@ -56,7 +56,7 @@ def test_search_query_validates_k():
 
 def test_vector_index_add_remove_and_reindex_round_trip(tmp_path):
     engine = FakeEmbeddingEngine()
-    index = VectorIndex(tmp_path / "repo", tmp_path / "index.sqlite", tmp_path / "meta.sqlite", embedding_engine=engine)
+    index = VectorIndex(tmp_path / "repo", tmp_path / "meta.sqlite", embedding_engine=engine)
     first = build_code_chunk("alpha helper", source_symbol_id="symbol-alpha", source_file_path="src/alpha.py", embedding_engine=engine)
     second = build_code_chunk("beta helper", source_symbol_id="symbol-beta", source_file_path="src/beta.py", embedding_engine=engine)
 

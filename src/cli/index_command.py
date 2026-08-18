@@ -140,7 +140,6 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     docs_root = paths.docs_output_dir(final_state_dir)
     vector_index = VectorIndex(
         root,
-        paths.vector_index_db_path(final_state_dir),
         paths.vector_metadata_db_path(final_state_dir),
         embedding_engine=embedding_engine,
     )
@@ -205,7 +204,6 @@ def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: EmbeddingEng
     typer.echo(Stage.EMBEDDING.value)
     vector_index = VectorIndex(
         root,
-        paths.vector_index_db_path(state_dir),
         paths.vector_metadata_db_path(state_dir),
         embedding_engine=embedding_engine,
     )

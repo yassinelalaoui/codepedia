@@ -15,7 +15,6 @@ SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS indexes (
         id TEXT PRIMARY KEY,
         repository_root TEXT NOT NULL,
-        index_path TEXT NOT NULL,
         metadata_path TEXT NOT NULL,
         created_at TEXT NOT NULL,
         last_indexed_at TEXT NOT NULL
@@ -54,11 +53,10 @@ def normalize_path(path: str | Path) -> str:
     return Path(path).expanduser().as_posix().replace("\\", "/")
 
 
-def stable_index_id(repository_root: str | Path, index_path: str | Path, metadata_path: str | Path) -> str:
+def stable_index_id(repository_root: str | Path, metadata_path: str | Path) -> str:
     normalized = "|".join(
         [
             Path(repository_root).expanduser().resolve().as_posix(),
-            normalize_path(index_path),
             normalize_path(metadata_path),
         ]
     )
@@ -90,31 +88,27 @@ def ensure_index_record(
     connection: sqlite3.Connection,
     *,
     repository_root: str | Path,
-    index_path: str | Path,
     metadata_path: str | Path,
     index_id: str | None = None,
 ) -> IndexRecord:
     record = IndexRecord(
-        id=index_id or stable_index_id(repository_root, index_path, metadata_path),
+        id=index_id or stable_index_id(repository_root, metadata_path),
         repositoryRoot=str(Path(repository_root).expanduser().resolve()),
-        indexPath=str(Path(index_path).expanduser()),
         metadataPath=str(Path(metadata_path).expanduser()),
     )
     with connection:
         connection.execute(
             """
-            INSERT INTO indexes (id, repository_root, index_path, metadata_path, created_at, last_indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO indexes (id, repository_root, metadata_path, created_at, last_indexed_at)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 repository_root = excluded.repository_root,
-                index_path = excluded.index_path,
                 metadata_path = excluded.metadata_path,
                 last_indexed_at = excluded.last_indexed_at
             """,
             (
                 record.id,
                 record.repositoryRoot,
-                record.indexPath,
                 record.metadataPath,
                 record.createdAt,
                 record.lastIndexedAt,
@@ -133,7 +127,7 @@ def touch_index(connection: sqlite3.Connection, index_id: str, *, last_indexed_a
 
 def load_index_record(connection: sqlite3.Connection, index_id: str) -> IndexRecord:
     row = connection.execute(
-        "SELECT id, repository_root, index_path, metadata_path, created_at, last_indexed_at FROM indexes WHERE id = ?",
+        "SELECT id, repository_root, metadata_path, created_at, last_indexed_at FROM indexes WHERE id = ?",
         (index_id,),
     ).fetchone()
     if row is None:
@@ -141,7 +135,6 @@ def load_index_record(connection: sqlite3.Connection, index_id: str) -> IndexRec
     return IndexRecord(
         id=row["id"],
         repositoryRoot=row["repository_root"],
-        indexPath=row["index_path"],
         metadataPath=row["metadata_path"],
         createdAt=row["created_at"],
         lastIndexedAt=row["last_indexed_at"],
@@ -150,7 +143,7 @@ def load_index_record(connection: sqlite3.Connection, index_id: str) -> IndexRec
 
 def load_index_record_by_repository_root(connection: sqlite3.Connection, repository_root: str | Path) -> IndexRecord | None:
     row = connection.execute(
-        "SELECT id, repository_root, index_path, metadata_path, created_at, last_indexed_at FROM indexes WHERE repository_root = ? ORDER BY created_at LIMIT 1",
+        "SELECT id, repository_root, metadata_path, created_at, last_indexed_at FROM indexes WHERE repository_root = ? ORDER BY created_at LIMIT 1",
         (str(Path(repository_root).expanduser().resolve()),),
     ).fetchone()
     if row is None:
@@ -158,7 +151,6 @@ def load_index_record_by_repository_root(connection: sqlite3.Connection, reposit
     return IndexRecord(
         id=row["id"],
         repositoryRoot=row["repository_root"],
-        indexPath=row["index_path"],
         metadataPath=row["metadata_path"],
         createdAt=row["created_at"],
         lastIndexedAt=row["last_indexed_at"],

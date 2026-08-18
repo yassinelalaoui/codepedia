@@ -113,14 +113,12 @@ class SearchResult:
 class IndexRecord:
     id: str
     repositoryRoot: str
-    indexPath: str
     metadataPath: str
     createdAt: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     lastIndexedAt: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "repositoryRoot", str(Path(self.repositoryRoot).expanduser().resolve()))
-        object.__setattr__(self, "indexPath", str(Path(self.indexPath).expanduser()))
         object.__setattr__(self, "metadataPath", str(Path(self.metadataPath).expanduser()))
 
     def to_dict(self) -> dict[str, Any]:

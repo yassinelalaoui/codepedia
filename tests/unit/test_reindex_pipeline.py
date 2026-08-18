@@ -101,7 +101,7 @@ def _build_minimal_pipeline(tmp_path: Path, *, summary_pipeline, root: Path | No
         outputRoot=tmp_path / "docs",
         repositoryRoot=root,
     )
-    vector_index = VectorIndex(root, tmp_path / "vectors.sqlite", tmp_path / "vector-meta.sqlite", embedding_engine=_FakeEmbeddingEngine())
+    vector_index = VectorIndex(root, tmp_path / "vector-meta.sqlite", embedding_engine=_FakeEmbeddingEngine())
     return IncrementalReindexPipeline(
         repositoryRoot=root,
         metadataStore=store,

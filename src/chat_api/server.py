@@ -18,14 +18,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the local chat API server.")
     parser.add_argument("--repo", required=True, help="Path to the indexed repository root.")
     parser.add_argument(
-        "--index-db",
-        default=None,
-        help="Path to the vector index SQLite file (defaults to <repo>/.repo-scanner/vector-index.sqlite).",
-    )
-    parser.add_argument(
         "--metadata-db",
         default=None,
-        help="Path to the vector index metadata SQLite file (defaults to <repo>/.repo-scanner/vector-metadata.sqlite).",
+        help="Path to the vector index SQLite file (defaults to <repo>/.repo-scanner/vector-metadata.sqlite).",
     )
     parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL_NAME)
     parser.add_argument("--embedding-endpoint", default=DEFAULT_EMBEDDING_ENDPOINT_URL)
@@ -57,13 +52,12 @@ def _startup_message(host: str, port: int) -> str:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     repo_root = Path(args.repo).expanduser().resolve()
-    index_db = Path(args.index_db) if args.index_db else repo_root / ".repo-scanner" / "vector-index.sqlite"
     metadata_db = (
         Path(args.metadata_db) if args.metadata_db else repo_root / ".repo-scanner" / "vector-metadata.sqlite"
     )
 
     embedding_engine = create_embedding_engine(args.embedding_model, args.embedding_endpoint)
-    vector_index = VectorIndex(repo_root, index_db, metadata_db, embedding_engine=embedding_engine)
+    vector_index = VectorIndex(repo_root, metadata_db, embedding_engine=embedding_engine)
     llm_engine = create_local_llm_engine(args.llm_model, args.llm_endpoint)
     docs_root = Path(args.docs_root)
 

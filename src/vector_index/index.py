@@ -16,22 +16,18 @@ class VectorIndex:
     def __init__(
         self,
         repositoryRoot: str | Path,
-        indexPath: str | Path,
         metadataPath: str | Path,
         *,
         auto_load: bool = True,
         embedding_engine: EmbeddingEngine | None = None,
     ) -> None:
         self.repositoryRoot = str(Path(repositoryRoot).expanduser().resolve())
-        self.indexPath = Path(indexPath).expanduser()
         self.metadataPath = Path(metadataPath).expanduser()
-        self.indexPath.parent.mkdir(parents=True, exist_ok=True)
         self.metadataPath.parent.mkdir(parents=True, exist_ok=True)
         self._connection = storage.connect(self.metadataPath)
         self._record = storage.ensure_index_record(
             self._connection,
             repository_root=self.repositoryRoot,
-            index_path=self.indexPath,
             metadata_path=self.metadataPath,
         )
         self._entries: dict[str, VectorEntry] = {}
@@ -43,12 +39,11 @@ class VectorIndex:
     def load(
         cls,
         repositoryRoot: str | Path,
-        indexPath: str | Path,
         metadataPath: str | Path,
         *,
         embedding_engine: EmbeddingEngine | None = None,
     ) -> "VectorIndex":
-        return cls(repositoryRoot, indexPath, metadataPath, auto_load=True, embedding_engine=embedding_engine)
+        return cls(repositoryRoot, metadataPath, auto_load=True, embedding_engine=embedding_engine)
 
     @property
     def record(self) -> IndexRecord:
