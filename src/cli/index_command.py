@@ -12,7 +12,7 @@ import typer
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator, open_doc_manifest_store
 from embedding_engine import EmbeddingEngine, create_embedding_engine
-from local_llm import LocalLLMEngine, create_local_llm_engine
+from local_llm import LLMEngine, LocalLLMEngine, create_local_llm_engine
 from parser_engine import SourceFile, extract_symbols
 from reindex_pipeline.embeddings import update_embeddings
 from repo_scanner.scanner import scan_repository
@@ -23,7 +23,7 @@ from vector_index import VectorIndex
 
 from . import paths
 from .availability import check_ai_dependencies
-from .config import CLIConfiguration
+from .config import CLIConfiguration, build_chat_llm_engine
 from .errors import RepositoryNotFoundError
 
 # A directory just closed by sqlite/other local I/O can briefly stay locked
@@ -84,6 +84,7 @@ class IndexRunResult:
     embeddingEngine: EmbeddingEngine
     llmEngine: LocalLLMEngine
     metadataDbPath: Path
+    chatLlmEngine: LLMEngine
     watcher: Optional[RepositoryWatcher] = None
 
 
@@ -150,6 +151,7 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         embeddingEngine=embedding_engine,
         llmEngine=llm_engine,
         metadataDbPath=paths.metadata_db_path(final_state_dir),
+        chatLlmEngine=build_chat_llm_engine(config),
     )
 
 

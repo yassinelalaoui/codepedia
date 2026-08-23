@@ -41,3 +41,36 @@ class InvalidResponseError(LocalLLMError):
 class GenerationFailedError(LocalLLMError):
     def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
         super().__init__("generation_failed", message, endpointUrl, modelName)
+
+
+# Same shape as LocalLLMError (kind/message/endpointUrl/modelName) so both
+# error families are handled identically wherever an engine's errors
+# surface (e.g. chat_api/app.py's `_error_code_for`) - only the "kind"
+# values below name causes that don't apply to a local engine.
+@dataclass(frozen=True)
+class RemoteLLMError(RuntimeError):
+    kind: str
+    message: str
+    endpointUrl: str
+    modelName: str
+
+    def __post_init__(self) -> None:
+        RuntimeError.__init__(self, self.message)
+
+    def __str__(self) -> str:
+        return self.message
+
+
+class RemoteServiceUnavailableError(RemoteLLMError):
+    def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
+        super().__init__("service_unavailable", message, endpointUrl, modelName)
+
+
+class MissingApiKeyError(RemoteLLMError):
+    def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
+        super().__init__("missing_api_key", message, endpointUrl, modelName)
+
+
+class RemoteGenerationFailedError(RemoteLLMError):
+    def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
+        super().__init__("generation_failed", message, endpointUrl, modelName)

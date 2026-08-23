@@ -1,9 +1,21 @@
 <!--
 Sync Impact Report
-- Version change: none -> 1.0.0
-- Modified principles: none (new constitution)
-- Added sections: Objective, Principles, Governance
+- Version change: 1.0.0 -> 2.0.0
+- Modified principles:
+  - 2.1 Confidentialite absolue -> 2.1 Confidentialite par defaut, moteur
+    distant seulement sur choix explicite (MAJOR: the previous version
+    forbade any code/prompt/metadata leaving the machine with no exception;
+    this version carves out a narrow, opt-in exception for a remote/cloud
+    LLM engine used for chat answer generation only, never on by default)
+  - 2.3 Jamais de repli silencieux vers le cloud -> reworded to cover
+    switching between any configured engines (local<->remote), not just a
+    local-only baseline; the "never silent, never automatic" guarantee
+    itself is unchanged and still absolute
+- Added sections: none
 - Removed sections: none
+- Rationale: feature 026 (chat streaming) explicitly requires an optional
+  GroqLLMEngine alongside LocalLLMEngine, decided via /speckit-plan
+  clarification on 2026-08-19 after the constitutional conflict was raised.
 - Deferred items: none
 -->
 
@@ -17,16 +29,28 @@ locale, et une interface de chat en langage naturel sur le code analyse.
 
 ## 2. Principes
 
-### 2.1 Confidentialite absolue
+### 2.1 Confidentialite par defaut, moteur distant seulement sur choix explicite
 
-Aucune ligne de code source, aucun resume genere, aucun embedding, ni aucune
-metadonne derivee du code analyse ne doit transiter vers un service tiers ou une
-API cloud. Toute l'analyse statique, la vectorisation, l'indexation et
-l'inference LLM s'executent localement, avec Tree-sitter local, moteur
-d'embeddings local, et LLM local expose sur `localhost` via Ollama ou
-`llama.cpp`.
+Par defaut, aucune ligne de code source, aucun resume genere, aucun embedding,
+ni aucune metadonnee derivee du code analyse ne doit transiter vers un service
+tiers ou une API cloud. L'analyse statique, la vectorisation et l'indexation
+s'executent toujours localement, sans exception: Tree-sitter local et moteur
+d'embeddings local uniquement - ceci n'est pas negociable et n'est concerne par
+aucune configuration.
 
-Raison: le code analyse peut contenir des informations sensibles ou privees.
+Pour la generation de reponses du chat uniquement (Partie 3.1, `LLMEngine`),
+un moteur distant (par exemple une API cloud comme Groq) peut etre utilise en
+plus du moteur local, mais seulement si l'utilisateur le configure
+explicitement - jamais par defaut, jamais choisi automatiquement par le
+systeme. Au moment ou l'utilisateur configure un moteur distant, le systeme
+doit indiquer clairement que ce choix envoie le texte des questions posees et
+le contexte de code cite dans les reponses vers un service tiers.
+
+Raison: le code analyse peut contenir des informations sensibles ou privees;
+l'analyse/l'indexation restent une garantie absolue, tandis que la generation
+de reponses de chat est le seul point ou l'utilisateur peut choisir en
+connaissance de cause d'echanger de la confidentialite contre l'usage d'un
+modele distant.
 
 ### 2.2 Zero exposition reseau par defaut
 
@@ -38,12 +62,19 @@ choisi autrement.
 
 ### 2.3 Jamais de repli silencieux vers le cloud
 
-Si le modele LLM local est indisponible, le systeme doit le detecter
-explicitement via `isAvailableLocally` et guider l'utilisateur vers
-l'installation ou le demarrage du service local. Aucun repli vers un service
-externe, meme temporaire, n'est autorise.
+Si le moteur LLM configure (local, ou distant si explicitement choisi par
+l'utilisateur - voir 2.1) est indisponible, le systeme doit le detecter
+explicitement via `isAvailableLocally` et guider l'utilisateur vers la
+resolution (demarrage du service local, ou verification de la configuration
+du moteur distant selon le cas). Le systeme ne bascule jamais automatiquement
+d'un moteur configure vers un autre - notamment jamais du moteur local vers
+un moteur distant, ni l'inverse - sans que l'utilisateur ait lui-meme change
+la configuration au prealable. Un moteur distant n'est jamais utilise comme
+roue de secours silencieuse quand le moteur local est indisponible.
 
-Raison: la confidentialite et le comportement previsibles sont prioritaires.
+Raison: la confidentialite et le comportement previsible restent prioritaires;
+autoriser un moteur distant explicite (2.1) ne doit jamais degenerer en repli
+automatique non consenti.
 
 ### 2.4 Traçabilite des reponses IA
 
@@ -106,4 +137,8 @@ les principes ci-dessus avant implementation.
 ### 3.4 Date de ratification
 
 Date de ratification initiale: 2026-08-10.
+
+Version 2.0.0 - derniere modification: 2026-08-19 (voir Sync Impact Report
+en tete de fichier - ajout d'une exception explicite et opt-in pour un
+moteur LLM distant, feature 026).
 

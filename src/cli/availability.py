@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from embedding_engine import EmbeddingEngine
-from local_llm import LocalLLMEngine
+from local_llm import LLMEngine
 
 from .errors import LocalModelUnavailableError
 
 
-def check_ai_dependencies(llm_engine: LocalLLMEngine, embedding_engine: EmbeddingEngine) -> None:
+def check_ai_dependencies(llm_engine: LLMEngine, embedding_engine: EmbeddingEngine) -> None:
     """Verify the local LLM and embedding model are available before any
     AI-dependent pipeline step runs (constitution 2.3; spec.md's
     "Local-model availability checks" requirement).

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
+from chat import ChatMessage
+from chat.session import ensure_local_dependencies_available
 from fastapi import FastAPI
+from starlette.responses import StreamingResponse
 from starlette.staticfiles import StaticFiles
 
 from .errors import register_exception_handlers
 from .schemas import (
+    AnswerFragmentEvent,
+    ApiErrorResponse,
     AskQuestionRequest,
     AskQuestionResponse,
     ChatMessageView,
@@ -15,6 +20,11 @@ from .schemas import (
     SessionHistoryResponse,
 )
 from .session_store import SessionRegistry
+
+
+def _error_code_for(exc: Exception) -> str:
+    kind = getattr(exc, "kind", None)
+    return kind if isinstance(kind, str) else "generation_failed"
 
 
 def create_app(
@@ -34,14 +44,32 @@ def create_app(
         return CreateSessionResponse(sessionId=session.id)
 
     @app.post("/sessions/{session_id}/messages")
-    def ask_question(session_id: str, request: AskQuestionRequest) -> AskQuestionResponse:
+    async def ask_question(session_id: str, request: AskQuestionRequest) -> StreamingResponse:
         session = app.state.session_registry.get_session(session_id)
-        message = session.ask(request.question)
-        return AskQuestionResponse(
-            answer=message.content,
-            citedSymbolIds=message.citedSymbolIds,
-            citedFilePaths=message.citedFilePaths,
-        )
+        # Checked here, before any StreamingResponse is constructed, so an
+        # unavailable engine still surfaces as a normal 503 response rather
+        # than a stream that opens and then immediately errors - askStream()
+        # performs the same check again itself for callers that don't.
+        ensure_local_dependencies_available(session.embeddingEngine, session.llmEngine)
+
+        async def _event_stream() -> AsyncIterator[str]:
+            try:
+                async for item in session.askStream(request.question):
+                    if isinstance(item, ChatMessage):
+                        done_payload = AskQuestionResponse(
+                            answer=item.content,
+                            citedSymbolIds=item.citedSymbolIds,
+                            citedFilePaths=item.citedFilePaths,
+                        )
+                        yield f"event: done\ndata: {done_payload.model_dump_json()}\n\n"
+                    else:
+                        fragment_payload = AnswerFragmentEvent(fragment=item)
+                        yield f"data: {fragment_payload.model_dump_json()}\n\n"
+            except Exception as exc:  # noqa: BLE001 - surfaced to the client as an SSE error event
+                error_payload = ApiErrorResponse(code=_error_code_for(exc), message=str(exc))
+                yield f"event: error\ndata: {error_payload.model_dump_json()}\n\n"
+
+        return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
     @app.get("/sessions/{session_id}/messages")
     def get_history(session_id: str) -> SessionHistoryResponse:

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from doc_generator import DocGenerator, open_doc_manifest_store
 
-from ._chat_api_support import build_test_app
+from ._chat_api_support import build_test_app, parse_sse_events
 from ._doc_generator_support import build_indexed_repo
 
 
@@ -94,7 +94,8 @@ def test_chat_api_still_works_alongside_the_wiki_mount(tmp_path):
     index.close()
 
     assert ask_response.status_code == 200
-    body = ask_response.json()
+    events = parse_sse_events(ask_response.text)
+    _final_name, body = events[-1]
     assert "citedSymbolIds" in body and "citedFilePaths" in body
     assert history_response.status_code == 200
     assert len(history_response.json()["messages"]) == 2

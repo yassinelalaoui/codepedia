@@ -24,6 +24,15 @@ class AskQuestionResponse(BaseModel):
     citedFilePaths: tuple[str, ...]
 
 
+class AnswerFragmentEvent(BaseModel):
+    """One SSE `fragment` event body (026) - `AskQuestionResponse` itself is
+    reused, unchanged, as the terminal `done` event's payload; `ApiErrorResponse`
+    is reused as the terminal `error` event's payload. This is the only
+    genuinely new shape streaming introduces."""
+
+    fragment: str
+
+
 class ChatMessageView(BaseModel):
     role: str
     content: str

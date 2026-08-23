@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Optional
 
 import typer
 from embedding_engine import create_embedding_engine
-from local_llm import create_local_llm_engine
+from local_llm import create_groq_llm_engine, create_local_llm_engine
+from local_llm.groq_transport import API_KEY_ENV_VAR
 
 from .config import CLIConfiguration, load_config, save_config
+
+_REMOTE_PROVIDER_DISCLOSURE = (
+    "Warning: setting --llm-provider groq sends the text of chat questions and the "
+    "cited code context in their answers to Groq's cloud API. Only enable this if "
+    "you have explicitly decided that trade-off is acceptable for this repository."
+)
 
 
 def run_config(
@@ -17,6 +25,8 @@ def run_config(
     embedding_model: Optional[str],
     embedding_endpoint: Optional[str],
     embedding_generate_timeout: Optional[float],
+    llm_provider: Optional[str],
+    remote_llm_model: Optional[str],
     show: bool,
 ) -> None:
     """View or change `CLIConfiguration` (research.md §5, data-model.md's
@@ -33,6 +43,8 @@ def run_config(
             embedding_model,
             embedding_endpoint,
             embedding_generate_timeout,
+            llm_provider,
+            remote_llm_model,
         )
     )
     if not has_changes:
@@ -48,8 +60,14 @@ def run_config(
         embeddingGenerateTimeout=(
             embedding_generate_timeout if embedding_generate_timeout is not None else current.embeddingGenerateTimeout
         ),
+        llmProvider=llm_provider if llm_provider is not None else current.llmProvider,
+        remoteLlmModel=remote_llm_model if remote_llm_model is not None else current.remoteLlmModel,
     )
-    save_config(updated)  # raises ValueError before writing if an endpoint is invalid
+    # FR-013: disclosed every time a change actually sets the provider to
+    # "groq" - before saving, and regardless of whether it was already groq.
+    if llm_provider == "groq":
+        typer.echo(_REMOTE_PROVIDER_DISCLOSURE)
+    save_config(updated)  # raises ValueError before writing if invalid (e.g. missing remoteLlmModel for groq)
     typer.echo("Configuration saved.")
 
     if llm_model is not None:
@@ -84,6 +102,22 @@ def _print_status(config: CLIConfiguration) -> None:
 
     _print_other_installed_models("LLM", llm_engine, config.llmModel)
     _print_other_installed_models("embedding", embedding_engine, config.embeddingModel)
+
+    typer.echo(f"Chat answer-generation provider: {config.llmProvider}")
+    if config.llmProvider == "groq":
+        if config.remoteLlmModel:
+            remote_engine = create_groq_llm_engine(config.remoteLlmModel)
+            remote_status = remote_engine.checkAvailability()
+            typer.echo(
+                f"Remote (Groq) model: {config.remoteLlmModel} - "
+                f"{'available' if remote_status.available else 'unavailable'}: {remote_status.message}"
+            )
+        else:
+            typer.echo(f"Remote (Groq) model: not set - configure with --remote-llm-model")
+        typer.echo(
+            f"{API_KEY_ENV_VAR} is "
+            f"{'set' if os.environ.get(API_KEY_ENV_VAR) else 'NOT set'} in this environment."
+        )
 
 
 def _print_other_installed_models(label: str, engine: Any, configured_model: str) -> None:

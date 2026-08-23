@@ -30,8 +30,15 @@ picture and *why* it's built this way.
   reachable in one click from anywhere in the wiki that lists every diagram
   above.
 - **Answers questions in chat**, grounded in the indexed code, with
-  clickable citations back to the wiki. Conversations persist locally, so
-  they survive a server restart or a wiki page reload.
+  clickable citations back to the wiki. Answers stream back progressively
+  as they're generated rather than arriving all at once, and a follow-up
+  question's search is enriched with recent conversation context so
+  elliptical questions ("what about the other one?") still find the right
+  code. Conversations persist locally, so they survive a server restart or
+  a wiki page reload. Answer generation is local by default; an operator
+  can explicitly opt into a remote (Groq) engine instead via
+  `repo-scanner config --llm-provider groq` — never on by default, and the
+  tool discloses that doing so sends chat content to that third-party API.
 - **Watches the repository** in the background and **incrementally
   re-indexes** just what a change actually affects — never a full
   repository re-analysis.
@@ -162,6 +169,17 @@ repo-scanner serve /path/to/some/repository
 ```bash
 repo-scanner config --llm-model <your-local-model-name> --embedding-model <your-embedding-model-name>
 repo-scanner config --show   # view the current configuration
+```
+
+**Opt into a remote engine for chat answers only** (never the default, and
+code summarization always stays local regardless of this setting) — set
+`GROQ_API_KEY` in your environment first; the key itself is never stored by
+this tool:
+
+```bash
+export GROQ_API_KEY=...
+repo-scanner config --llm-provider groq --remote-llm-model <a-groq-model-name>
+repo-scanner config --llm-provider local   # revert to local-only chat answers
 ```
 
 **Scan a repository only** (no local LLM needed) — prints a JSON inventory

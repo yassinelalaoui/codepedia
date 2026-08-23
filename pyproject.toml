@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0"]
+test = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 build = ["pyinstaller>=6.0"]
 
 [project.scripts]
@@ -45,3 +45,4 @@ doc_generator = ["templates/*.jinja", "assets/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "strict"

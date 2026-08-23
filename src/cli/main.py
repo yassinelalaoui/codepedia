@@ -81,7 +81,7 @@ def index(
     try:
         result = run_index(path, config=cfg)
         start_local_server(
-            result.vectorIndex, result.embeddingEngine, result.llmEngine, result.docsRoot, host, port, result.metadataDbPath
+            result.vectorIndex, result.embeddingEngine, result.chatLlmEngine, result.docsRoot, host, port, result.metadataDbPath
         )
     except (RepositoryNotFoundError, LocalModelUnavailableError, ServerBindError, *_AI_PIPELINE_ERRORS) as exc:
         report_and_exit(exc)
@@ -100,7 +100,7 @@ def serve(
         result = run_serve(path, config=cfg)
         try:
             start_local_server(
-                result.vectorIndex, result.embeddingEngine, result.llmEngine, result.docsRoot, host, port, result.metadataDbPath
+                result.vectorIndex, result.embeddingEngine, result.chatLlmEngine, result.docsRoot, host, port, result.metadataDbPath
             )
         finally:
             if result.watcher is not None:
@@ -131,6 +131,15 @@ def config_command(
         "--embedding-generate-timeout",
         help="Seconds to wait for the local embedding runtime to finish embedding before failing (default: 60).",
     ),
+    llm_provider: Optional[str] = typer.Option(
+        None,
+        "--llm-provider",
+        help="Which engine generates chat answers: 'local' (default) or 'groq' (explicit opt-in; "
+        "see docs before enabling - sends chat content to a third-party API).",
+    ),
+    remote_llm_model: Optional[str] = typer.Option(
+        None, "--remote-llm-model", help="Model name to use when --llm-provider is 'groq'."
+    ),
     show: bool = typer.Option(False, "--show", help="Show the current configuration without changing it."),
 ) -> None:
     """View or change which local LLM/embedding model `index`/`serve` use."""
@@ -142,6 +151,8 @@ def config_command(
             embedding_model=embedding_model,
             embedding_endpoint=embedding_endpoint,
             embedding_generate_timeout=embedding_generate_timeout,
+            llm_provider=llm_provider,
+            remote_llm_model=remote_llm_model,
             show=show,
         )
     except ValueError as exc:

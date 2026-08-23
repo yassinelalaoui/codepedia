@@ -9,8 +9,10 @@ import inspect
 import re
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
+import cli.paths
 from cli.main import app
 
 
@@ -52,9 +54,46 @@ def test_serve_command_has_same_path_host_port_shape_as_index():
 def test_config_command_accepts_optional_model_endpoint_and_show_flags():
     cmd = _command("config")
     parameters = inspect.signature(cmd.callback).parameters
-    for name in ("llm_model", "llm_endpoint", "embedding_model", "embedding_endpoint"):
+    for name in ("llm_model", "llm_endpoint", "embedding_model", "embedding_endpoint", "llm_provider", "remote_llm_model"):
         assert _param_default(cmd.callback, name) is None
     assert _param_default(cmd.callback, "show") is False
+
+
+@pytest.fixture()
+def cli_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(cli.paths, "repo_scanner_home", lambda: home)
+    return home
+
+
+def test_config_llm_provider_groq_discloses_and_saves(cli_home):
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app, ["config", "--llm-provider", "groq", "--remote-llm-model", "llama-3.3-70b-versatile"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "sends" in result.output.lower() and "groq" in result.output.lower()
+    assert "Chat answer-generation provider: groq" in result.output
+
+
+def test_config_llm_provider_groq_without_remote_model_is_rejected(cli_home):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--llm-provider", "groq"])
+
+    assert result.exit_code != 0
+
+
+def test_config_llm_provider_local_reverts_cleanly(cli_home):
+    runner = CliRunner()
+    runner.invoke(app, ["config", "--llm-provider", "groq", "--remote-llm-model", "llama-3.3-70b-versatile"])
+
+    result = runner.invoke(app, ["config", "--llm-provider", "local"])
+
+    assert result.exit_code == 0, result.output
+    assert "Chat answer-generation provider: local" in result.output
 
 
 def test_version_flag_output_is_a_bare_version_string_matching_the_package():

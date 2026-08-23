@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import urllib.request
 
@@ -30,6 +31,24 @@ class FakeLLMEngine:
         self.calls.append(envelope)
         return self.response_text
 
+    async def generateStream(self, envelope):
+        self.calls.append(envelope)
+        midpoint = max(1, len(self.response_text) // 2)
+        yield self.response_text[:midpoint]
+        yield self.response_text[midpoint:]
+
+
+async def _collect_stream(session: ChatSession, question: str) -> tuple[list[str], ChatMessage]:
+    fragments: list[str] = []
+    final_message: ChatMessage | None = None
+    async for item in session.askStream(question):
+        if isinstance(item, ChatMessage):
+            final_message = item
+        else:
+            fragments.append(item)
+    assert final_message is not None, "askStream must yield the final ChatMessage last"
+    return fragments, final_message
+
 
 def _blocked_urlopen(*args, **kwargs):
     raise AssertionError("no outbound network request should be made during a successful answer path")
@@ -51,7 +70,7 @@ def _build_index(tmp_path, engine: FakeEmbeddingEngine) -> VectorIndex:
     return index
 
 
-def test_ask_returns_cited_answer_without_any_outbound_network_request(tmp_path, monkeypatch):
+def test_ask_stream_returns_cited_answer_without_any_outbound_network_request(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", _blocked_urlopen)
 
     engine = FakeEmbeddingEngine()
@@ -60,10 +79,14 @@ def test_ask_returns_cited_answer_without_any_outbound_network_request(tmp_path,
 
     session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=llm)
 
-    message = session.ask("where is authentication handled and how is a user validated?")
+    fragments, message = asyncio.run(
+        _collect_stream(session, "where is authentication handled and how is a user validated?")
+    )
 
     index.close()
 
+    assert fragments, "expected at least one streamed fragment"
+    assert "".join(fragments) == message.content
     assert message.role == "assistant"
     assert "src/auth/login.py" in message.citedFilePaths
     assert "auth.authenticate_user" in message.citedSymbolIds
@@ -71,6 +94,38 @@ def test_ask_returns_cited_answer_without_any_outbound_network_request(tmp_path,
     assert session.messages[0].role == "user"
     assert session.messages[1] is message
     assert llm.calls, "the local LLM should have been invoked to generate the answer"
+
+
+def test_ask_stream_persists_user_message_immediately_and_assistant_message_once_at_completion(tmp_path):
+    engine = FakeEmbeddingEngine()
+    index = _build_index(tmp_path, engine)
+    llm = FakeLLMEngine("Authentication is handled by authenticate_user.")
+    db_path = tmp_path / "repository-metadata.sqlite"
+    connect(db_path).close()
+    session_id = "session-persist"
+    chat_sqlite_store.create_session(db_path, session_id)
+    session = ChatSession(
+        id=session_id, vectorIndex=index, embeddingEngine=engine, llmEngine=llm, messageStore=db_path
+    )
+
+    async def _consume_and_watch_persistence():
+        saw_user_message = False
+        saw_assistant_message_before_done = False
+        async for item in session.askStream("where is authentication handled?"):
+            if isinstance(item, str):
+                roles = [message.role for message in chat_sqlite_store.load_messages(db_path, session_id)]
+                saw_user_message = saw_user_message or "user" in roles
+                saw_assistant_message_before_done = saw_assistant_message_before_done or "assistant" in roles
+        return saw_user_message, saw_assistant_message_before_done
+
+    saw_user_message, saw_assistant_message_before_done = asyncio.run(_consume_and_watch_persistence())
+    index.close()
+
+    assert saw_user_message, "the user question must be persisted before any fragment is yielded"
+    assert not saw_assistant_message_before_done, "the assistant message must not be persisted until the stream completes"
+
+    final = chat_sqlite_store.load_messages(db_path, session_id)
+    assert [message.role for message in final] == ["user", "assistant"]
 
 
 def test_session_history_survives_a_simulated_restart(tmp_path, monkeypatch):
@@ -85,7 +140,7 @@ def test_session_history_survives_a_simulated_restart(tmp_path, monkeypatch):
     session_id = "session-restart"
     chat_sqlite_store.create_session(db_path, session_id)
     session = ChatSession(id=session_id, vectorIndex=index, embeddingEngine=engine, llmEngine=llm, messageStore=db_path)
-    session.ask("where is authentication handled and how is a user validated?")
+    asyncio.run(_collect_stream(session, "where is authentication handled and how is a user validated?"))
     index.close()
 
     before = chat_sqlite_store.load_messages(db_path, session_id)
@@ -123,6 +178,64 @@ def test_appending_a_message_leaves_prior_messages_unchanged(tmp_path):
 
     final = chat_sqlite_store.load_messages(db_path, session_id)
     assert len(final) == 5
+
+
+class _SearchResult:
+    def __init__(self, chunk_id, content, score, symbol_id, file_path):
+        self.chunkId = chunk_id
+        self.content = content
+        self.score = score
+        self.sourceSymbolId = symbol_id
+        self.sourceFilePath = file_path
+        self.chunkType = "code"
+
+
+class SeededVectorIndex:
+    """A fake vector index that only ever finds one chunk, and only when the
+    query mentions authentication-related terms or the symbol a prior
+    answer cited - proving history-aware enrichment, not a follow-up's own
+    bare wording, is what finds it again for an elliptical follow-up (US2)."""
+
+    def __init__(self):
+        self.queries: list[str] = []
+
+    def search(self, query: str, k: int):
+        self.queries.append(query)
+        if "auth.authenticate_user" in query or "authentication" in query.lower():
+            return [_SearchResult("chunk-a", "auth chunk", 0.9, "auth.authenticate_user", "src/auth/login.py")]
+        return []
+
+
+def test_elliptical_follow_up_retrieves_the_evidence_the_prior_answer_cited(tmp_path):
+    engine = FakeEmbeddingEngine()
+    index = SeededVectorIndex()
+    llm = FakeLLMEngine("Authentication is handled by authenticate_user.")
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=llm, topK=1)
+
+    asyncio.run(_collect_stream(session, "where is authentication handled?"))
+    assert index.queries[-1] == "where is authentication handled?"  # first question: not enriched (FR-007)
+
+    llm.response_text = "Yes, authenticate_user has full test coverage."
+    _fragments, follow_up_message = asyncio.run(_collect_stream(session, "is that well tested?"))
+
+    assert follow_up_message.citedSymbolIds == ("auth.authenticate_user",)
+    assert follow_up_message.citedFilePaths == ("src/auth/login.py",)
+    # "is that well tested?" alone shares nothing with the fake index's
+    # trigger condition - only the enriched query (carrying forward the
+    # prior answer's citation) does, proving enrichment is what found it.
+    assert "auth.authenticate_user" in index.queries[-1]
+    assert "auth.authenticate_user" not in "is that well tested?"
+
+
+def test_first_question_in_a_brand_new_session_is_not_enriched(tmp_path):
+    engine = FakeEmbeddingEngine()
+    index = SeededVectorIndex()
+    llm = FakeLLMEngine("Authentication is handled by authenticate_user.")
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=llm, topK=1)
+
+    asyncio.run(_collect_stream(session, "where is authentication handled?"))
+
+    assert index.queries == ["where is authentication handled?"]
 
 
 def test_append_time_does_not_grow_with_session_length(tmp_path):

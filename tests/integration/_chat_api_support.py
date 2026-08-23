@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,6 +8,27 @@ from vector_index import VectorIndex, build_code_chunk
 from vector_index.search import encode_text
 
 from chat_api import create_app
+
+
+def parse_sse_events(text: str) -> list[tuple[str, dict]]:
+    """Parse an SSE response body (026) into a list of (event name, JSON
+    payload) tuples, in order. Defaults an event's name to "message" per
+    the SSE spec when no explicit `event:` line is present (the `fragment`
+    events)."""
+    events: list[tuple[str, dict]] = []
+    for block in text.strip("\n").split("\n\n"):
+        if not block.strip():
+            continue
+        event_name = "message"
+        data_line = None
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event_name = line[len("event:") :].strip()
+            elif line.startswith("data:"):
+                data_line = line[len("data:") :].strip()
+        if data_line is not None:
+            events.append((event_name, json.loads(data_line)))
+    return events
 
 
 class FakeEmbeddingEngine:
@@ -21,9 +43,16 @@ class FakeEmbeddingEngine:
 
 
 class FakeLLMEngine:
-    def __init__(self, response_text: str = "Authentication is handled by authenticate_user.", *, available: bool = True) -> None:
+    def __init__(
+        self,
+        response_text: str = "Authentication is handled by authenticate_user.",
+        *,
+        available: bool = True,
+        fail_after_fragments: int | None = None,
+    ) -> None:
         self.response_text = response_text
         self.available = available
+        self.fail_after_fragments = fail_after_fragments
         self.calls: list = []
 
     def isAvailableLocally(self) -> bool:
@@ -32,6 +61,14 @@ class FakeLLMEngine:
     def generate(self, envelope) -> str:
         self.calls.append(envelope)
         return self.response_text
+
+    async def generateStream(self, envelope):
+        self.calls.append(envelope)
+        midpoint = max(1, len(self.response_text) // 2)
+        for index, fragment in enumerate((self.response_text[:midpoint], self.response_text[midpoint:])):
+            if self.fail_after_fragments is not None and index >= self.fail_after_fragments:
+                raise RuntimeError("simulated mid-stream generation failure")
+            yield fragment
 
 
 def build_test_app(

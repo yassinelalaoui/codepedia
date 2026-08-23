@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncIterator
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+import httpx
 
 from .errors import GenerationFailedError, InvalidResponseError
 from .models import (
@@ -166,3 +168,57 @@ class LocalLLMTransport:
             endpointUrl=self.endpointUrl,
             rawResponse=response,
         )
+
+    async def generate_stream(self, model_name: str, prompt: PromptEnvelope) -> AsyncIterator[str]:
+        """Stream generated text as it arrives, one fragment per Ollama
+        NDJSON line, until the server marks the response `"done": true`.
+
+        Builds its own `"stream": true` payload rather than reusing
+        `PromptEnvelope.to_request_payload()`, which hard-codes
+        `"stream": False` for the non-streaming call above.
+        """
+        payload = prompt.to_request_payload(model_name)
+        payload["stream"] = True
+        try:
+            async with httpx.AsyncClient(timeout=self.generateTimeout) as client:
+                async with client.stream("POST", f"{self.endpointUrl}/api/generate", json=payload) as response:
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError:
+                        raise GenerationFailedError(
+                            _local_fallback_message(self.endpointUrl, model_name),
+                            endpointUrl=self.endpointUrl,
+                            modelName=model_name,
+                        ) from None
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except json.JSONDecodeError as exc:
+                            raise InvalidResponseError(
+                                f"Local LLM response from {self.endpointUrl} could not be parsed.",
+                                endpointUrl=self.endpointUrl,
+                                modelName=model_name,
+                            ) from exc
+                        text = chunk.get("response")
+                        if isinstance(text, str) and text:
+                            yield text
+                        if chunk.get("done"):
+                            break
+        except httpx.TimeoutException:
+            raise GenerationFailedError(
+                f"Local LLM at {self.endpointUrl} did not respond within {self.generateTimeout:g}s "
+                f"while generating with model '{model_name}'. The service is reachable but generation "
+                "is taking longer than that - it may still be loading the model into memory, or the "
+                "model may be slow on this hardware. Wait for it to finish loading and try again, use "
+                "a smaller/faster model, or increase the generation timeout.",
+                endpointUrl=self.endpointUrl,
+                modelName=model_name,
+            ) from None
+        except httpx.TransportError:
+            raise GenerationFailedError(
+                _local_fallback_message(self.endpointUrl, model_name),
+                endpointUrl=self.endpointUrl,
+                modelName=model_name,
+            ) from None

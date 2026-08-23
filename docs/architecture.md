@@ -60,7 +60,7 @@ domain data itself.
 
 | Package | Responsibility |
 |---|---|
-| `local_llm` | Generate text from a prompt via a local (Ollama-compatible) endpoint; verify availability before every call; never fall back to a remote model. |
+| `local_llm` | Generate text from a prompt via a local (Ollama-compatible) endpoint, streamed as it's produced (`generateStream`, 026; `generate` is a convenience wrapper that drains it); verify availability before every call. For chat answer generation only (026), an explicitly-configured, opt-in remote engine (`GroqLLMEngine`) implementing the same `LLMEngine` interface is also supported - never on by default, never used as an automatic fallback for the local engine in either direction (constitution 2.1/2.3, v2.0.0). Code summarization (`repository_metadata.summary_pipeline`) always uses the local engine specifically, regardless of the configured chat provider. |
 | `embedding_engine` | Turn text into a vector via the same local-endpoint convention. |
 
 ### 3. Knowledge Derivation
@@ -72,7 +72,7 @@ generated knowledge about the codebase.
 |---|---|
 | `repository_metadata.summary_pipeline` (`CodeSummaryPipeline`) | Generate a natural-language summary per module/public function, using source + imports + direct callers as context; regenerate only impacted summaries on a change. |
 | `vector_index` | Store and search embedded code chunks by similarity. |
-| `chat` | Answer a natural-language question by retrieving relevant chunks and asking the local LLM to answer *grounded in* that evidence, with citations. |
+| `chat` | Answer a natural-language question by retrieving relevant chunks - enriched with recent conversation context for follow-up questions (026, local text/citation concatenation only, no LLM call) - and streaming the configured engine's answer (`askStream`, 026) *grounded in* that evidence, with citations attached once generation completes. |
 
 ### 4. Presentation
 

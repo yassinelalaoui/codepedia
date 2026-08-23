@@ -4,7 +4,7 @@ import urllib.request
 
 from fastapi.testclient import TestClient
 
-from ._chat_api_support import FakeEmbeddingEngine, FakeLLMEngine, build_test_app
+from ._chat_api_support import FakeEmbeddingEngine, FakeLLMEngine, build_test_app, parse_sse_events
 
 
 def _blocked_urlopen(*args, **kwargs):
@@ -28,7 +28,7 @@ def test_create_session_returns_unique_id_with_empty_history(tmp_path):
     assert session_id_one != session_id_two
 
 
-def test_ask_question_returns_structured_cited_answer_without_outbound_network_request(tmp_path, monkeypatch):
+def test_ask_question_streams_fragments_then_a_structured_cited_done_event(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", _blocked_urlopen)
 
     app, index = build_test_app(tmp_path)
@@ -42,10 +42,45 @@ def test_ask_question_returns_structured_cited_answer_without_outbound_network_r
     index.close()
 
     assert response.status_code == 200
-    body = response.json()
-    assert "Authentication is handled by authenticate_user." in body["answer"]
-    assert "auth.authenticate_user" in body["citedSymbolIds"]
-    assert "src/auth/login.py" in body["citedFilePaths"]
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = parse_sse_events(response.text)
+
+    assert events, "expected at least one SSE event"
+    *fragment_events, (final_name, final_payload) = events
+    assert fragment_events, "expected at least one fragment event before done"
+    assert all(name == "message" and "fragment" in payload for name, payload in fragment_events)
+    assert final_name == "done"
+    fragments_text = "".join(payload["fragment"] for _name, payload in fragment_events)
+    assert fragments_text in final_payload["answer"]
+    assert "Authentication is handled by authenticate_user." in final_payload["answer"]
+    assert "auth.authenticate_user" in final_payload["citedSymbolIds"]
+    assert "src/auth/login.py" in final_payload["citedFilePaths"]
+
+
+def test_ask_question_mid_stream_failure_ends_with_error_event_and_no_history_side_effect(tmp_path):
+    embedding_engine = FakeEmbeddingEngine()
+    llm_engine = FakeLLMEngine(fail_after_fragments=1)
+    app, index = build_test_app(tmp_path, embedding_engine=embedding_engine, llm_engine=llm_engine)
+    client = TestClient(app)
+
+    session_id = client.post("/sessions").json()["sessionId"]
+    response = client.post(f"/sessions/{session_id}/messages", json={"question": "where is auth handled?"})
+
+    registry = app.state.session_registry
+    session = registry.get_session(session_id)
+    index.close()
+
+    assert response.status_code == 200  # headers were already sent by the time generation failed
+    events = parse_sse_events(response.text)
+    assert events, "expected at least one SSE event before the failure"
+    event_names = [name for name, _payload in events]
+    assert event_names[-1] == "error"
+    error_payload = events[-1][1]
+    assert error_payload["code"]
+    assert error_payload["message"]
+    # The user's question is persisted immediately, but no assistant message
+    # is ever recorded for a generation that failed partway through (FR-011).
+    assert [message.role for message in session.messages] == ["user"]
 
 
 def test_ask_question_on_unknown_session_returns_404_without_side_effects(tmp_path):
@@ -121,7 +156,8 @@ def test_history_reflects_asked_questions_in_order_with_matching_citations(tmp_p
     history_response = client.get(f"/sessions/{session_id}/messages")
     index.close()
 
-    ask_body = ask_response.json()
+    ask_events = parse_sse_events(ask_response.text)
+    _final_name, ask_body = ask_events[-1]
     history_body = history_response.json()
 
     assert history_response.status_code == 200

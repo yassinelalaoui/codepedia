@@ -15,7 +15,7 @@ from vector_index import VectorIndex
 
 from . import paths
 from .availability import check_ai_dependencies
-from .config import CLIConfiguration
+from .config import CLIConfiguration, build_chat_llm_engine
 from .errors import IndexNotFoundError
 from .index_command import IndexRunResult, validate_repo_path
 
@@ -90,5 +90,6 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         embeddingEngine=embedding_engine,
         llmEngine=llm_engine,
         metadataDbPath=paths.metadata_db_path(state_dir),
+        chatLlmEngine=build_chat_llm_engine(config),
         watcher=watcher,
     )

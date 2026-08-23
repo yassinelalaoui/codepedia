@@ -58,21 +58,31 @@ connection-handling code for simpler ownership boundaries.
 
 ## Local AI access (LLM + embeddings)
 
-**Raw HTTP via `urllib.request`** (stdlib, no SDK) against an **Ollama-compatible**
-local endpoint convention (`http://localhost:11434`, `/api/tags` for availability, a
-generate/embeddings endpoint for the call itself). Two near-identical components,
-`local_llm` and `embedding_engine`, each independently check availability first, then
-call. Why this shape:
+**Raw HTTP via `urllib.request`** (stdlib, no SDK) for availability checks and
+`embedding_engine`'s calls, against an **Ollama-compatible** local endpoint
+convention (`http://localhost:11434`, `/api/tags` for availability, an embeddings
+endpoint for the call itself). Two near-identical components, `local_llm` and
+`embedding_engine`, each independently check availability first, then call. Why
+this shape:
 
-- No SDK dependency for what is just two JSON HTTP calls — keeps the footprint
-  minimal.
-- The endpoint's host is validated to be loopback-only (`normalize_endpoint_url`
-  rejects anything but `localhost` / `127.0.0.1` / `::1`) — constitution 2.1/2.3
-  enforced in code, not just policy: it is structurally impossible to point this at a
-  cloud API.
+- No SDK dependency for what is otherwise just plain JSON HTTP calls — keeps the
+  footprint minimal.
+- The local endpoint's host is validated to be loopback-only
+  (`normalize_endpoint_url` rejects anything but `localhost` / `127.0.0.1` / `::1`)
+  — constitution 2.1/2.3 enforced in code, not just policy: it is structurally
+  impossible to point the *local* engine at a cloud API.
 - Availability-check-before-call, everywhere, with a hard failure
   (`ServiceUnavailableError` / `LocalLLMUnavailableError`) instead of any fallback —
   constitution 2.3, "jamais de repli silencieux vers le cloud."
+
+**`httpx.AsyncClient`** (026) for the actual answer-*generation* call specifically
+— both `local_llm`'s Ollama streaming call and the new, explicitly opt-in
+`GroqLLMEngine`'s Groq API call, since generation is the one place this project
+needs a real async streaming HTTP response (`generateStream`, consumed token-by-
+token as Server-Sent Events reach the chat API). `GroqLLMEngine`'s endpoint is
+deliberately **not** run through `normalize_endpoint_url` — that validator's
+loopback-only guarantee stays specific to the local engine; the remote engine's
+own opt-in, disclosed nature (constitution 2.1 v2.0.0) is what governs it instead.
 
 ## Documentation rendering
 
@@ -119,7 +129,9 @@ a **classic (non-`type="module"`) IIFE bundle** and committed into
 
 **pytest** for the entire Python backend (`tests/unit`, `tests/integration`,
 `tests/contract` — the layout every spec in this project follows), **Vitest +
-`@testing-library/react`** for the frontend components.
+`@testing-library/react`** for the frontend components. **`pytest-asyncio`**
+(026, test-only — not a runtime dependency) drives the async generators
+`generateStream`/`askStream` introduced for chat streaming.
 
 ## Packaging
 
@@ -150,13 +162,13 @@ local PyInstaller build at all (research.md §8's superseding decision) —
 `packaging/build.py` itself is unchanged and still works standalone on
 any unrestricted machine; CI is an additional path, not a replacement.
 
-## Two loose ends
+## One loose end
 
 - **`pathspec`** and **`networkx`** are both declared in `pyproject.toml` but
   **unused** anywhere in `src/` — the scanner hand-rolled its own `.gitignore`
   matcher instead of `pathspec`, and the dependency graph hand-rolled its own
   adjacency structure instead of `networkx`. Not a functional problem, just dead
   weight in the dependency list; worth pruning if the manifest should reflect reality.
-- **`httpx`** is declared and *is* used — but only transitively, because Starlette's
-  `TestClient` requires it in the test suite. The app's own local-LLM/embedding HTTP
-  calls use stdlib `urllib`, not `httpx`.
+
+(`httpx` was transitive-only through 025; as of 026 it is a genuine direct
+dependency — see "Local AI access" above.)

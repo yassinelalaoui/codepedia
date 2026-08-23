@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from typing import AsyncIterator
 
 from .errors import GenerationFailedError, ModelMissingError, ServiceUnavailableError
 from .models import (
@@ -48,12 +50,23 @@ class LocalLLMEngine:
         return self._transport.list_models()
 
     def generate(self, prompt: str | PromptEnvelope) -> str:
+        """Sync convenience wrapper: drains `generateStream` and
+        concatenates (research.md Decision 1) - behaviorally identical to
+        joining every fragment `generateStream` yields."""
+
+        async def _drain() -> str:
+            fragments = [fragment async for fragment in self.generateStream(prompt)]
+            return "".join(fragments)
+
+        return asyncio.run(_drain())
+
+    async def generateStream(self, prompt: str | PromptEnvelope) -> AsyncIterator[str]:
         envelope = prompt if isinstance(prompt, PromptEnvelope) else PromptEnvelope.from_prompt(prompt)
         status = self.checkAvailability()
         if not status.available:
             raise _availability_error(status, endpoint_url=self.endpointUrl, model_name=self.modelName)
-        result = self._transport.generate(self.modelName, envelope)
-        return result.text
+        async for fragment in self._transport.generate_stream(self.modelName, envelope):
+            yield fragment
 
     def generate_result(self, prompt: str | PromptEnvelope) -> GenerationResult:
         envelope = prompt if isinstance(prompt, PromptEnvelope) else PromptEnvelope.from_prompt(prompt)
