@@ -40,6 +40,7 @@ def build_test_app(
     embedding_engine: FakeEmbeddingEngine | None = None,
     llm_engine: FakeLLMEngine | None = None,
     docs_root: Path | None = None,
+    metadata_db_path: Path | None = None,
 ) -> tuple[FastAPI, VectorIndex]:
     embedding_engine = embedding_engine if embedding_engine is not None else FakeEmbeddingEngine()
     llm_engine = llm_engine if llm_engine is not None else FakeLLMEngine()
@@ -58,5 +59,5 @@ def build_test_app(
     )
     index.addChunk(chunk)
 
-    app = create_app(index, embedding_engine, llm_engine, docs_root)
+    app = create_app(index, embedding_engine, llm_engine, docs_root, metadata_db_path)
     return app, index

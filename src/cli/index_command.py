@@ -83,6 +83,7 @@ class IndexRunResult:
     vectorIndex: VectorIndex
     embeddingEngine: EmbeddingEngine
     llmEngine: LocalLLMEngine
+    metadataDbPath: Path
     watcher: Optional[RepositoryWatcher] = None
 
 
@@ -148,6 +149,7 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         vectorIndex=vector_index,
         embeddingEngine=embedding_engine,
         llmEngine=llm_engine,
+        metadataDbPath=paths.metadata_db_path(final_state_dir),
     )
 
 

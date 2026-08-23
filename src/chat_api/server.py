@@ -22,6 +22,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to the vector index SQLite file (defaults to <repo>/.repo-scanner/vector-metadata.sqlite).",
     )
+    parser.add_argument(
+        "--repository-metadata-db",
+        default=None,
+        help="Path to the repository-metadata SQLite file used for chat session persistence (025; distinct "
+        "from --metadata-db, which is the vector index's own file) - defaults to "
+        "<repo>/.repo-scanner/repository-metadata.sqlite.",
+    )
     parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL_NAME)
     parser.add_argument("--embedding-endpoint", default=DEFAULT_EMBEDDING_ENDPOINT_URL)
     parser.add_argument("--llm-model", required=True, help="Local model name to use for answer generation.")
@@ -55,13 +62,18 @@ def main(argv: list[str] | None = None) -> None:
     metadata_db = (
         Path(args.metadata_db) if args.metadata_db else repo_root / ".repo-scanner" / "vector-metadata.sqlite"
     )
+    repository_metadata_db = (
+        Path(args.repository_metadata_db)
+        if args.repository_metadata_db
+        else repo_root / ".repo-scanner" / "repository-metadata.sqlite"
+    )
 
     embedding_engine = create_embedding_engine(args.embedding_model, args.embedding_endpoint)
     vector_index = VectorIndex(repo_root, metadata_db, embedding_engine=embedding_engine)
     llm_engine = create_local_llm_engine(args.llm_model, args.llm_endpoint)
     docs_root = Path(args.docs_root)
 
-    app = create_app(vector_index, embedding_engine, llm_engine, docs_root)
+    app = create_app(vector_index, embedding_engine, llm_engine, docs_root, repository_metadata_db)
     print(_startup_message(args.host, args.port))
     uvicorn.run(app, host=args.host, port=args.port)
 

@@ -134,3 +134,42 @@ def test_history_reflects_asked_questions_in_order_with_matching_citations(tmp_p
     assert messages[1]["content"] == ask_body["answer"]
     assert messages[1]["citedSymbolIds"] == ask_body["citedSymbolIds"]
     assert messages[1]["citedFilePaths"] == ask_body["citedFilePaths"]
+
+
+def test_session_history_survives_a_simulated_restart_via_http(tmp_path):
+    metadata_db_path = tmp_path / "repository-metadata.sqlite"
+    app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    client = TestClient(app)
+
+    session_id = client.post("/sessions").json()["sessionId"]
+    ask_response = client.post(
+        f"/sessions/{session_id}/messages",
+        json={"question": "where is authentication handled?"},
+    )
+    before = client.get(f"/sessions/{session_id}/messages").json()
+    index.close()
+
+    # Simulate a full server restart: build a brand-new app/SessionRegistry
+    # pointed at the same metadata db path - nothing in-memory carries over.
+    restarted_app, restarted_index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    restarted_client = TestClient(restarted_app)
+    after = restarted_client.get(f"/sessions/{session_id}/messages").json()
+    restarted_index.close()
+
+    assert ask_response.status_code == 200
+    assert after == before
+    assert len(after["messages"]) == 2
+
+
+def test_unknown_session_returns_404_after_restart(tmp_path):
+    metadata_db_path = tmp_path / "repository-metadata.sqlite"
+    app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    index.close()
+
+    restarted_app, restarted_index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    client = TestClient(restarted_app)
+    response = client.get("/sessions/never-created/messages")
+    restarted_index.close()
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "session_not_found"

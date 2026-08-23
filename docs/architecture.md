@@ -139,7 +139,14 @@ the wiki** and **asking the chat a question** — see
 
 **One SQLite file per owning component**, not one shared database:
 
-- `repository_metadata` — files, symbols, dependency edges, content hashes.
+- `repository_metadata` — files, symbols, dependency edges, content hashes,
+  and (025) chat sessions/messages: `chat_sessions`/`chat_messages` join this
+  same file rather than getting their own — a deliberate exception (see the
+  "own store" note below), since `chat` (Knowledge Derivation, a later layer)
+  is the one component allowed to depend downward onto `repository_metadata`
+  (Analysis) for this, not the reverse; the object-mapping code that reads
+  and writes these two tables lives in `chat.sqlite_store`, not in
+  `repository_metadata` itself, to keep that dependency direction intact.
 - `dependency_graph` — the persisted graph snapshot (nodes/edges).
 - `vector_index` — embedded chunks + their vectors.
 - `doc_generator` — the page manifest (what was generated, its content hash, its
@@ -227,7 +234,12 @@ the layer table above. A new feature usually:
 - If it changes storage, gets its own SQLite file rather than joining another
   component's schema (see "Storage architecture" above) — unless it is extending an
   existing component's own responsibility (e.g. 018 adding
-  `RepositoryMetadataStore.delete_source_file` rather than inventing a new store).
+  `RepositoryMetadataStore.delete_source_file` rather than inventing a new store),
+  or a later layer's own state is small enough that a second local db file would
+  add more operational surface than it isolates (e.g. 025's `chat_sessions`/
+  `chat_messages` joining `repository_metadata`'s file — the schema still stays
+  owned by one module, `repository_metadata.sqlite_store`, per the layering rule
+  above; only the row↔object mapping lives in the later layer, `chat`).
 - Updates this file, `docs/stack.md`, and `docs/diagrams/` in the same piece of work.
 
 ## Current status by layer

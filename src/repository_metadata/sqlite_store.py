@@ -105,10 +105,31 @@ SCHEMA_STATEMENTS = (
         FOREIGN KEY (graph_id) REFERENCES dependency_graphs(id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        cited_symbol_ids TEXT NOT NULL,
+        cited_file_paths TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_source_files_repository_path ON source_files(repository_id, path)",
     "CREATE INDEX IF NOT EXISTS idx_symbols_source_file ON symbols(source_file_id)",
     "CREATE INDEX IF NOT EXISTS idx_dependency_edges_source_file ON dependency_edges(source_file_id)",
     "CREATE INDEX IF NOT EXISTS idx_dependency_edges_target_id ON dependency_edges(target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_messages_session_timestamp ON chat_messages(session_id, timestamp)",
 )
 
 

@@ -80,7 +80,9 @@ def index(
     cfg = config_module.load_config()
     try:
         result = run_index(path, config=cfg)
-        start_local_server(result.vectorIndex, result.embeddingEngine, result.llmEngine, result.docsRoot, host, port)
+        start_local_server(
+            result.vectorIndex, result.embeddingEngine, result.llmEngine, result.docsRoot, host, port, result.metadataDbPath
+        )
     except (RepositoryNotFoundError, LocalModelUnavailableError, ServerBindError, *_AI_PIPELINE_ERRORS) as exc:
         report_and_exit(exc)
 
@@ -97,7 +99,9 @@ def serve(
     try:
         result = run_serve(path, config=cfg)
         try:
-            start_local_server(result.vectorIndex, result.embeddingEngine, result.llmEngine, result.docsRoot, host, port)
+            start_local_server(
+                result.vectorIndex, result.embeddingEngine, result.llmEngine, result.docsRoot, host, port, result.metadataDbPath
+            )
         finally:
             if result.watcher is not None:
                 result.watcher.stop()

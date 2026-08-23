@@ -7,15 +7,21 @@ import react from "@vitejs/plugin-react";
 // doc_generator's assets, mirroring the Mermaid vendoring convention from
 // feature 013 (research.md Decision 2/8). `emptyOutDir: false` is required:
 // that directory already holds mermaid.min.js and must not be wiped.
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
   // Vite's automatic `process.env.NODE_ENV` replacement only applies to app
   // builds, not `build.lib` output - without this, the reference react-dom
   // makes to it survives into the browser bundle unresolved and crashes on
-  // load with "ReferenceError: process is not defined".
-  define: {
-    "process.env.NODE_ENV": JSON.stringify("production"),
-  },
+  // load with "ReferenceError: process is not defined". Scoped to the actual
+  // `vite build` command only - Vitest also reuses this config but runs
+  // under `serve`, and forcing production mode there breaks
+  // @testing-library/react's `act()`, which requires a development React build.
+  define:
+    command === "build"
+      ? {
+          "process.env.NODE_ENV": JSON.stringify("production"),
+        }
+      : {},
   build: {
     outDir: resolve(__dirname, "../src/doc_generator/assets"),
     emptyOutDir: false,
@@ -38,4 +44,4 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./tests/setup.ts"],
   },
-});
+}));

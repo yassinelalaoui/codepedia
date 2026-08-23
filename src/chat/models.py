@@ -117,9 +117,14 @@ class ChatSession:
     embeddingEngine: Any | None = None
     llmEngine: Any | None = None
     topK: int = 5
+    createdAt: str = field(default_factory=_utc_now)
+    lastActivityAt: str = field(default_factory=_utc_now)
+    messageStore: Any | None = None
 
     def __post_init__(self) -> None:
         self.id = _normalize_text(self.id)
         self.messages = list(self.messages)
         if self.topK <= 0:
             raise ValueError("topK must be positive")
+        self.createdAt = _normalize_text(self.createdAt)
+        self.lastActivityAt = _normalize_text(self.lastActivityAt)

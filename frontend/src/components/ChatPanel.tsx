@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { askQuestion, ChatApiError, createSession } from "../lib/chatApiClient";
+import { askQuestion, ChatApiError, createSession, getHistory } from "../lib/chatApiClient";
 import { findByCitation, loadSearchIndex, type SearchIndexEntry } from "../lib/searchIndex";
+
+/** Survives a wiki page reload (025) - the server-side session itself is
+ * durable, but the browser still needs to remember which id to resume. */
+const SESSION_STORAGE_KEY = "repo-scanner:chat-session-id";
 
 interface DisplayMessage {
   role: "user" | "assistant";
@@ -50,6 +54,28 @@ export function ChatPanel() {
       .catch(() => setEntries([]));
   }, []);
 
+  useEffect(() => {
+    const storedSessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!storedSessionId) return;
+    getHistory(storedSessionId)
+      .then((history) => {
+        sessionIdRef.current = storedSessionId;
+        setMessages(
+          history.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+            citedSymbolIds: message.citedSymbolIds,
+            citedFilePaths: message.citedFilePaths,
+          }))
+        );
+      })
+      .catch(() => {
+        // The stored id no longer resolves (e.g. a fresh index/repository) -
+        // fall back to creating a brand-new session on the next question.
+        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      });
+  }, []);
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const submittedQuestion = question.trim();
@@ -61,6 +87,7 @@ export function ChatPanel() {
       if (!sessionIdRef.current) {
         const session = await createSession();
         sessionIdRef.current = session.sessionId;
+        window.localStorage.setItem(SESSION_STORAGE_KEY, session.sessionId);
       }
       const response = await askQuestion(sessionIdRef.current, submittedQuestion);
       setMessages((previous) => [

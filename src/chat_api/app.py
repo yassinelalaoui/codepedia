@@ -17,9 +17,15 @@ from .schemas import (
 from .session_store import SessionRegistry
 
 
-def create_app(vector_index: Any, embedding_engine: Any, llm_engine: Any, docs_root: str | Path) -> FastAPI:
+def create_app(
+    vector_index: Any,
+    embedding_engine: Any,
+    llm_engine: Any,
+    docs_root: str | Path,
+    metadata_db_path: str | Path | None = None,
+) -> FastAPI:
     app = FastAPI(title="Local Chat API")
-    app.state.session_registry = SessionRegistry(vector_index, embedding_engine, llm_engine)
+    app.state.session_registry = SessionRegistry(vector_index, embedding_engine, llm_engine, metadata_db_path)
     register_exception_handlers(app)
 
     @app.post("/sessions", status_code=201)

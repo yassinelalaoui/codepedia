@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import sqlite_store
 from .models import ChatMessage, ChatSession as _ChatSessionData, RAGContext
 from .prompting import build_prompt_envelope, render_answer_text, render_insufficient_evidence_text
 from .retrieval import detect_ambiguous_evidence, is_insufficient_evidence, retrieve_evidence
@@ -61,5 +62,15 @@ class ChatSession(_ChatSessionData):
             citedFilePaths=cited_file_paths,
         )
         self.messages.append(user_message)
+        self._persist(user_message)
         self.messages.append(assistant_message)
+        self._persist(assistant_message)
         return assistant_message
+
+    def _persist(self, message: ChatMessage) -> None:
+        """Write one message immediately, right after it's appended to
+        `self.messages` - never as a rewrite of the whole session (FR-004).
+        A no-op when no `messageStore` (db path) is attached, e.g. for a
+        purely in-memory session in a test."""
+        if self.messageStore is not None:
+            sqlite_store.append_message(self.messageStore, self.id, message)

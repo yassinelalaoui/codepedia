@@ -30,7 +30,8 @@ picture and *why* it's built this way.
   reachable in one click from anywhere in the wiki that lists every diagram
   above.
 - **Answers questions in chat**, grounded in the indexed code, with
-  clickable citations back to the wiki.
+  clickable citations back to the wiki. Conversations persist locally, so
+  they survive a server restart or a wiki page reload.
 - **Watches the repository** in the background and **incrementally
   re-indexes** just what a change actually affects — never a full
   repository re-analysis.
