@@ -60,8 +60,9 @@ domain data itself.
 
 | Package | Responsibility |
 |---|---|
-| `local_llm` | Generate text from a prompt via a local (Ollama-compatible) endpoint, streamed as it's produced (`generateStream`, 026; `generate` is a convenience wrapper that drains it); verify availability before every call. For chat answer generation only (026), an explicitly-configured, opt-in remote engine (`GroqLLMEngine`) implementing the same `LLMEngine` interface is also supported - never on by default, never used as an automatic fallback for the local engine in either direction (constitution 2.1/2.3, v2.0.0). Code summarization (`repository_metadata.summary_pipeline`) always uses the local engine specifically, regardless of the configured chat provider. |
-| `embedding_engine` | Turn text into a vector via the same local-endpoint convention. |
+| `local_llm` | Generate text from a prompt via a local (Ollama-compatible) endpoint, streamed as it's produced (`generateStream`, 026; `generate` is a convenience wrapper that drains it); verify availability before every call (`isAvailableLocally`/`isAvailable`). `GroqLLMEngine` implements the same `LLMEngine` interface as a remote provider. |
+| `embedding_engine` | Turn text into a vector via the same local-endpoint convention (`EmbeddingEngine`), or via `OpenAIEmbeddingProvider` (029) - both satisfy the `EmbeddingProvider` protocol. |
+| `provider_routing` (029) | Sits alongside `local_llm`/`embedding_engine`, depending on both: `ProviderRef`/`ProviderChain` (an ordered, per-stage list of `"<kind>:<model>"` entries), `FailoverExecutor` (tries each configured provider in order, failing over only on a classified network/rate-limit/auth error - never on preference, never outside the configured chain - constitution 2.3), and `failover_log`/`engine_failover_log` (one row per actual switch). This is the deferred implementation of constitution v3.0.0's 2.1/2.3 amendment: every stage now defaults to a named remote provider with automatic, chain-scoped failover, replacing the earlier "local by default, one explicit opt-in remote engine, never a fallback chain" model. |
 
 ### 3. Knowledge Derivation
 
@@ -70,9 +71,9 @@ generated knowledge about the codebase.
 
 | Package | Responsibility |
 |---|---|
-| `repository_metadata.summary_pipeline` (`CodeSummaryPipeline`) | Generate a natural-language summary per module/public function, using source + imports + direct callers as context; regenerate only impacted summaries on a change. |
-| `vector_index` | Store and search embedded code chunks by similarity. |
-| `chat` | Answer a natural-language question by retrieving relevant chunks - enriched with recent conversation context for follow-up questions (026, local text/citation concatenation only, no LLM call) - and streaming the configured engine's answer (`askStream`, 026) *grounded in* that evidence, with citations attached once generation completes. |
+| `repository_metadata.summary_pipeline` (`CodeSummaryPipeline`) | Generate a natural-language summary per module/public function, using source + imports + direct callers as context; regenerate only impacted summaries on a change. Its `llmEngine` is a `provider_routing.FailoverExecutor` over the configured summary chain (029), not a single engine. |
+| `vector_index` | Store and search embedded code chunks by similarity. Each stored chunk carries `embeddingModelId` (029, the `ProviderRef` that computed it); a search excludes vectors from any other model *before* the dimensionality check, so a repository indexed with more than one embedding provider never blends incompatible vectors (and never crashes on the mismatch either). |
+| `chat` | Answer a natural-language question by retrieving relevant chunks - enriched with recent conversation context for follow-up questions (026, local text/citation concatenation only, no LLM call) - and streaming the configured engine's answer (`askStream`, 026) *grounded in* that evidence, with citations attached once generation completes. `askStream` routes generation through a `provider_routing.FailoverExecutor` over the configured chat chain (029) and records which provider actually answered (`ChatMessage.generatedBy`). |
 
 ### 4. Presentation
 
@@ -81,7 +82,7 @@ Turns the analyzed/derived knowledge into something a human reads or interacts w
 | Package | Responsibility |
 |---|---|
 | `doc_generator` | Render the wiki: a home page, one page per module, dependency-diagram pages, a single repository-wide class diagram (its structurally major classes, capped for legibility), one bounded call-sequence diagram per identified entry point (CLI command, API route handler, or uncalled public function/method), a single repository-wide use-case diagram (one shared actor per entry-point exposure kind, linked to its use cases), and a single always-reachable Diagrams page aggregating links to every diagram above (linked from every generated page's shared navigation); regenerate only the pages a change actually affects. |
-| `chat_api` | The one local process (FastAPI) that serves the generated wiki as static files and exposes the chat session endpoints the browser UI calls: creating a session, streaming an answer, listing every existing session, and reading a chosen session's full history. |
+| `chat_api` | The one local process (FastAPI) that serves the generated wiki as static files and exposes the chat session endpoints the browser UI calls: creating a session, streaming an answer, listing every existing session, and reading a chosen session's full history. `AskQuestionResponse`/`ChatMessageView` carry `generatedBy`; `GET /providers/failover-log` (029) reads `engine_failover_log`, optionally filtered by stage. |
 | `frontend/` (`wiki-ui`) | The React UI running in the browser: symbol search, dependency-diagram click-through, chat panel. The chat panel (028) shows a visible activity indicator from submission until the first streamed fragment arrives, renders answers as structured Markdown with syntax-highlighted code and clickable in-text symbol/file references (resolved the same way as the separate citation list), and carries the current session id as a URL query parameter so a reload, a copied link, or a different browser/device all restore the same conversation via the existing history route. |
 
 ### 5. Automation
@@ -100,7 +101,7 @@ every layer above; nothing depends on it.
 
 | Package | Responsibility |
 |---|---|
-| `cli` | The `repo-scanner` command (`index`/`serve`/`config`/`scan`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active; `config` chooses the local LLM/embedding model (2) `index`/`serve` use. |
+| `cli` | The `repo-scanner` command (`index`/`serve`/`config`/`scan`/`provider`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active; `config` sets connection settings (endpoint/timeout) for any `local:` chain entry; `provider chain set <stage> <provider:model>...`/`provider mode full-local` (029) change which providers a stage's chain actually uses. A Typer-callback-enforced disclosure gate (`cli.disclosure`) blocks `index`/`serve`/`provider` until the operator explicitly acknowledges the three chains' current providers, re-triggered whenever that combination actually changes. |
 
 ## Data flow
 
@@ -140,15 +141,19 @@ the wiki** and **asking the chat a question** — see
 **One SQLite file per owning component**, not one shared database:
 
 - `repository_metadata` — files, symbols, dependency edges, content hashes,
-  and (025) chat sessions/messages: `chat_sessions`/`chat_messages` join this
-  same file rather than getting their own — a deliberate exception (see the
-  "own store" note below), since `chat` (Knowledge Derivation, a later layer)
-  is the one component allowed to depend downward onto `repository_metadata`
-  (Analysis) for this, not the reverse; the object-mapping code that reads
-  and writes these two tables lives in `chat.sqlite_store`, not in
-  `repository_metadata` itself, to keep that dependency direction intact.
+  (025) chat sessions/messages, and (029) `engine_failover_log`:
+  `chat_sessions`/`chat_messages`/`engine_failover_log` join this same file
+  rather than getting their own — a deliberate exception (see the "own
+  store" note below). `chat_messages` gained a `generated_by` column (029);
+  `engine_failover_log` is cross-cutting (populated by all three
+  AI-consuming stages, not owned by any one later layer), so its own
+  row↔object mapping lives in `provider_routing.failover_log`, following
+  the same "schema stays in `repository_metadata.sqlite_store`, mapping
+  code lives in the later layer that actually populates it" split
+  `chat.sqlite_store` already established for `chat_sessions`/`chat_messages`.
 - `dependency_graph` — the persisted graph snapshot (nodes/edges).
-- `vector_index` — embedded chunks + their vectors.
+- `vector_index` — embedded chunks + their vectors, each chunk's row also
+  carrying `embedding_model_id` (029) — which provider/model produced it.
 - `doc_generator` — the page manifest (what was generated, its content hash, its
   links) used to compute incremental regeneration impact.
 
@@ -199,12 +204,22 @@ machine.
 These are enforced, not just documented — see `.specify/memory/constitution.md` for
 the authoritative source:
 
-1. **Local-only, always.** Every network call this project makes targets
-   `localhost`/`127.0.0.1`; the local-AI packages validate this at the URL-parsing
-   level (`normalize_endpoint_url`), not just by convention.
-2. **No silent cloud fallback.** If the local LLM or embedding service is
-   unavailable, every caller fails loudly with a specific error telling the user how
-   to fix it — never a quiet degrade to a remote API.
+1. **Local network exposure stays `localhost`/`127.0.0.1`-only.** The web
+   server/`chat_api` never binds anywhere else by default (constitution 2.2);
+   `local_llm`/`embedding_engine`'s own local endpoints validate this at the
+   URL-parsing level (`normalize_endpoint_url`). This does **not** mean every
+   *AI provider* call stays local — since constitution v3.0.0 (029), a fresh
+   install's default chains route to named remote providers (Groq, OpenAI),
+   disclosed once, blockingly, before first use; fully local remains fully
+   supported via `provider mode full-local`.
+2. **No silent, undisclosed, or out-of-chain failover.** A stage automatically
+   fails over only within its own explicitly configured provider chain, only on
+   a classified network/rate-limit/auth failure — never on preference, never to
+   a provider absent from that chain, and every actual switch is both logged
+   (`engine_failover_log`) and visible (`generatedBy`, `GET
+   /providers/failover-log`). If every provider in the chain is unavailable,
+   the caller fails loudly with a specific error (`FailoverExhaustedError`)
+   telling the user how to fix it — never a silent, unexplained failure.
 3. **Incremental by design, not by afterthought.** Every stage in the Analysis and
    Knowledge Derivation layers was built with a "just this one file/symbol" mode from
    the start (`store_inventory` per file, `summarizeRepository(changed_paths=...)`,
@@ -245,6 +260,8 @@ the layer table above. A new feature usually:
 ## Current status by layer
 
 - **Ingestion & Analysis, Local AI Services, Knowledge Derivation, Presentation,
-  Automation**: implemented (specs 001–018).
+  Automation**: implemented (specs 001–018, provider chains/failover added by
+  029).
 - **Entry Point**: implemented (spec 019) — `repo-scanner` is the project's
-  `[project.scripts]` console command.
+  `[project.scripts]` console command; its `provider` subcommands and
+  disclosure gate were added by 029.

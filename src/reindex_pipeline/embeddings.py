@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from embedding_engine import EmbeddingEngine
 from repository_metadata import ModuleSymbol, RepositoryMetadataStore, Symbol
 from repository_metadata.models import SourceFileBundle
 from vector_index import CodeChunk, VectorIndex, build_code_chunk
@@ -14,7 +14,7 @@ def update_embeddings(
     relative_path: str,
     metadata_store: RepositoryMetadataStore,
     vector_index: VectorIndex,
-    embedding_engine: EmbeddingEngine,
+    embedding_engine: Any,
 ) -> tuple[CodeChunk, ...]:
     absolute_path = repository_root / relative_path
     # RepositoryMetadataStore keys by the absolute path SourceFile.path was stored

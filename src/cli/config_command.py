@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-import os
 from typing import Any, Callable, Optional
 
 import typer
 from embedding_engine import create_embedding_engine
-from local_llm import create_groq_llm_engine, create_local_llm_engine
-from local_llm.groq_transport import API_KEY_ENV_VAR
+from local_llm import create_local_llm_engine
+from provider_routing.factory import resolve_chain
+from provider_routing.chain import ProviderChain, ProviderRef
 
 from .config import CLIConfiguration, load_config, save_config
-
-_REMOTE_PROVIDER_DISCLOSURE = (
-    "Warning: setting --llm-provider groq sends the text of chat questions and the "
-    "cited code context in their answers to Groq's cloud API. Only enable this if "
-    "you have explicitly decided that trade-off is acceptable for this repository."
-)
 
 
 def run_config(
@@ -25,13 +19,14 @@ def run_config(
     embedding_model: Optional[str],
     embedding_endpoint: Optional[str],
     embedding_generate_timeout: Optional[float],
-    llm_provider: Optional[str],
-    remote_llm_model: Optional[str],
     show: bool,
 ) -> None:
-    """View or change `CLIConfiguration` (research.md §5, data-model.md's
-    "State flow: `config`"). Never fails solely because a selected model
-    isn't installed yet (spec US3) — that's reported as a warning."""
+    """View or change `CLIConfiguration`'s local connection settings
+    (research.md §10 - `llmModel`/`llmEndpointUrl`/etc. now scope to "any
+    `local:` chain entry's connection settings", not "the model in use";
+    chain membership itself is changed via `provider chain set`/`provider
+    mode full-local`). Never fails solely because a selected model isn't
+    installed yet - reported as a warning."""
     current = load_config()
 
     has_changes = not show and any(
@@ -43,8 +38,6 @@ def run_config(
             embedding_model,
             embedding_endpoint,
             embedding_generate_timeout,
-            llm_provider,
-            remote_llm_model,
         )
     )
     if not has_changes:
@@ -60,14 +53,12 @@ def run_config(
         embeddingGenerateTimeout=(
             embedding_generate_timeout if embedding_generate_timeout is not None else current.embeddingGenerateTimeout
         ),
-        llmProvider=llm_provider if llm_provider is not None else current.llmProvider,
-        remoteLlmModel=remote_llm_model if remote_llm_model is not None else current.remoteLlmModel,
+        embeddingChain=current.embeddingChain,
+        summaryChain=current.summaryChain,
+        chatChain=current.chatChain,
+        disclosureAcknowledgedSignature=current.disclosureAcknowledgedSignature,
     )
-    # FR-013: disclosed every time a change actually sets the provider to
-    # "groq" - before saving, and regardless of whether it was already groq.
-    if llm_provider == "groq":
-        typer.echo(_REMOTE_PROVIDER_DISCLOSURE)
-    save_config(updated)  # raises ValueError before writing if invalid (e.g. missing remoteLlmModel for groq)
+    save_config(updated)  # raises ValueError before writing if invalid
     typer.echo("Configuration saved.")
 
     if llm_model is not None:
@@ -79,45 +70,34 @@ def run_config(
 
 
 def _print_status(config: CLIConfiguration) -> None:
-    llm_engine = create_local_llm_engine(
-        config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
-    )
-    embedding_engine = create_embedding_engine(
-        config.embeddingModel, config.embeddingEndpointUrl, embed_timeout=config.embeddingGenerateTimeout
-    )
-
-    llm_status = llm_engine.checkAvailability()
-    embedding_status = embedding_engine.checkAvailability()
-
-    typer.echo(
-        f"LLM model: {config.llmModel} ({config.llmEndpointUrl}) - "
-        f"{'available' if llm_status.available else 'unavailable'}: {llm_status.message}"
-    )
+    typer.echo(f"Local LLM connection: {config.llmModel} ({config.llmEndpointUrl})")
     typer.echo(f"LLM generation timeout: {config.llmGenerateTimeout:g}s")
-    typer.echo(
-        f"Embedding model: {config.embeddingModel} ({config.embeddingEndpointUrl}) - "
-        f"{'available' if embedding_status.available else 'unavailable'}: {embedding_status.message}"
-    )
+    typer.echo(f"Local embedding connection: {config.embeddingModel} ({config.embeddingEndpointUrl})")
     typer.echo(f"Embedding generation timeout: {config.embeddingGenerateTimeout:g}s")
 
-    _print_other_installed_models("LLM", llm_engine, config.llmModel)
-    _print_other_installed_models("embedding", embedding_engine, config.embeddingModel)
+    for stage_label, stage, chain in (
+        ("Embeddings", "embeddings", config.embeddingChain),
+        ("Summary", "summary", config.summaryChain),
+        ("Chat", "chat", config.chatChain),
+    ):
+        typer.echo(f"{stage_label} chain: {', '.join(chain)}")
+        _print_chain_availability(stage, chain, config)
 
-    typer.echo(f"Chat answer-generation provider: {config.llmProvider}")
-    if config.llmProvider == "groq":
-        if config.remoteLlmModel:
-            remote_engine = create_groq_llm_engine(config.remoteLlmModel)
-            remote_status = remote_engine.checkAvailability()
-            typer.echo(
-                f"Remote (Groq) model: {config.remoteLlmModel} - "
-                f"{'available' if remote_status.available else 'unavailable'}: {remote_status.message}"
-            )
-        else:
-            typer.echo(f"Remote (Groq) model: not set - configure with --remote-llm-model")
-        typer.echo(
-            f"{API_KEY_ENV_VAR} is "
-            f"{'set' if os.environ.get(API_KEY_ENV_VAR) else 'NOT set'} in this environment."
-        )
+
+def _print_chain_availability(stage: str, chain: tuple[str, ...], config: CLIConfiguration) -> None:
+    provider_chain = ProviderChain(stage=stage, providers=tuple(ProviderRef.parse(entry) for entry in chain))
+    try:
+        resolved = resolve_chain(provider_chain, config)
+    except Exception as exc:  # noqa: BLE001 - status display is best-effort, never fatal
+        typer.echo(f"  (could not check availability: {exc})")
+        return
+    for ref, engine in resolved:
+        try:
+            status = engine.checkAvailability()
+            state = "available" if status.available else "unavailable"
+            typer.echo(f"  {ref}: {state} - {status.message}")
+        except Exception as exc:  # noqa: BLE001 - status display is best-effort, never fatal
+            typer.echo(f"  {ref}: could not check availability ({exc})")
 
 
 def _print_other_installed_models(label: str, engine: Any, configured_model: str) -> None:

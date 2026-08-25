@@ -6,6 +6,7 @@ import urllib.request
 
 import pytest
 from chat import ChatMessage, ChatSession, sqlite_store as chat_sqlite_store
+from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata.sqlite_store import connect
 from vector_index import VectorIndex, build_code_chunk
 from vector_index.search import encode_text
@@ -13,6 +14,9 @@ from vector_index.search import encode_text
 
 class FakeEmbeddingEngine:
     def isAvailableLocally(self) -> bool:
+        return True
+
+    def isAvailable(self) -> bool:
         return True
 
     def embed(self, text: str):
@@ -27,6 +31,9 @@ class FakeLLMEngine:
     def isAvailableLocally(self) -> bool:
         return True
 
+    def isAvailable(self) -> bool:
+        return True
+
     def generate(self, envelope) -> str:
         self.calls.append(envelope)
         return self.response_text
@@ -36,6 +43,13 @@ class FakeLLMEngine:
         midpoint = max(1, len(self.response_text) // 2)
         yield self.response_text[:midpoint]
         yield self.response_text[midpoint:]
+
+
+def _wrap_chat(llm: FakeLLMEngine) -> FailoverExecutor:
+    """ChatSession.askStream() now routes through a `FailoverExecutor`
+    (spec 029) - a single-provider chain is regression-equivalent to
+    today's direct-engine behavior (T034)."""
+    return FailoverExecutor("chat", ((ProviderRef("local", "fake"), llm),))
 
 
 async def _collect_stream(session: ChatSession, question: str) -> tuple[list[str], ChatMessage]:
@@ -77,7 +91,7 @@ def test_ask_stream_returns_cited_answer_without_any_outbound_network_request(tm
     index = _build_index(tmp_path, engine)
     llm = FakeLLMEngine("Authentication is handled by authenticate_user.")
 
-    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=llm)
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm))
 
     fragments, message = asyncio.run(
         _collect_stream(session, "where is authentication handled and how is a user validated?")
@@ -105,7 +119,7 @@ def test_ask_stream_persists_user_message_immediately_and_assistant_message_once
     session_id = "session-persist"
     chat_sqlite_store.create_session(db_path, session_id)
     session = ChatSession(
-        id=session_id, vectorIndex=index, embeddingEngine=engine, llmEngine=llm, messageStore=db_path
+        id=session_id, vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm), messageStore=db_path
     )
 
     async def _consume_and_watch_persistence():
@@ -139,7 +153,7 @@ def test_session_history_survives_a_simulated_restart(tmp_path, monkeypatch):
 
     session_id = "session-restart"
     chat_sqlite_store.create_session(db_path, session_id)
-    session = ChatSession(id=session_id, vectorIndex=index, embeddingEngine=engine, llmEngine=llm, messageStore=db_path)
+    session = ChatSession(id=session_id, vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm), messageStore=db_path)
     asyncio.run(_collect_stream(session, "where is authentication handled and how is a user validated?"))
     index.close()
 
@@ -210,7 +224,7 @@ def test_elliptical_follow_up_retrieves_the_evidence_the_prior_answer_cited(tmp_
     engine = FakeEmbeddingEngine()
     index = SeededVectorIndex()
     llm = FakeLLMEngine("Authentication is handled by authenticate_user.")
-    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=llm, topK=1)
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm), topK=1)
 
     asyncio.run(_collect_stream(session, "where is authentication handled?"))
     assert index.queries[-1] == "where is authentication handled?"  # first question: not enriched (FR-007)
@@ -231,7 +245,7 @@ def test_first_question_in_a_brand_new_session_is_not_enriched(tmp_path):
     engine = FakeEmbeddingEngine()
     index = SeededVectorIndex()
     llm = FakeLLMEngine("Authentication is handled by authenticate_user.")
-    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=llm, topK=1)
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm), topK=1)
 
     asyncio.run(_collect_stream(session, "where is authentication handled?"))
 

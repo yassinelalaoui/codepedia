@@ -1,24 +1,28 @@
 from __future__ import annotations
 
-from embedding_engine import EmbeddingEngine
-from local_llm import LLMEngine
+from typing import Any
 
 from .errors import LocalModelUnavailableError
 
 
-def check_ai_dependencies(llm_engine: LLMEngine, embedding_engine: EmbeddingEngine) -> None:
-    """Verify the local LLM and embedding model are available before any
-    AI-dependent pipeline step runs (constitution 2.3; spec.md's
-    "Local-model availability checks" requirement).
+def check_ai_dependencies(**stage_executors: Any) -> None:
+    """Verify every named stage's provider chain has at least one available
+    provider before any AI-dependent pipeline step runs (constitution 2.3;
+    spec.md's "Local-model availability checks" requirement).
 
-    Reuses `AvailabilityStatus`/`EmbeddingAvailabilityStatus`'s own message,
-    which already distinguishes "service unreachable" from "model not
-    installed" (008/009), rather than re-deriving that distinction here.
+    Each keyword argument names a stage (e.g. `summary=...`,
+    `embeddings=...`) and is anything exposing `FailoverExecutor.isAvailable()`
+    - a raw single engine or a `provider_routing.FailoverExecutor` both work
+    uniformly (research.md §13's C1 fix). Since a multi-provider chain has no
+    single status message to faithfully surface, the error names the stage
+    rather than repeating one engine's specific reason - the specific reason
+    still surfaces in full once `FailoverExecutor.run`/`.stream` is actually
+    attempted and raises `FailoverExhaustedError`.
     """
-    llm_status = llm_engine.checkAvailability()
-    if not llm_status.available:
-        raise LocalModelUnavailableError(llm_status.message)
-
-    embedding_status = embedding_engine.checkAvailability()
-    if not embedding_status.available:
-        raise LocalModelUnavailableError(embedding_status.message)
+    for stage, executor in stage_executors.items():
+        if not executor.isAvailable():
+            raise LocalModelUnavailableError(
+                f"No provider in the '{stage}' chain is currently available. Start the local "
+                "service, install the required model, or check your remote provider credentials, "
+                "then try again."
+            )

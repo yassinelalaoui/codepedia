@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel, field_validator
 
 
@@ -22,6 +24,7 @@ class AskQuestionResponse(BaseModel):
     answer: str
     citedSymbolIds: tuple[str, ...]
     citedFilePaths: tuple[str, ...]
+    generatedBy: str = ""
 
 
 class AnswerFragmentEvent(BaseModel):
@@ -39,6 +42,7 @@ class ChatMessageView(BaseModel):
     citedSymbolIds: tuple[str, ...]
     citedFilePaths: tuple[str, ...]
     timestamp: str
+    generatedBy: str = ""
 
 
 class SessionHistoryResponse(BaseModel):
@@ -62,3 +66,16 @@ class SessionListResponse(BaseModel):
 class ApiErrorResponse(BaseModel):
     code: str
     message: str
+
+
+class FailoverLogEntryView(BaseModel):
+    id: str
+    timestamp: str
+    stage: str
+    attemptedProvider: str
+    resultProvider: Optional[str]
+    reason: str
+
+
+class FailoverLogResponse(BaseModel):
+    events: tuple[FailoverLogEntryView, ...]

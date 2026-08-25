@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from local_llm import GroqLLMEngine, MissingApiKeyError, RemoteServiceUnavailableError, create_groq_llm_engine
+from local_llm import GroqLLMEngine, MissingApiKeyError, RateLimitedError, RemoteServiceUnavailableError, create_groq_llm_engine
 from local_llm.groq_transport import API_KEY_ENV_VAR
 
 
@@ -65,6 +65,20 @@ class _GroqHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"0\r\n\r\n")
 
 
+class _RateLimitedHandler(_GroqHandler):
+    def do_GET(self):
+        if self.path != "/models":
+            self._write_json({"error": "not found"}, status=404)
+            return
+        self._write_json({"error": "rate limited"}, status=429)
+
+    def do_POST(self):
+        if self.path != "/chat/completions":
+            self._write_json({"error": "not found"}, status=404)
+            return
+        self._write_json({"error": "rate limited"}, status=429)
+
+
 def _start_server(handler=_GroqHandler):
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -112,6 +126,53 @@ def test_check_availability_reports_unreachable_endpoint_clearly(monkeypatch):
     assert status.serviceReachable is False
     with pytest.raises(RemoteServiceUnavailableError):
         engine.generate("hello")
+
+
+def test_availability_and_generate_stream_classify_http_429_as_rate_limited(monkeypatch):
+    monkeypatch.setenv(API_KEY_ENV_VAR, "test-key")
+    server = _start_server(_RateLimitedHandler)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        engine = create_groq_llm_engine("llama-3.3-70b-versatile", endpoint, timeout=1.0, generate_timeout=2.0)
+
+        status = engine.checkAvailability()
+        assert status.available is False
+        assert status.rateLimited is True
+
+        with pytest.raises(RateLimitedError):
+            engine.generate("hello")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_transport_generate_stream_classifies_http_429_directly(monkeypatch):
+    """Exercises `GroqLLMTransport.generate_stream`'s own 429 branch
+    directly, bypassing `GroqLLMEngine.checkAvailability`'s upfront guard so
+    the transport-level classification (not just the availability-probe
+    one) is covered independently."""
+    from local_llm.groq_transport import GroqLLMTransport
+    from local_llm.models import PromptEnvelope
+
+    monkeypatch.setenv(API_KEY_ENV_VAR, "test-key")
+    server = _start_server(_RateLimitedHandler)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        transport = GroqLLMTransport(endpoint, timeout=1.0, generateTimeout=2.0)
+
+        async def _drain():
+            return [
+                fragment
+                async for fragment in transport.generate_stream(
+                    "llama-3.3-70b-versatile", PromptEnvelope.from_prompt("hello")
+                )
+            ]
+
+        with pytest.raises(RateLimitedError):
+            asyncio.run(_drain())
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_check_availability_rejects_an_invalid_api_key(monkeypatch):

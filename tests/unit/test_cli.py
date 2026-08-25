@@ -80,6 +80,56 @@ def test_save_config_rejects_non_positive_generate_timeout(cli_home):
     assert not cli.paths.config_path().exists()
 
 
+def test_chain_fields_round_trip_through_save_and_load(cli_home):
+    original = CLIConfiguration(
+        embeddingChain=("local:nomic-embed-text",),
+        summaryChain=("groq:llama-3.3-70b-versatile", "local:qwen2.5-coder"),
+        chatChain=("groq:llama-3.3-70b-versatile",),
+        disclosureAcknowledgedSignature="abc123",
+    )
+
+    save_config(original)
+    loaded = load_config()
+
+    assert loaded == original
+
+
+def test_config_file_predating_this_feature_loads_with_remote_defaults(cli_home):
+    cli.paths.config_path().parent.mkdir(parents=True, exist_ok=True)
+    cli.paths.config_path().write_text(
+        '{"llmModel": "qwen2.5-coder", "llmEndpointUrl": "http://localhost:11434"}', encoding="utf-8"
+    )
+
+    loaded = load_config()
+
+    assert loaded.embeddingChain == cli.config.DEFAULT_EMBEDDING_CHAIN
+    assert loaded.summaryChain == cli.config.DEFAULT_SUMMARY_CHAIN
+    assert loaded.chatChain == cli.config.DEFAULT_CHAT_CHAIN
+    assert loaded.llmModel == "qwen2.5-coder"
+
+
+def test_save_config_rejects_empty_chain(cli_home):
+    with pytest.raises(ValueError):
+        save_config(CLIConfiguration(summaryChain=()))
+
+    assert not cli.paths.config_path().exists()
+
+
+def test_save_config_rejects_unparseable_chain_entry(cli_home):
+    with pytest.raises(ValueError):
+        save_config(CLIConfiguration(chatChain=("not-a-valid-entry",)))
+
+    assert not cli.paths.config_path().exists()
+
+
+def test_llm_provider_and_remote_llm_model_are_no_longer_accepted_fields():
+    import dataclasses
+
+    field_names = {field.name for field in dataclasses.fields(CLIConfiguration)}
+    assert "llmProvider" not in field_names
+    assert "remoteLlmModel" not in field_names
+
+
 def test_state_id_is_stable_and_filesystem_safe(tmp_path):
     root = tmp_path / "some-repo"
     first = cli.paths.state_id(root)
@@ -116,6 +166,10 @@ class _StubLLMEngine:
         self.checked = True
         return self._status
 
+    def isAvailable(self) -> bool:
+        self.checked = True
+        return self._status.available
+
 
 class _StubEmbeddingEngine:
     def __init__(self, status: EmbeddingAvailabilityStatus) -> None:
@@ -126,32 +180,36 @@ class _StubEmbeddingEngine:
         self.checked = True
         return self._status
 
+    def isAvailable(self) -> bool:
+        self.checked = True
+        return self._status.available
+
 
 def test_check_ai_dependencies_passes_when_both_available():
     llm = _StubLLMEngine(AvailabilityStatus(True, True, True, "ok"))
     embedding = _StubEmbeddingEngine(EmbeddingAvailabilityStatus(True, True, True, "ok"))
 
-    check_ai_dependencies(llm, embedding)  # must not raise
+    check_ai_dependencies(summary=llm, embeddings=embedding)  # must not raise
 
     assert llm.checked and embedding.checked
 
 
-def test_check_ai_dependencies_raises_with_llm_message_and_skips_embedding_check():
+def test_check_ai_dependencies_raises_naming_the_stage_and_skips_later_checks():
     llm = _StubLLMEngine(AvailabilityStatus(False, False, False, "llm service unreachable at http://localhost:11434"))
     embedding = _StubEmbeddingEngine(EmbeddingAvailabilityStatus(True, True, True, "ok"))
 
-    with pytest.raises(LocalModelUnavailableError, match="llm service unreachable"):
-        check_ai_dependencies(llm, embedding)
+    with pytest.raises(LocalModelUnavailableError, match="summary"):
+        check_ai_dependencies(summary=llm, embeddings=embedding)
 
-    assert not embedding.checked  # short-circuits once the LLM check already failed
+    assert not embedding.checked  # short-circuits once the summary check already failed
 
 
 def test_check_ai_dependencies_raises_with_embedding_message_when_llm_is_fine():
     llm = _StubLLMEngine(AvailabilityStatus(True, True, True, "ok"))
     embedding = _StubEmbeddingEngine(EmbeddingAvailabilityStatus(False, True, False, "embedding model not installed"))
 
-    with pytest.raises(LocalModelUnavailableError, match="embedding model not installed"):
-        check_ai_dependencies(llm, embedding)
+    with pytest.raises(LocalModelUnavailableError, match="embeddings"):
+        check_ai_dependencies(summary=llm, embeddings=embedding)
 
 
 def test_version_flag_prints_the_installed_package_version_and_exits_zero():

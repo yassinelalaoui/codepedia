@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Optional
 
 from chat import ChatMessage
 from chat.session import ensure_local_dependencies_available
 from fastapi import FastAPI
+from provider_routing import list_failover_events
+from repository_metadata.sqlite_store import connect as connect_metadata_db
 from starlette.responses import StreamingResponse
 from starlette.staticfiles import StaticFiles
 
@@ -17,6 +19,8 @@ from .schemas import (
     AskQuestionResponse,
     ChatMessageView,
     CreateSessionResponse,
+    FailoverLogEntryView,
+    FailoverLogResponse,
     SessionHistoryResponse,
     SessionListResponse,
     SessionSummary,
@@ -38,6 +42,7 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Local Chat API")
     app.state.session_registry = SessionRegistry(vector_index, embedding_engine, llm_engine, metadata_db_path)
+    app.state.metadata_db_path = metadata_db_path
     register_exception_handlers(app)
 
     @app.post("/sessions", status_code=201)
@@ -62,6 +67,7 @@ def create_app(
                             answer=item.content,
                             citedSymbolIds=item.citedSymbolIds,
                             citedFilePaths=item.citedFilePaths,
+                            generatedBy=item.generatedBy,
                         )
                         yield f"event: done\ndata: {done_payload.model_dump_json()}\n\n"
                     else:
@@ -97,10 +103,35 @@ def create_app(
                 citedSymbolIds=message.citedSymbolIds,
                 citedFilePaths=message.citedFilePaths,
                 timestamp=message.timestamp,
+                generatedBy=message.generatedBy,
             )
             for message in session.messages
         )
         return SessionHistoryResponse(sessionId=session_id, messages=messages)
+
+    @app.get("/providers/failover-log")
+    def get_failover_log(stage: Optional[str] = None, limit: int = 100) -> FailoverLogResponse:
+        db_path = app.state.metadata_db_path
+        if db_path is None:
+            return FailoverLogResponse(events=())
+        connection = connect_metadata_db(db_path)
+        try:
+            events = list_failover_events(connection, stage=stage, limit=limit)
+        finally:
+            connection.close()
+        return FailoverLogResponse(
+            events=tuple(
+                FailoverLogEntryView(
+                    id=event.id,
+                    timestamp=event.timestamp,
+                    stage=event.stage,
+                    attemptedProvider=event.attemptedProvider,
+                    resultProvider=event.resultProvider,
+                    reason=event.reason,
+                )
+                for event in events
+            )
+        )
 
     docs_root = Path(docs_root)
     if not (docs_root / "index.html").exists():

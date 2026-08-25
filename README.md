@@ -45,10 +45,18 @@ picture and *why* it's built this way.
   browser or device) restores the same conversation — and every existing
   conversation is listable, so a client that lost track of its session id
   (a closed tab, a dropped connection) can find it again and resume it.
-  Answer generation is local by default; an operator
-  can explicitly opt into a remote (Groq) engine instead via
-  `repo-scanner config --llm-provider groq` — never on by default, and the
-  tool discloses that doing so sends chat content to that third-party API.
+  Summarization, embeddings, and chat answers each use a named remote
+  provider by default on a fresh install (Groq for summaries/chat, OpenAI
+  for embeddings) — disclosed once, blockingly, the first time any of these
+  run, and again whenever the configured providers actually change. Run
+  `repo-scanner provider mode full-local` to switch every stage to a local
+  model instead, or `repo-scanner provider chain set <stage> <provider:model>...`
+  to configure a specific stage's try-in-order provider chain (e.g. a
+  remote provider with a local fallback). A chain with more than one
+  provider fails over automatically on a network/rate-limit/auth failure —
+  never silently, never outside the configured chain — and every switch is
+  logged and shown (`generatedBy` on chat answers, `GET
+  /providers/failover-log`).
 - **Watches the repository** in the background and **incrementally
   re-indexes** just what a change actually affects — never a full
   repository re-analysis.
@@ -74,20 +82,21 @@ picture and *why* it's built this way.
   macOS, or Linux, x86_64. This is the *only* thing the installer below
   needs already present on the machine — no Python, no cloned repository,
   no manually built development environment (specs/020-cli-packaging).
-- A **local LLM and embedding engine** for the AI-backed features
-  (summaries, chat) — anything exposing an Ollama-compatible API on
-  `localhost` (e.g. [Ollama](https://ollama.com) itself). This is a
-  **separate, external prerequisite the installer below does not and
-  cannot include** — a local LLM runtime is a large, independently
-  updated piece of software, not something a small CLI package should
-  vendor. Install and start it yourself; `repo-scanner index`/`serve`
-  detect and report clearly if it isn't reachable, rather than silently
-  falling back to a remote service.
-  - **Needs it**: `repo-scanner index`, and the AI-backed parts of
-    `repo-scanner serve` (summarization, embedding, chat).
-  - **Doesn't need it**: `repo-scanner scan`, `repo-scanner config`
-    (configuring or viewing your model choice works even before the
-    engine is installed).
+- **For the AI-backed features** (summaries, chat): either a `GROQ_API_KEY`
+  (summaries/chat) and `OPENAI_API_KEY` (embeddings) in your environment —
+  the fresh-install defaults, disclosed before first use — **or** a local
+  LLM/embedding runtime exposing an Ollama-compatible API on `localhost`
+  (e.g. [Ollama](https://ollama.com) itself), selected via
+  `repo-scanner provider mode full-local`. A local runtime is a separate,
+  external prerequisite the installer below does not and cannot include —
+  install and start it yourself if you choose that mode; `repo-scanner
+  index`/`serve` detect and report clearly if a configured provider isn't
+  reachable, rather than failing silently.
+  - **Needs one of the above**: `repo-scanner index`, and the AI-backed
+    parts of `repo-scanner serve` (summarization, embedding, chat).
+  - **Doesn't need either**: `repo-scanner scan`, `repo-scanner config`
+    (configuring or viewing your settings works regardless of what's
+    installed/configured yet).
 - **Node.js 18+ / npm** — only needed if you're working on the wiki UI
   (`frontend/`); the built UI bundle is already committed, so browsing a
   generated wiki doesn't need Node at all.
@@ -159,12 +168,14 @@ serving it and prints the local URL:
 repo-scanner index /path/to/some/repository
 ```
 
-This requires a local LLM and embedding service (e.g. [Ollama](https://ollama.com))
-to be running; `index` checks their availability up front and fails with a
-clear, actionable message (naming what's missing and how to fix it) before
-doing any work if either isn't reachable — never a silent fallback to a
-remote service. Which model each of them uses comes from `config` below
-(sensible defaults apply if you haven't run it).
+On a fresh install, `index` uses named remote providers by default —
+`groq:llama-3.3-70b-versatile` for summaries and chat, `openai:text-embedding-3-small`
+for embeddings — and blocks the first time, printing exactly which
+providers it's about to use and how to opt out, until you explicitly
+acknowledge it. It checks every configured provider's availability up
+front and fails with a clear, actionable message (naming what's missing
+and how to fix it) before doing any work if none of a stage's chain is
+reachable.
 
 **Resume an indexed repository with live updates**: serves the wiki + chat
 API from the previous `index` run and activates the repository watcher, so
@@ -174,22 +185,31 @@ saved edits are reflected automatically without re-running `index`:
 repo-scanner serve /path/to/some/repository
 ```
 
-**Choose the local LLM/embedding model** `index`/`serve` use:
+**Switch everything to fully local** — one action, atomically sets all
+three stages to a local model and re-discloses immediately:
+
+```bash
+repo-scanner provider mode full-local
+```
+
+**Configure a specific stage's provider chain** — try-in-order, so a chain
+with more than one entry fails over automatically on a network/rate-limit/
+auth failure (never silently, never outside this list):
+
+```bash
+export GROQ_API_KEY=...       # for a groq: entry
+export OPENAI_API_KEY=...     # for an openai: entry - neither key is ever stored by this tool
+repo-scanner provider chain set chat groq:llama-3.3-70b-versatile local:qwen2.5-coder
+repo-scanner provider chain set embeddings openai:text-embedding-3-small
+```
+
+**Set connection settings** (endpoint/timeout) for any `local:` chain entry —
+this does not change which providers a stage uses, only how a `local:` one
+is reached:
 
 ```bash
 repo-scanner config --llm-model <your-local-model-name> --embedding-model <your-embedding-model-name>
-repo-scanner config --show   # view the current configuration
-```
-
-**Opt into a remote engine for chat answers only** (never the default, and
-code summarization always stays local regardless of this setting) — set
-`GROQ_API_KEY` in your environment first; the key itself is never stored by
-this tool:
-
-```bash
-export GROQ_API_KEY=...
-repo-scanner config --llm-provider groq --remote-llm-model <a-groq-model-name>
-repo-scanner config --llm-provider local   # revert to local-only chat answers
+repo-scanner config --show   # view the current configuration and chains
 ```
 
 **Scan a repository only** (no local LLM needed) — prints a JSON inventory

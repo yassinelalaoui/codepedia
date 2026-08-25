@@ -78,6 +78,11 @@ class ChatMessage:
     citedSymbolIds: tuple[str, ...] = ()
     citedFilePaths: tuple[str, ...] = ()
     timestamp: str = field(default_factory=_utc_now)
+    # The ProviderRef string (e.g. "groq:llama-3.3-70b-versatile") of
+    # whichever provider in the chat chain actually produced this message
+    # (spec FR-008). Empty for a user message, or for any assistant message
+    # persisted before this feature shipped.
+    generatedBy: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "role", _normalize_text(self.role))
@@ -85,6 +90,7 @@ class ChatMessage:
         object.__setattr__(self, "citedSymbolIds", _dedupe_preserve_order(tuple(_normalize_text(item) for item in self.citedSymbolIds)))
         object.__setattr__(self, "citedFilePaths", _dedupe_preserve_order(tuple(_normalize_text(item).replace("\\", "/") for item in self.citedFilePaths)))
         object.__setattr__(self, "timestamp", _normalize_text(self.timestamp))
+        object.__setattr__(self, "generatedBy", str(self.generatedBy))
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

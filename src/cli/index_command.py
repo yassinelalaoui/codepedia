@@ -6,24 +6,24 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator, open_doc_manifest_store
-from embedding_engine import EmbeddingEngine, create_embedding_engine
-from local_llm import LLMEngine, LocalLLMEngine, create_local_llm_engine
 from parser_engine import SourceFile, extract_symbols
+from provider_routing import FailoverExecutor, PathFailoverLog, build_stage_executor
 from reindex_pipeline.embeddings import update_embeddings
 from repo_scanner.scanner import scan_repository
 from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, Symbol, compute_content_hash
+from repository_metadata.sqlite_store import connect as connect_metadata_db
 from repository_metadata.sqlite_store import stable_repository_id
 from vector_index import VectorIndex
 
 from . import paths
 from .availability import check_ai_dependencies
-from .config import CLIConfiguration, build_chat_llm_engine
+from .config import CLIConfiguration
 from .errors import RepositoryNotFoundError
 
 # A directory just closed by sqlite/other local I/O can briefly stay locked
@@ -81,10 +81,10 @@ class IndexRunResult:
 
     docsRoot: Path
     vectorIndex: VectorIndex
-    embeddingEngine: EmbeddingEngine
-    llmEngine: LocalLLMEngine
+    embeddingEngine: FailoverExecutor
+    llmEngine: FailoverExecutor
     metadataDbPath: Path
-    chatLlmEngine: LLMEngine
+    chatLlmEngine: FailoverExecutor
     watcher: Optional[RepositoryWatcher] = None
 
 
@@ -103,6 +103,22 @@ def validate_repo_path(repo_path: Path) -> Path:
     return resolved
 
 
+def _build_stage_executors(
+    config: CLIConfiguration, metadata_db_path: Path
+) -> tuple[FailoverExecutor, FailoverExecutor, FailoverExecutor]:
+    """Build the three per-stage `FailoverExecutor`s from `config`'s chains
+    (provider_routing.factory), each logging its own actual switches to the
+    repository's `engine_failover_log` table (T017/T018). Uses
+    `PathFailoverLog` (connects fresh per event, never holds the metadata db
+    open) rather than one long-lived connection, so nothing here can block a
+    later rename/replace of that file on Windows."""
+    failover_log = PathFailoverLog(metadata_db_path, connect_metadata_db)
+    embeddings_executor = build_stage_executor("embeddings", config, failover_log=failover_log)
+    summary_executor = build_stage_executor("summary", config, failover_log=failover_log)
+    chat_executor = build_stage_executor("chat", config, failover_log=failover_log)
+    return embeddings_executor, summary_executor, chat_executor
+
+
 def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     """Run the full indexing pipeline for `repo_path` and return what's
     needed to start serving it.
@@ -114,23 +130,20 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     """
     root = validate_repo_path(repo_path)
 
-    typer.echo(Stage.CHECKING_MODELS.value)
-    llm_engine = create_local_llm_engine(
-        config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
-    )
-    embedding_engine = create_embedding_engine(
-        config.embeddingModel, config.embeddingEndpointUrl, embed_timeout=config.embeddingGenerateTimeout
-    )
-    check_ai_dependencies(llm_engine, embedding_engine)
-
     final_state_dir = paths.repo_state_dir(root)
     staging_dir = final_state_dir.parent / f"{final_state_dir.name}.staging-{os.getpid()}"
     if staging_dir.exists():
         _rmtree_with_retry(staging_dir)
     staging_dir.mkdir(parents=True, exist_ok=True)
 
+    typer.echo(Stage.CHECKING_MODELS.value)
+    embeddings_executor, summary_executor, chat_executor = _build_stage_executors(
+        config, paths.metadata_db_path(staging_dir)
+    )
+    check_ai_dependencies(embeddings=embeddings_executor, summary=summary_executor, chat=chat_executor)
+
     try:
-        _run_pipeline(root, staging_dir, embedding_engine=embedding_engine, llm_engine=llm_engine)
+        _run_pipeline(root, staging_dir, embedding_engine=embeddings_executor, llm_engine=summary_executor)
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
@@ -140,22 +153,25 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     _replace_with_retry(staging_dir, final_state_dir)
 
     docs_root = paths.docs_output_dir(final_state_dir)
+    embeddings_executor, summary_executor, chat_executor = _build_stage_executors(
+        config, paths.metadata_db_path(final_state_dir)
+    )
     vector_index = VectorIndex(
         root,
         paths.vector_metadata_db_path(final_state_dir),
-        embedding_engine=embedding_engine,
+        embedding_engine=embeddings_executor,
     )
     return IndexRunResult(
         docsRoot=docs_root,
         vectorIndex=vector_index,
-        embeddingEngine=embedding_engine,
-        llmEngine=llm_engine,
+        embeddingEngine=embeddings_executor,
+        llmEngine=summary_executor,
         metadataDbPath=paths.metadata_db_path(final_state_dir),
-        chatLlmEngine=build_chat_llm_engine(config),
+        chatLlmEngine=chat_executor,
     )
 
 
-def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: EmbeddingEngine, llm_engine: LocalLLMEngine) -> None:
+def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: Any, llm_engine: Any) -> None:
     graph_id = stable_repository_id(root)
     metadata_store = RepositoryMetadataStore(paths.metadata_db_path(state_dir))
 

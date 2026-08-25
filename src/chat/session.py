@@ -13,13 +13,16 @@ class LocalDependencyUnavailableError(RuntimeError):
 
 
 def ensure_local_dependencies_available(embedding_engine: Any, llm_engine: Any) -> None:
-    if not embedding_engine.isAvailableLocally():
+    """Works identically whether handed a raw engine or a
+    `provider_routing.FailoverExecutor` wrapping a chain - both expose
+    `isAvailable()` (research.md §13's C2 fix)."""
+    if not embedding_engine.isAvailable():
         raise LocalDependencyUnavailableError(
-            "Local embedding engine is unavailable; ChatSession cannot answer without it."
+            "No embedding provider is currently available; ChatSession cannot answer without one."
         )
-    if not llm_engine.isAvailableLocally():
+    if not llm_engine.isAvailable():
         raise LocalDependencyUnavailableError(
-            "Local LLM is unavailable; ChatSession cannot answer without it."
+            "No chat provider is currently available; ChatSession cannot answer without one."
         )
 
 
@@ -44,6 +47,7 @@ class ChatSession(_ChatSessionData):
             content = render_insufficient_evidence_text(question)
             cited_symbol_ids: tuple[str, ...] = ()
             cited_file_paths: tuple[str, ...] = ()
+            generated_by = ""
             yield content
         else:
             insufficient = is_insufficient_evidence(evidence)
@@ -56,10 +60,11 @@ class ChatSession(_ChatSessionData):
             )
             envelope = build_prompt_envelope(context)
             raw_parts: list[str] = []
-            async for fragment in self.llmEngine.generateStream(envelope):
+            async for fragment in self.llmEngine.stream(lambda engine: engine.generateStream(envelope)):
                 raw_parts.append(fragment)
                 yield fragment
             raw_answer = "".join(raw_parts)
+            generated_by = str(self.llmEngine.providerUsed) if self.llmEngine.providerUsed is not None else ""
             content = render_answer_text(
                 raw_answer,
                 evidence,
@@ -76,6 +81,7 @@ class ChatSession(_ChatSessionData):
             content=content,
             citedSymbolIds=cited_symbol_ids,
             citedFilePaths=cited_file_paths,
+            generatedBy=generated_by,
         )
         self.messages.append(assistant_message)
         self._persist(assistant_message)

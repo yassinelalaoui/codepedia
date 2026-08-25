@@ -54,9 +54,13 @@ def test_serve_command_has_same_path_host_port_shape_as_index():
 def test_config_command_accepts_optional_model_endpoint_and_show_flags():
     cmd = _command("config")
     parameters = inspect.signature(cmd.callback).parameters
-    for name in ("llm_model", "llm_endpoint", "embedding_model", "embedding_endpoint", "llm_provider", "remote_llm_model"):
+    for name in ("llm_model", "llm_endpoint", "embedding_model", "embedding_endpoint"):
         assert _param_default(cmd.callback, name) is None
     assert _param_default(cmd.callback, "show") is False
+    # llmProvider/remoteLlmModel (026) were removed - superseded entirely by
+    # `provider chain set`/`provider mode full-local` (029).
+    assert "llm_provider" not in parameters
+    assert "remote_llm_model" not in parameters
 
 
 @pytest.fixture()
@@ -66,34 +70,35 @@ def cli_home(tmp_path, monkeypatch):
     return home
 
 
-def test_config_llm_provider_groq_discloses_and_saves(cli_home):
+def test_provider_mode_full_local_switches_all_three_chains(cli_home):
     runner = CliRunner()
 
-    result = runner.invoke(
-        app, ["config", "--llm-provider", "groq", "--remote-llm-model", "llama-3.3-70b-versatile"]
-    )
+    # Two confirmations expected: the main callback's gate (fresh install,
+    # signature never acknowledged) and `run_provider_mode_full_local`'s own
+    # immediate re-check against the just-saved all-local configuration
+    # (research.md §13's M1 fix).
+    result = runner.invoke(app, ["provider", "mode", "full-local"], input="y\ny\n")
 
     assert result.exit_code == 0, result.output
-    assert "sends" in result.output.lower() and "groq" in result.output.lower()
-    assert "Chat answer-generation provider: groq" in result.output
+    assert "local:nomic-embed-text" in result.output
+    assert "local:qwen2.5-coder" in result.output
 
 
-def test_config_llm_provider_groq_without_remote_model_is_rejected(cli_home):
+def test_provider_chain_set_replaces_one_stage_only(cli_home):
     runner = CliRunner()
 
-    result = runner.invoke(app, ["config", "--llm-provider", "groq"])
+    result = runner.invoke(app, ["provider", "chain", "set", "chat", "groq:llama-3.3-70b-versatile"], input="y\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert "groq:llama-3.3-70b-versatile" in result.output
+
+
+def test_provider_chain_set_rejects_unknown_stage(cli_home):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["provider", "chain", "set", "bogus", "groq:llama-3.3-70b-versatile"], input="y\ny\n")
 
     assert result.exit_code != 0
-
-
-def test_config_llm_provider_local_reverts_cleanly(cli_home):
-    runner = CliRunner()
-    runner.invoke(app, ["config", "--llm-provider", "groq", "--remote-llm-model", "llama-3.3-70b-versatile"])
-
-    result = runner.invoke(app, ["config", "--llm-provider", "local"])
-
-    assert result.exit_code == 0, result.output
-    assert "Chat answer-generation provider: local" in result.output
 
 
 def test_version_flag_output_is_a_bare_version_string_matching_the_package():

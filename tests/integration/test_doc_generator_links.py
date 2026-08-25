@@ -6,7 +6,7 @@ from doc_generator import DocGenerator, open_doc_manifest_store
 from repository_metadata import CodeSummaryPipeline
 from repository_metadata.sqlite_store import stable_repository_id
 
-from ._doc_generator_support import RecordingLLMEngine, build_indexed_repo
+from ._doc_generator_support import RecordingLLMEngine, build_indexed_repo, wrap_llm
 
 
 def _assert_zero_broken_links(manifest_store, repository_id: str) -> None:
@@ -34,7 +34,7 @@ def _build_generator(tmp_path: Path, root: Path, store, graph) -> DocGenerator:
 def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path):
     root, store, graph = build_indexed_repo(tmp_path)
     engine = RecordingLLMEngine()
-    CodeSummaryPipeline(metadataStore=store, dependencyGraph=graph, llmEngine=engine).summarizeRepository(
+    CodeSummaryPipeline(metadataStore=store, dependencyGraph=graph, llmEngine=wrap_llm(engine)).summarizeRepository(
         root, incremental=False
     )
 
@@ -95,7 +95,7 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
 def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_valid(tmp_path):
     root, store, graph = build_indexed_repo(tmp_path)
     engine = RecordingLLMEngine()
-    CodeSummaryPipeline(metadataStore=store, dependencyGraph=graph, llmEngine=engine).summarizeRepository(
+    CodeSummaryPipeline(metadataStore=store, dependencyGraph=graph, llmEngine=wrap_llm(engine)).summarizeRepository(
         root, incremental=False
     )
 
@@ -122,7 +122,7 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
         inventory=beta_inventory,
         content_hash=compute_content_hash(beta_path),
     )
-    CodeSummaryPipeline(metadataStore=store, dependencyGraph=graph, llmEngine=engine).summarizeSourceFile(
+    CodeSummaryPipeline(metadataStore=store, dependencyGraph=graph, llmEngine=wrap_llm(engine)).summarizeSourceFile(
         root, beta_path
     )
 

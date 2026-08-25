@@ -46,3 +46,13 @@ class InvalidResponseError(EmbeddingError):
 class EmbeddingFailedError(EmbeddingError):
     def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
         super().__init__("embedding_failed", message, endpointUrl, modelName)
+
+
+class MissingApiKeyError(EmbeddingError):
+    def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
+        super().__init__("missing_api_key", message, endpointUrl, modelName)
+
+
+class RateLimitedError(EmbeddingError):
+    def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
+        super().__init__("rate_limited", message, endpointUrl, modelName)

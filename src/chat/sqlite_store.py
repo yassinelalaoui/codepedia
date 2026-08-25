@@ -61,8 +61,8 @@ def append_message(db_path: str | Path, session_id: str, message: ChatMessage) -
             connection.execute(
                 """
                 INSERT INTO chat_messages
-                    (id, session_id, role, content, cited_symbol_ids, cited_file_paths, timestamp, sequence)
-                VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(rowid), 0) + 1 FROM chat_messages))
+                    (id, session_id, role, content, cited_symbol_ids, cited_file_paths, timestamp, sequence, generated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(rowid), 0) + 1 FROM chat_messages), ?)
                 """,
                 (
                     uuid.uuid4().hex,
@@ -72,6 +72,7 @@ def append_message(db_path: str | Path, session_id: str, message: ChatMessage) -
                     json.dumps(list(message.citedSymbolIds)),
                     json.dumps(list(message.citedFilePaths)),
                     message.timestamp,
+                    message.generatedBy,
                 ),
             )
             connection.execute(
@@ -129,7 +130,7 @@ def load_messages(db_path: str | Path, session_id: str) -> tuple[ChatMessage, ..
     with closing(connect(db_path)) as connection:
         rows = connection.execute(
             """
-            SELECT role, content, cited_symbol_ids, cited_file_paths, timestamp
+            SELECT role, content, cited_symbol_ids, cited_file_paths, timestamp, generated_by
             FROM chat_messages
             WHERE session_id = ?
             ORDER BY timestamp, sequence
@@ -143,6 +144,7 @@ def load_messages(db_path: str | Path, session_id: str) -> tuple[ChatMessage, ..
             citedSymbolIds=tuple(json.loads(row["cited_symbol_ids"])),
             citedFilePaths=tuple(json.loads(row["cited_file_paths"])),
             timestamp=row["timestamp"],
+            generatedBy=row["generated_by"],
         )
         for row in rows
     )

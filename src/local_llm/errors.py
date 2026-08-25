@@ -74,3 +74,8 @@ class MissingApiKeyError(RemoteLLMError):
 class RemoteGenerationFailedError(RemoteLLMError):
     def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
         super().__init__("generation_failed", message, endpointUrl, modelName)
+
+
+class RateLimitedError(RemoteLLMError):
+    def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
+        super().__init__("rate_limited", message, endpointUrl, modelName)

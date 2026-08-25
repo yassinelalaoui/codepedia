@@ -6,6 +6,7 @@ from shutil import copytree
 from dependency_graph import DependencyGraph
 from local_llm.models import AvailabilityStatus
 from parser_engine import SourceFile, extract_symbols
+from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata import DependencyEdge, RepositoryMetadataStore, compute_content_hash
 from repository_metadata.sqlite_store import stable_repository_id, stable_source_file_id
 
@@ -66,6 +67,9 @@ class RecordingLLMEngine:
     def isAvailableLocally(self) -> bool:
         return self.available
 
+    def isAvailable(self) -> bool:
+        return self.available
+
     def generate(self, prompt) -> str:
         from local_llm import PromptEnvelope
 
@@ -74,3 +78,9 @@ class RecordingLLMEngine:
         symbol_line = next((line for line in rendered.splitlines() if line.startswith("Symbol name: ")), "Symbol name: unknown")
         symbol_name = symbol_line.split(": ", 1)[1]
         return f"{symbol_name} summary"
+
+
+def wrap_llm(engine: RecordingLLMEngine) -> FailoverExecutor:
+    """CodeSummaryPipeline now takes a `provider_routing.FailoverExecutor`
+    wrapping the summary chain rather than a raw engine (spec 029)."""
+    return FailoverExecutor("summary", ((ProviderRef("local", engine.modelName), engine),))

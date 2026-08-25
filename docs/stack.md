@@ -71,18 +71,37 @@ this shape:
   (`normalize_endpoint_url` rejects anything but `localhost` / `127.0.0.1` / `::1`)
   — constitution 2.1/2.3 enforced in code, not just policy: it is structurally
   impossible to point the *local* engine at a cloud API.
-- Availability-check-before-call, everywhere, with a hard failure
-  (`ServiceUnavailableError` / `LocalLLMUnavailableError`) instead of any fallback —
-  constitution 2.3, "jamais de repli silencieux vers le cloud."
+- Availability-check-before-call, everywhere. A single engine still fails hard
+  (`ServiceUnavailableError` / `LocalLLMUnavailableError`) with no fallback of
+  its own; automatic failover only happens one layer up, in
+  `provider_routing.FailoverExecutor`, and only within the operator's own
+  explicitly configured chain (constitution 2.3, v3.0.0 — 029) — never as an
+  undisclosed, out-of-chain cloud fallback.
 
-**`httpx.AsyncClient`** (026) for the actual answer-*generation* call specifically
-— both `local_llm`'s Ollama streaming call and the new, explicitly opt-in
-`GroqLLMEngine`'s Groq API call, since generation is the one place this project
-needs a real async streaming HTTP response (`generateStream`, consumed token-by-
-token as Server-Sent Events reach the chat API). `GroqLLMEngine`'s endpoint is
-deliberately **not** run through `normalize_endpoint_url` — that validator's
-loopback-only guarantee stays specific to the local engine; the remote engine's
-own opt-in, disclosed nature (constitution 2.1 v2.0.0) is what governs it instead.
+**`httpx.AsyncClient`**/**`httpx`** (026, extended 029) for every remote-provider
+call — `local_llm`'s Ollama streaming call, `GroqLLMEngine`'s Groq API call, and
+(029) `OpenAIEmbeddingProvider`'s OpenAI embeddings call — since generation is
+the one place this project needs a real async streaming HTTP response
+(`generateStream`, consumed token-by-token as Server-Sent Events reach the chat
+API). Every remote provider's endpoint is deliberately **not** run through
+`normalize_endpoint_url` — that validator's loopback-only guarantee stays
+specific to the local engine; a remote provider's own disclosed nature
+(constitution 2.1 v3.0.0, `provider_routing` — 029) governs it instead. No new
+HTTP client dependency was introduced by 029: `OpenAIEmbeddingProvider`'s
+transport reuses the same already-a-direct-dependency `httpx`.
+
+## Provider chains & failover (029)
+
+**A new `provider_routing` package, no new dependency.** `FailoverExecutor`
+(`provider_routing.router`) is stage-agnostic, plain-Python retry/classification
+logic over whatever `(ProviderRef, engine)` pairs `provider_routing.factory`
+resolves from a `CLIConfiguration` chain — no separate resiliency/retry library
+(e.g. `tenacity`) was pulled in, since the retry policy here is deliberately
+narrow (exactly the configured chain, exactly three classified failure
+reasons) rather than a general-purpose one a library would be built for.
+`engine_failover_log` is one additive SQLite table in the already-existing
+`repository_metadata` file (`ALTER TABLE`-guarded the same way `chat_messages`
+and `chunks` gained their own new columns), not a new database.
 
 ## Documentation rendering
 

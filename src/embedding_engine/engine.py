@@ -50,6 +50,9 @@ class EmbeddingEngine:
     def isAvailableLocally(self) -> bool:
         return self.checkAvailability().available
 
+    def isAvailable(self) -> bool:
+        return self.isAvailableLocally()
+
     def listInstalledModels(self) -> tuple[str, ...]:
         return self._transport.list_models()
 

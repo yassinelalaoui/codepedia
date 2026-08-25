@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI
+from provider_routing import FailoverExecutor, ProviderRef
 from vector_index import VectorIndex, build_code_chunk
 from vector_index.search import encode_text
 
@@ -38,6 +39,9 @@ class FakeEmbeddingEngine:
     def isAvailableLocally(self) -> bool:
         return self.available
 
+    def isAvailable(self) -> bool:
+        return self.available
+
     def embed(self, text: str):
         return encode_text(text)
 
@@ -56,6 +60,9 @@ class FakeLLMEngine:
         self.calls: list = []
 
     def isAvailableLocally(self) -> bool:
+        return self.available
+
+    def isAvailable(self) -> bool:
         return self.available
 
     def generate(self, envelope) -> str:
@@ -96,5 +103,6 @@ def build_test_app(
     )
     index.addChunk(chunk)
 
-    app = create_app(index, embedding_engine, llm_engine, docs_root, metadata_db_path)
+    chat_executor = FailoverExecutor("chat", ((ProviderRef("local", "fake"), llm_engine),))
+    app = create_app(index, embedding_engine, chat_executor, docs_root, metadata_db_path)
     return app, index

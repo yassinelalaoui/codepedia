@@ -5,17 +5,17 @@ from pathlib import Path
 import typer
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator, open_doc_manifest_store
-from embedding_engine import create_embedding_engine
-from local_llm import create_local_llm_engine
 from reindex_pipeline import IncrementalReindexPipeline
 from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore
+from repository_metadata.sqlite_store import connect as connect_metadata_db
 from repository_metadata.sqlite_store import stable_repository_id
+from provider_routing import PathFailoverLog, build_stage_executor
 from vector_index import VectorIndex
 
 from . import paths
 from .availability import check_ai_dependencies
-from .config import CLIConfiguration, build_chat_llm_engine
+from .config import CLIConfiguration
 from .errors import IndexNotFoundError
 from .index_command import IndexRunResult, validate_repo_path
 
@@ -27,20 +27,19 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     """
     root = validate_repo_path(repo_path)
 
-    llm_engine = create_local_llm_engine(
-        config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
-    )
-    embedding_engine = create_embedding_engine(
-        config.embeddingModel, config.embeddingEndpointUrl, embed_timeout=config.embeddingGenerateTimeout
-    )
-    check_ai_dependencies(llm_engine, embedding_engine)
-
     state_dir = paths.repo_state_dir(root)
+    metadata_db_path = paths.metadata_db_path(state_dir)
+    failover_log = PathFailoverLog(metadata_db_path, connect_metadata_db)
+    embeddings_executor = build_stage_executor("embeddings", config, failover_log=failover_log)
+    summary_executor = build_stage_executor("summary", config, failover_log=failover_log)
+    chat_executor = build_stage_executor("chat", config, failover_log=failover_log)
+    check_ai_dependencies(embeddings=embeddings_executor, summary=summary_executor, chat=chat_executor)
+
     not_indexed_message = f"No index found for {root}. Run `repo-scanner index {root}` first."
     if not state_dir.exists():
         raise IndexNotFoundError(not_indexed_message)
 
-    metadata_store = RepositoryMetadataStore(paths.metadata_db_path(state_dir))
+    metadata_store = RepositoryMetadataStore(metadata_db_path)
     try:
         metadata_store.load_repository_record(root)
     except KeyError as exc:
@@ -53,7 +52,7 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     vector_index = VectorIndex(
         root,
         paths.vector_metadata_db_path(state_dir),
-        embedding_engine=embedding_engine,
+        embedding_engine=embeddings_executor,
     )
     manifest_store = open_doc_manifest_store(paths.doc_manifest_db_path(state_dir))
     doc_generator = DocGenerator(
@@ -63,7 +62,7 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         outputRoot=docs_root,
         repositoryRoot=root,
     )
-    summary_pipeline = CodeSummaryPipeline(metadataStore=metadata_store, dependencyGraph=graph, llmEngine=llm_engine)
+    summary_pipeline = CodeSummaryPipeline(metadataStore=metadata_store, dependencyGraph=graph, llmEngine=summary_executor)
 
     reindex_pipeline = IncrementalReindexPipeline(
         repositoryRoot=root,
@@ -72,7 +71,7 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         dependencyGraphPath=paths.graph_db_path(state_dir),
         summaryPipeline=summary_pipeline,
         vectorIndex=vector_index,
-        embeddingEngine=embedding_engine,
+        embeddingEngine=embeddings_executor,
         docGenerator=doc_generator,
     )
 
@@ -87,9 +86,9 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     return IndexRunResult(
         docsRoot=docs_root,
         vectorIndex=vector_index,
-        embeddingEngine=embedding_engine,
-        llmEngine=llm_engine,
-        metadataDbPath=paths.metadata_db_path(state_dir),
-        chatLlmEngine=build_chat_llm_engine(config),
+        embeddingEngine=embeddings_executor,
+        llmEngine=summary_executor,
+        metadataDbPath=metadata_db_path,
+        chatLlmEngine=chat_executor,
         watcher=watcher,
     )

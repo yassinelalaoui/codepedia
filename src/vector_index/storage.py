@@ -78,6 +78,17 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA foreign_keys = ON")
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
+    _ensure_chunks_embedding_model_id_column(connection)
+
+
+def _ensure_chunks_embedding_model_id_column(connection: sqlite3.Connection) -> None:
+    # ALTER TABLE ADD COLUMN has no IF NOT EXISTS equivalent - guarded
+    # separately so re-running against an already-migrated database doesn't
+    # raise sqlite3.OperationalError (contracts/sqlite-schema-deltas.md).
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(chunks)").fetchall()}
+    if "embedding_model_id" not in columns:
+        with connection:
+            connection.execute("ALTER TABLE chunks ADD COLUMN embedding_model_id TEXT NOT NULL DEFAULT ''")
 
 
 def utc_now() -> str:
@@ -183,6 +194,7 @@ def upsert_chunk(
             sourceFilePath=source_file,
             chunkType=chunk.chunkType,
             metadata=dict(chunk.metadata),
+            embeddingModelId=chunk.embeddingModelId,
         )
     )
     existing = connection.execute("SELECT 1 FROM chunks WHERE id = ?", (entry.chunkId,)).fetchone()
@@ -191,8 +203,8 @@ def upsert_chunk(
     with connection:
         connection.execute(
             """
-            INSERT INTO chunks (id, index_id, source_file_path, source_symbol_id, chunk_type, content, embedding, dimensionality, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chunks (id, index_id, source_file_path, source_symbol_id, chunk_type, content, embedding, dimensionality, embedding_model_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 index_id = excluded.index_id,
                 source_file_path = excluded.source_file_path,
@@ -201,6 +213,7 @@ def upsert_chunk(
                 content = excluded.content,
                 embedding = excluded.embedding,
                 dimensionality = excluded.dimensionality,
+                embedding_model_id = excluded.embedding_model_id,
                 updated_at = excluded.updated_at
             """,
             (
@@ -212,6 +225,7 @@ def upsert_chunk(
                 entry.content,
                 _encode_vector(entry.vector),
                 entry.dimensionality,
+                entry.embeddingModelId,
                 timestamp,
                 timestamp,
             ),
@@ -251,7 +265,7 @@ def upsert_chunks(
 def load_entries(connection: sqlite3.Connection, *, index_id: str) -> list[VectorEntry]:
     rows = connection.execute(
         """
-        SELECT id, source_file_path, source_symbol_id, chunk_type, content, embedding, dimensionality
+        SELECT id, source_file_path, source_symbol_id, chunk_type, content, embedding, dimensionality, embedding_model_id
         FROM chunks
         WHERE index_id = ?
         ORDER BY source_file_path, source_symbol_id, id
@@ -267,6 +281,7 @@ def load_entries(connection: sqlite3.Connection, *, index_id: str) -> list[Vecto
             sourceSymbolId=row["source_symbol_id"],
             chunkType=row["chunk_type"],
             content=row["content"],
+            embeddingModelId=row["embedding_model_id"],
         )
         for row in rows
     ]
@@ -275,7 +290,7 @@ def load_entries(connection: sqlite3.Connection, *, index_id: str) -> list[Vecto
 def load_chunks_for_file(connection: sqlite3.Connection, *, index_id: str, source_file_path: str | Path) -> list[VectorEntry]:
     rows = connection.execute(
         """
-        SELECT id, source_file_path, source_symbol_id, chunk_type, content, embedding, dimensionality
+        SELECT id, source_file_path, source_symbol_id, chunk_type, content, embedding, dimensionality, embedding_model_id
         FROM chunks
         WHERE index_id = ? AND source_file_path = ?
         ORDER BY id
@@ -291,6 +306,7 @@ def load_chunks_for_file(connection: sqlite3.Connection, *, index_id: str, sourc
             sourceSymbolId=row["source_symbol_id"],
             chunkType=row["chunk_type"],
             content=row["content"],
+            embeddingModelId=row["embedding_model_id"],
         )
         for row in rows
     ]

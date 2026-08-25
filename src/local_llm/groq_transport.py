@@ -7,7 +7,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from .errors import MissingApiKeyError, RemoteGenerationFailedError
+from .errors import MissingApiKeyError, RateLimitedError, RemoteGenerationFailedError
 from .models import AvailabilityStatus, PromptEnvelope
 
 DEFAULT_GROQ_ENDPOINT_URL = "https://api.groq.com/openai/v1"
@@ -76,6 +76,14 @@ class GroqLLMTransport:
                 modelInstalled=False,
                 message=f"Groq API rejected the configured {API_KEY_ENV_VAR} (HTTP {response.status_code}).",
             )
+        if response.status_code == 429:
+            return AvailabilityStatus(
+                available=False,
+                serviceReachable=True,
+                modelInstalled=True,
+                message=f"Groq API at {self.endpointUrl} is rate-limiting this key (HTTP 429).",
+                rateLimited=True,
+            )
         if response.status_code >= 400:
             return AvailabilityStatus(
                 available=False,
@@ -120,6 +128,13 @@ class GroqLLMTransport:
                     try:
                         response.raise_for_status()
                     except httpx.HTTPStatusError:
+                        if response.status_code == 429:
+                            raise RateLimitedError(
+                                f"Groq API at {self.endpointUrl} is rate-limiting requests for model "
+                                f"'{model_name}' (HTTP 429).",
+                                endpointUrl=self.endpointUrl,
+                                modelName=model_name,
+                            ) from None
                         raise RemoteGenerationFailedError(
                             f"Groq API at {self.endpointUrl} rejected the request for model "
                             f"'{model_name}' (HTTP {response.status_code}).",

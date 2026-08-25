@@ -112,6 +112,12 @@ class AvailabilityStatus:
     serviceReachable: bool
     modelInstalled: bool
     message: str
+    # Distinguishes "the remote API is actively rate-limiting this key"
+    # (HTTP 429) from every other unavailable reason - `serviceReachable`/
+    # `modelInstalled` alone can't express a third distinct cause, and
+    # spec FR-005 requires rate-limit to be its own classified failover
+    # reason (research.md §6). Always False for the local engine.
+    rateLimited: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

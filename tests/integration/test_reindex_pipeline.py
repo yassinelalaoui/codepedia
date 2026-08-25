@@ -12,6 +12,7 @@ from doc_generator import DocGenerator, open_doc_manifest_store
 from local_llm import PromptEnvelope
 from local_llm.models import AvailabilityStatus
 from parser_engine import SourceFile, extract_symbols
+from provider_routing import FailoverExecutor, ProviderRef
 from reindex_pipeline import IncrementalReindexPipeline
 from reindex_pipeline.embeddings import update_embeddings
 from repo_watcher import ChangeBatch, ChangeType, FileChange
@@ -43,6 +44,9 @@ class RecordingLLMEngine:
         return AvailabilityStatus(False, False, False, "local model unavailable")
 
     def isAvailableLocally(self) -> bool:
+        return self.available
+
+    def isAvailable(self) -> bool:
         return self.available
 
     def generate(self, prompt: str | PromptEnvelope) -> str:
@@ -89,7 +93,10 @@ class Harness:
             outputRoot=self.output_root,
             repositoryRoot=self.root,
         )
-        self.summary_pipeline = CodeSummaryPipeline(metadataStore=self.store, dependencyGraph=self.graph, llmEngine=self.llm)
+        self.llmExecutor = FailoverExecutor("summary", ((ProviderRef("local", self.llm.modelName), self.llm),))
+        self.summary_pipeline = CodeSummaryPipeline(
+            metadataStore=self.store, dependencyGraph=self.graph, llmEngine=self.llmExecutor
+        )
 
         self.full_reindex()
 

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
-
-from embedding_engine import EmbeddingEngine
+from typing import Any, Iterable, Mapping, Sequence
 
 from .chunking import build_code_chunk
 from .models import CodeChunk, IndexRecord, SearchQuery, SearchResult, VectorEntry
@@ -19,7 +17,7 @@ class VectorIndex:
         metadataPath: str | Path,
         *,
         auto_load: bool = True,
-        embedding_engine: EmbeddingEngine | None = None,
+        embedding_engine: Any = None,
     ) -> None:
         self.repositoryRoot = str(Path(repositoryRoot).expanduser().resolve())
         self.metadataPath = Path(metadataPath).expanduser()
@@ -41,7 +39,7 @@ class VectorIndex:
         repositoryRoot: str | Path,
         metadataPath: str | Path,
         *,
-        embedding_engine: EmbeddingEngine | None = None,
+        embedding_engine: Any = None,
     ) -> "VectorIndex":
         return cls(repositoryRoot, metadataPath, auto_load=True, embedding_engine=embedding_engine)
 
@@ -140,13 +138,20 @@ class VectorIndex:
             search_query = SearchQuery(queryText=query, k=k, filters=filters or {})
         if not self._entries:
             return []
-        dimension = next(iter(self._entries.values())).dimensionality
         if self._embedding_engine is None:
             raise RuntimeError("VectorIndex.search requires an EmbeddingEngine configured on the index")
-        query_vector = self._embedding_engine.embed(search_query.queryText)
-        if len(query_vector) != dimension:
-            raise ValueError("query vector dimensionality does not match indexed entries")
-        return rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=search_query.filters)
+        filters = dict(search_query.filters)
+        if hasattr(self._embedding_engine, "run"):
+            failover_result = self._embedding_engine.run(lambda engine: engine.embed(search_query.queryText))
+            query_vector = failover_result.value
+            # Auto-filter to the querying provider's own model id (spec
+            # FR-010, research.md §8) - the caller never has to specify it,
+            # and it's what keeps a mixed-provider repository's search
+            # results internally consistent instead of blended.
+            filters.setdefault("embeddingModelId", str(failover_result.providerUsed))
+        else:
+            query_vector = self._embedding_engine.embed(search_query.queryText)
+        return rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=filters)
 
     def save(self) -> IndexRecord:
         self._persist_record()

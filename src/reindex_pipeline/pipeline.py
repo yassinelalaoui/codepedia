@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator
-from embedding_engine import EmbeddingEngine
 from parser_engine import SourceFile, extract_symbols
 from repo_scanner.ignore import load_ignore_matcher
 from repo_watcher import ChangeBatch, ChangeType
@@ -35,7 +35,7 @@ class IncrementalReindexPipeline:
         dependencyGraphPath: str | Path,
         summaryPipeline: CodeSummaryPipeline,
         vectorIndex: VectorIndex,
-        embeddingEngine: EmbeddingEngine,
+        embeddingEngine: Any,
         docGenerator: DocGenerator,
     ) -> None:
         self.repositoryRoot = Path(repositoryRoot).expanduser().resolve()

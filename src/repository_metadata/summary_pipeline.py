@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from dependency_graph import DependencyGraph
-from local_llm import LocalLLMEngine
 from parser_engine import FunctionSymbol, ModuleSymbol, Symbol
 
 from .models import SourceFileBundle
@@ -41,14 +40,19 @@ class CodeSummaryPipeline:
         *,
         metadataStore: RepositoryMetadataStore,
         dependencyGraph: DependencyGraph,
-        llmEngine: LocalLLMEngine,
+        llmEngine: Any,
     ) -> None:
+        """`llmEngine` is a `provider_routing.FailoverExecutor` wrapping the
+        summary stage's configured provider chain (research.md's "deferred
+        implementation" of constitution 2.1/2.3) - this package must not
+        depend on `provider_routing` directly (it sits below it in the
+        dependency graph), so it's accepted duck-typed via `Any`."""
         self.metadataStore = metadataStore
         self.dependencyGraph = dependencyGraph
         self.llmEngine = llmEngine
 
     def isReady(self) -> bool:
-        return self.llmEngine.isAvailableLocally()
+        return self.llmEngine.isAvailable()
 
     def summarizeRepository(
         self,
@@ -114,11 +118,10 @@ class CodeSummaryPipeline:
         )
 
     def _ensure_ready(self) -> None:
-        status = self.llmEngine.checkAvailability()
-        if not status.available:
+        if not self.llmEngine.isAvailable():
             raise LocalLLMUnavailableError(
-                f"Local LLM unavailable at {self.llmEngine.endpointUrl} for model {self.llmEngine.modelName}: {status.message}. "
-                "Start the local service or install the model before summarizing code."
+                "No provider in the summary chain is currently available. Start the local service, "
+                "install the required model, or check your remote provider credentials, then try again."
             )
 
     def _summarize_bundle_list(
@@ -195,13 +198,14 @@ class CodeSummaryPipeline:
             symbol_source_text=symbol_source_text,
         )
         prompt = self._build_prompt(summary_context)
-        generated_summary = self.llmEngine.generate(prompt).strip()
+        failover_result = self.llmEngine.run(lambda engine: engine.generate(prompt))
+        generated_summary = failover_result.value.strip()
         if not generated_summary:
             raise SummaryPipelineError(f"LLM returned an empty summary for symbol {symbol.id}")
         result = SummaryResult(
             symbolId=symbol.id,
             generatedSummary=generated_summary,
-            modelName=self.llmEngine.modelName,
+            modelName=str(failover_result.providerUsed),
             contextHash=context_hash(summary_context),
             sourceFileId=bundle.file.id,
             symbolKind=symbol.kind,

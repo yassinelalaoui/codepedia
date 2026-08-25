@@ -54,6 +54,35 @@ def test_search_query_validates_k():
     assert query.k == 1
 
 
+def test_rank_entries_excludes_mismatched_dimensionality_instead_of_raising():
+    # research.md §8: a repository with mixed-model vectors (spec User Story
+    # 4) used to make VectorIndex.search() crash outright with ValueError -
+    # rank_entries now silently excludes an incompatible entry instead.
+    query = [1.0, 0.0, 0.0]
+    matching = CodeChunk(id="chunk-a", content="alpha", embedding=[1.0, 0.0, 0.0], sourceSymbolId="symbol-a")
+    mismatched = CodeChunk(id="chunk-b", content="beta", embedding=[1.0, 0.0], sourceSymbolId="symbol-b")
+
+    results = rank_entries(query, [matching, mismatched], k=5)
+
+    assert [result.chunkId for result in results] == ["chunk-a"]
+
+
+def test_rank_entries_excludes_entries_with_a_different_embedding_model_id():
+    query = encode_text("database helper")
+    same_model = CodeChunk(
+        id="chunk-a", content="database helper", embedding=query, sourceSymbolId="symbol-a",
+        embeddingModelId="openai:text-embedding-3-small",
+    )
+    other_model = CodeChunk(
+        id="chunk-b", content="database helper", embedding=query, sourceSymbolId="symbol-b",
+        embeddingModelId="local:nomic-embed-text",
+    )
+
+    results = rank_entries(query, [same_model, other_model], k=5, filters={"embeddingModelId": "openai:text-embedding-3-small"})
+
+    assert [result.chunkId for result in results] == ["chunk-a"]
+
+
 def test_vector_index_add_remove_and_reindex_round_trip(tmp_path):
     engine = FakeEmbeddingEngine()
     index = VectorIndex(tmp_path / "repo", tmp_path / "meta.sqlite", embedding_engine=engine)

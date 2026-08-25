@@ -88,6 +88,11 @@ classDiagram
         class EmbeddingEngine {
             +embed(text) Vector
             +isAvailableLocally() bool
+            +isAvailable() bool
+        }
+        class OpenAIEmbeddingProvider {
+            +embed(text) Vector
+            +isAvailable() bool
         }
         class VectorIndex {
             +reindexFile(path, chunks)
@@ -98,17 +103,52 @@ classDiagram
             +str id
             +tuple~float~ embedding
             +str sourceSymbolId
+            +str embeddingModelId
         }
     }
     VectorIndex *-- CodeChunk
-    VectorIndex ..> EmbeddingEngine : embeds query text
+    VectorIndex ..> FailoverExecutor : embeds query text via
 
     namespace LocalLLM {
         class LocalLLMEngine {
             +generate(prompt) str
             +isAvailableLocally() bool
+            +isAvailable() bool
+        }
+        class GroqLLMEngine {
+            +generate(prompt) str
+            +isAvailable() bool
         }
     }
+
+    namespace ProviderRouting {
+        class ProviderRef {
+            +str kind
+            +str model
+            +parse(value) ProviderRef
+        }
+        class ProviderChain {
+            +str stage
+            +tuple~ProviderRef~ providers
+        }
+        class FailoverExecutor {
+            +str stage
+            +run(call) FailoverResult
+            +stream(call) AsyncIterator
+            +isAvailable() bool
+        }
+        class FailoverExhaustedError {
+            +str stage
+            +tuple~str~ attempted
+        }
+    }
+    ProviderChain *-- ProviderRef
+    FailoverExecutor ..> ProviderRef : (ProviderRef, engine) pairs
+    FailoverExecutor ..> FailoverExhaustedError : raises when every provider fails
+    FailoverExecutor ..> EmbeddingEngine : wraps embeddings-stage chain
+    FailoverExecutor ..> OpenAIEmbeddingProvider : wraps embeddings-stage chain
+    FailoverExecutor ..> LocalLLMEngine : wraps summary/chat-stage chain
+    FailoverExecutor ..> GroqLLMEngine : wraps summary/chat-stage chain
 
     namespace CodeSummaryPipelinePackage {
         class CodeSummaryPipeline {
@@ -121,20 +161,23 @@ classDiagram
         }
     }
     CodeSummaryPipeline ..> SummaryResult : produces
+    CodeSummaryPipeline ..> FailoverExecutor : llmEngine.run()
 
     namespace ChatRAG {
         class ChatSession {
             +str id
             +list~ChatMessage~ messages
-            +ask(question) ChatMessage
+            +askStream(question) AsyncIterator
         }
         class ChatMessage {
             +str role
             +str content
             +tuple~str~ citedSymbolIds
+            +str generatedBy
         }
     }
     ChatSession *-- ChatMessage
+    ChatSession ..> FailoverExecutor : llmEngine.stream()
 
     namespace DocGeneratorPackage {
         class DocGenerator {
@@ -276,6 +319,10 @@ classDiagram
             +str llmEndpointUrl
             +str embeddingModel
             +str embeddingEndpointUrl
+            +tuple~str~ embeddingChain
+            +tuple~str~ summaryChain
+            +tuple~str~ chatChain
+            +str disclosureAcknowledgedSignature
         }
         class IndexRunResult {
             +Path docsRoot
@@ -294,6 +341,18 @@ classDiagram
             <<function, config_command.py>>
             +run_config(llm_model, llm_endpoint, llm_generate_timeout, embedding_model, embedding_endpoint, embedding_generate_timeout, show)
         }
+        class run_provider_chain_set {
+            <<function, provider_command.py>>
+            +run_provider_chain_set(stage, providers)
+        }
+        class run_provider_mode_full_local {
+            <<function, provider_command.py>>
+            +run_provider_mode_full_local()
+        }
+        class ensure_disclosure_acknowledged {
+            <<function, disclosure.py>>
+            +ensure_disclosure_acknowledged(config) CLIConfiguration
+        }
         class scan {
             <<function, main.py>>
             +scan(repo_path) ScanResult
@@ -302,13 +361,17 @@ classDiagram
     run_index ..> CLIConfiguration : reads
     run_serve ..> CLIConfiguration : reads
     run_config ..> CLIConfiguration : reads/writes
+    run_provider_chain_set ..> CLIConfiguration : reads/writes
+    run_provider_mode_full_local ..> CLIConfiguration : reads/writes
+    run_provider_chain_set ..> ensure_disclosure_acknowledged : re-checks after saving
+    run_provider_mode_full_local ..> ensure_disclosure_acknowledged : re-checks after saving
     run_index ..> IndexRunResult : returns
     run_serve ..> IndexRunResult : returns
     scan ..> ScanResult : scan_repository()
 
     %% Cross-package data flow
-    CLIConfiguration ..> LocalLLMEngine : modelName/endpointUrl
-    CLIConfiguration ..> EmbeddingEngine : modelName/endpointUrl
+    CLIConfiguration ..> ProviderChain : embeddingChain/summaryChain/chatChain entries
+    run_index ..> FailoverExecutor : builds embeddings/summary/chat executors
     run_index ..> ScanResult : scan_repository()
     run_index ..> DocGenerator : structure + content passes
     run_index ..> CodeSummaryPipeline : summarizeRepository()

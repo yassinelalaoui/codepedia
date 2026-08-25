@@ -245,3 +245,60 @@ def test_unknown_session_returns_404_after_restart(tmp_path):
 
     assert response.status_code == 404
     assert response.json()["code"] == "session_not_found"
+
+
+def test_ask_question_response_and_history_carry_generated_by(tmp_path):
+    metadata_db_path = tmp_path / "repository-metadata.sqlite"
+    app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    client = TestClient(app)
+
+    session_id = client.post("/sessions").json()["sessionId"]
+    response = client.post(f"/sessions/{session_id}/messages", json={"question": "where is auth handled?"})
+    index.close()
+
+    events = parse_sse_events(response.text)
+    _final_name, final_payload = events[-1]
+    assert final_payload["generatedBy"] == "local:fake"
+
+    history = client.get(f"/sessions/{session_id}/messages").json()
+    assistant_message = next(message for message in history["messages"] if message["role"] == "assistant")
+    assert assistant_message["generatedBy"] == "local:fake"
+    user_message = next(message for message in history["messages"] if message["role"] == "user")
+    assert user_message["generatedBy"] == ""
+
+
+def test_failover_log_endpoint_returns_empty_list_with_no_events(tmp_path):
+    metadata_db_path = tmp_path / "repository-metadata.sqlite"
+    app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    client = TestClient(app)
+
+    response = client.get("/providers/failover-log")
+    index.close()
+
+    assert response.status_code == 200
+    assert response.json() == {"events": []}
+
+
+def test_failover_log_endpoint_returns_appended_events_filtered_by_stage(tmp_path):
+    from provider_routing import append_failover_event
+    from repository_metadata.sqlite_store import connect
+
+    metadata_db_path = tmp_path / "repository-metadata.sqlite"
+    app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    client = TestClient(app)
+
+    connection = connect(metadata_db_path)
+    append_failover_event(connection, stage="chat", attempted_provider="groq:m1", result_provider="local:m2", reason="network_error")
+    append_failover_event(connection, stage="embeddings", attempted_provider="openai:m1", result_provider="local:m2", reason="rate_limited")
+    connection.close()
+
+    all_events = client.get("/providers/failover-log").json()["events"]
+    chat_events = client.get("/providers/failover-log", params={"stage": "chat"}).json()["events"]
+    index.close()
+
+    assert len(all_events) == 2
+    assert len(chat_events) == 1
+    assert chat_events[0]["stage"] == "chat"
+    assert chat_events[0]["attemptedProvider"] == "groq:m1"
+    assert chat_events[0]["resultProvider"] == "local:m2"
+    assert chat_events[0]["reason"] == "network_error"

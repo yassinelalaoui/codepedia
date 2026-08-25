@@ -4,12 +4,14 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
-from .errors import MissingApiKeyError, RemoteGenerationFailedError, RemoteServiceUnavailableError
+from .errors import MissingApiKeyError, RateLimitedError, RemoteGenerationFailedError, RemoteServiceUnavailableError
 from .groq_transport import DEFAULT_GROQ_ENDPOINT_URL, GroqLLMTransport
 from .models import AvailabilityStatus, PromptEnvelope, normalize_model_name
 
 
 def _availability_error(status: AvailabilityStatus, *, endpoint_url: str, model_name: str) -> Exception:
+    if status.rateLimited:
+        return RateLimitedError(status.message, endpointUrl=endpoint_url, modelName=model_name)
     if not status.serviceReachable:
         return RemoteServiceUnavailableError(status.message, endpointUrl=endpoint_url, modelName=model_name)
     if not status.modelInstalled:
@@ -39,6 +41,9 @@ class GroqLLMEngine:
 
     def isAvailableLocally(self) -> bool:
         return self.checkAvailability().available
+
+    def isAvailable(self) -> bool:
+        return self.isAvailableLocally()
 
     def generate(self, prompt: str | PromptEnvelope) -> str:
         async def _drain() -> str:

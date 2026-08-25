@@ -125,11 +125,22 @@ SCHEMA_STATEMENTS = (
         FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS engine_failover_log (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        attempted_provider TEXT NOT NULL,
+        result_provider TEXT,
+        reason TEXT NOT NULL
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_source_files_repository_path ON source_files(repository_id, path)",
     "CREATE INDEX IF NOT EXISTS idx_symbols_source_file ON symbols(source_file_id)",
     "CREATE INDEX IF NOT EXISTS idx_dependency_edges_source_file ON dependency_edges(source_file_id)",
     "CREATE INDEX IF NOT EXISTS idx_dependency_edges_target_id ON dependency_edges(target_id)",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_session_timestamp ON chat_messages(session_id, timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_engine_failover_log_timestamp ON engine_failover_log(timestamp)",
 )
 
 
@@ -144,6 +155,17 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA foreign_keys = ON")
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
+    _ensure_chat_messages_generated_by_column(connection)
+
+
+def _ensure_chat_messages_generated_by_column(connection: sqlite3.Connection) -> None:
+    # ALTER TABLE ADD COLUMN has no IF NOT EXISTS equivalent - guarded
+    # separately so re-running against an already-migrated database doesn't
+    # raise sqlite3.OperationalError (contracts/sqlite-schema-deltas.md).
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(chat_messages)").fetchall()}
+    if "generated_by" not in columns:
+        with connection:
+            connection.execute("ALTER TABLE chat_messages ADD COLUMN generated_by TEXT NOT NULL DEFAULT ''")
 
 
 def stable_repository_id(root_path: str | Path) -> str:

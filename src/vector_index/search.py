@@ -65,6 +65,12 @@ def _matches_filters(entry: VectorEntry, filters: Mapping[str, Any]) -> bool:
             return False
         if key == "chunkId" and entry.chunkId != expected:
             return False
+        # Checked before rank_entries' dimensionality comparison below, so a
+        # vector from a different embedding model/provider is excluded by
+        # construction rather than ever reaching (and crashing) that check
+        # (spec FR-010, research.md §8).
+        if key == "embeddingModelId" and entry.embeddingModelId != expected:
+            return False
     return True
 
 
@@ -90,7 +96,14 @@ def rank_entries(
         if not _matches_filters(entry, active_filters):
             continue
         if entry.dimensionality != len(query_vector):
-            raise ValueError("query vector dimensionality does not match indexed entries")
+            # A repository can accumulate vectors from more than one
+            # embedding model/provider (spec User Story 4) - an
+            # incompatible-dimensionality entry is silently excluded from
+            # ranking rather than crashing the whole search (research.md
+            # §8; the `embeddingModelId` filter above already excludes most
+            # of these by construction, this is the remaining safety net
+            # for any entry with no/mismatched model id).
+            continue
         scored.append((cosine_similarity(query_vector, entry.vector), entry))
     scored.sort(key=lambda item: (-item[0], item[1].chunkId))
     return [

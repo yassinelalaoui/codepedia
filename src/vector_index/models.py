@@ -28,6 +28,10 @@ class CodeChunk:
     sourceFilePath: str = ""
     chunkType: ChunkType = "code"
     metadata: dict[str, Any] = field(default_factory=dict)
+    # The ProviderRef string (e.g. "openai:text-embedding-3-small") of
+    # whichever provider/model actually computed `embedding` (spec FR-009).
+    # Empty for a chunk built before this feature shipped.
+    embeddingModelId: str = ""
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -59,6 +63,7 @@ class VectorEntry:
     chunkType: ChunkType
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    embeddingModelId: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "vector", _coerce_vector(self.vector))
@@ -77,6 +82,7 @@ class VectorEntry:
             chunkType=chunk.chunkType,
             content=chunk.content,
             metadata=dict(chunk.metadata),
+            embeddingModelId=chunk.embeddingModelId,
         )
 
     def to_dict(self) -> dict[str, Any]:

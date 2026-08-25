@@ -14,10 +14,12 @@ from typer.testing import CliRunner
 
 import cli.config
 import cli.config_command
+import cli.disclosure
 import cli.index_command
 import cli.main
 import cli.serve_command
 import cli.server
+import provider_routing.factory
 from cli.config import CLIConfiguration
 from cli.errors import IndexNotFoundError, LocalModelUnavailableError, RepositoryNotFoundError, ServerBindError
 from cli.index_command import run_index
@@ -26,6 +28,23 @@ from embedding_engine.models import EmbeddingAvailabilityStatus
 from local_llm import GenerationFailedError, PromptEnvelope
 from local_llm.models import AvailabilityStatus
 from repo_watcher import ChangeBatch, ChangeType, FileChange
+
+
+def _local_config(**overrides: object) -> CLIConfiguration:
+    """A `CLIConfiguration` routing all three stages through `local:` chain
+    entries matching `fake_engines`' test doubles (spec 029 changed the
+    fresh-install defaults to remote providers - these tests exercise the
+    CLI orchestration itself, not real/fake remote providers, so they pin
+    local chains explicitly). Already disclosure-acknowledged for its own
+    signature, so a `CliRunner` invocation isn't blocked by the gate."""
+    defaults: dict[str, object] = dict(
+        embeddingChain=("local:test-embed",),
+        summaryChain=("local:test-llm",),
+        chatChain=("local:test-llm",),
+    )
+    defaults.update(overrides)
+    base = CLIConfiguration(**defaults)
+    return CLIConfiguration(**{**base.to_dict(), "disclosureAcknowledgedSignature": cli.config.disclosure_signature(base)})
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +97,9 @@ class RecordingLLMEngine:
     def isAvailableLocally(self) -> bool:
         return self.available
 
+    def isAvailable(self) -> bool:
+        return self.available
+
     def generate(self, prompt: str | PromptEnvelope) -> str:
         self.generate_calls += 1
         envelope = prompt if isinstance(prompt, PromptEnvelope) else PromptEnvelope.from_prompt(prompt)
@@ -122,6 +144,9 @@ class FakeEmbeddingEngine:
     def isAvailableLocally(self) -> bool:
         return self.available
 
+    def isAvailable(self) -> bool:
+        return self.available
+
     def embed(self, text: str) -> tuple[float, ...]:
         seed = sum(text.encode("utf-8")) % 1000
         return (float(seed), float(len(text)), 1.0)
@@ -144,9 +169,14 @@ INSTALLED_EMBEDDING_MODELS = (CLIConfiguration().embeddingModel, "test-embed")
 
 
 @pytest.fixture()
-def fake_engines(monkeypatch):
+def fake_engines(cli_home, monkeypatch):
     """Patch every module that constructs local engines to return
-    lightweight, in-memory test doubles instead of real Ollama-backed ones.
+    lightweight, in-memory test doubles instead of real Ollama-backed ones,
+    and seed `cli_home`'s config file with an already-acknowledged, all-local
+    chain configuration (spec 029's fresh-install defaults are remote - a
+    plain CLI invocation with no prior config would otherwise route through
+    real Groq/OpenAI factories these doubles don't intercept, and would
+    block on the disclosure gate).
 
     The doubles report a model as installed only if it's in
     `INSTALLED_LLM_MODELS`/`INSTALLED_EMBEDDING_MODELS`, so `config`'s
@@ -172,9 +202,11 @@ def fake_engines(monkeypatch):
             installed_models=INSTALLED_EMBEDDING_MODELS,
         )
 
-    for module in (cli.index_command, cli.serve_command, cli.config_command):
+    for module in (cli.config_command, provider_routing.factory):
         monkeypatch.setattr(module, "create_local_llm_engine", llm_factory)
         monkeypatch.setattr(module, "create_embedding_engine", embedding_factory)
+
+    cli.config.save_config(_local_config())
 
     return llm_factory, embedding_factory
 
@@ -205,7 +237,7 @@ def _repo_state_dirs(home: Path) -> list[Path]:
 
 def test_run_index_populates_repository_state(tmp_path, cli_home, fake_engines):
     root = _copy_fixture_repo(tmp_path)
-    result = run_index(root, config=CLIConfiguration())
+    result = run_index(root, config=_local_config())
 
     state_dirs = _repo_state_dirs(cli_home)
     assert len(state_dirs) == 1
@@ -229,7 +261,7 @@ def test_run_index_rerun_replaces_prior_state_and_never_uses_watcher(tmp_path, c
     watcher_calls: list[object] = []
     monkeypatch.setattr(cli.index_command, "RepositoryWatcher", lambda **kwargs: watcher_calls.append(kwargs))
 
-    first = run_index(root, config=CLIConfiguration())
+    first = run_index(root, config=_local_config())
     first.vectorIndex.close()
     first_state_dirs = _repo_state_dirs(cli_home)
     assert len(first_state_dirs) == 1
@@ -237,7 +269,7 @@ def test_run_index_rerun_replaces_prior_state_and_never_uses_watcher(tmp_path, c
     # Modify a file so the second run has something new to pick up.
     (root / "beta.py").write_text((root / "beta.py").read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
 
-    second = run_index(root, config=CLIConfiguration())
+    second = run_index(root, config=_local_config())
     second_state_dirs = _repo_state_dirs(cli_home)
     assert len(second_state_dirs) == 1
     assert second_state_dirs[0] == first_state_dirs[0]  # same state dir, replaced in place
@@ -249,7 +281,7 @@ def test_run_index_rerun_replaces_prior_state_and_never_uses_watcher(tmp_path, c
 def test_run_index_failure_on_rerun_leaves_prior_successful_state_untouched(tmp_path, cli_home, fake_engines, monkeypatch):
     root = _copy_fixture_repo(tmp_path)
 
-    first = run_index(root, config=CLIConfiguration())
+    first = run_index(root, config=_local_config())
     first.vectorIndex.close()
     state_dir = _repo_state_dirs(cli_home)[0]
     before_files = {p: p.read_bytes() for p in state_dir.rglob("*") if p.is_file()}
@@ -260,7 +292,7 @@ def test_run_index_failure_on_rerun_leaves_prior_successful_state_untouched(tmp_
     monkeypatch.setattr(cli.index_command.CodeSummaryPipeline, "summarizeRepository", failing_summarize)
 
     with pytest.raises(RuntimeError, match="simulated local LLM crash"):
-        run_index(root, config=CLIConfiguration())
+        run_index(root, config=_local_config())
 
     after_files = {p: p.read_bytes() for p in state_dir.rglob("*") if p.is_file()}
     assert before_files == after_files
@@ -293,7 +325,7 @@ def test_cli_runner_index_prints_url_and_stage_names_in_order(tmp_path, cli_home
 
 def test_index_wiki_is_browsable_over_real_http(tmp_path, cli_home, fake_engines):
     root = _copy_fixture_repo(tmp_path)
-    result = run_index(root, config=CLIConfiguration())
+    result = run_index(root, config=_local_config())
 
     port = 18321
     server_thread = threading.Thread(
@@ -321,23 +353,26 @@ def test_index_wiki_is_browsable_over_real_http(tmp_path, cli_home, fake_engines
         result.vectorIndex.close()
 
 
-def test_run_index_uses_documented_defaults_when_no_config_saved(tmp_path, cli_home, fake_engines):
-    root = _copy_fixture_repo(tmp_path)
+def test_run_index_uses_documented_defaults_when_no_config_saved(cli_home):
     assert not cli.config.paths.config_path().exists()
 
     default_config = cli.config.load_config()
-    assert default_config.llmModel == cli.config.DEFAULT_LLM_MODEL
 
-    result = run_index(root, config=default_config)
-    assert result.llmEngine.modelName == cli.config.DEFAULT_LLM_MODEL
-    result.vectorIndex.close()
+    # spec 029: a fresh install's documented defaults are the named remote
+    # chains, not a local model - full-local is opt-in via `provider mode
+    # full-local`. `llmModel` (a `local:` chain entry's connection setting)
+    # keeps its own separate local-oriented default regardless.
+    assert default_config.llmModel == cli.config.DEFAULT_LLM_MODEL
+    assert default_config.embeddingChain == cli.config.DEFAULT_EMBEDDING_CHAIN
+    assert default_config.summaryChain == cli.config.DEFAULT_SUMMARY_CHAIN
+    assert default_config.chatChain == cli.config.DEFAULT_CHAT_CHAIN
 
 
 def test_run_index_against_empty_repository_completes_without_error(tmp_path, cli_home, fake_engines):
     empty_root = tmp_path / "empty-repo"
     empty_root.mkdir()
 
-    result = run_index(empty_root, config=CLIConfiguration())
+    result = run_index(empty_root, config=_local_config())
 
     assert result.docsRoot.exists()
     assert (result.docsRoot / "index.html").exists()
@@ -351,10 +386,10 @@ def test_run_index_against_empty_repository_completes_without_error(tmp_path, cl
 
 def test_run_serve_watcher_wired_to_reindex_pipeline(tmp_path, cli_home, fake_engines):
     root = _copy_fixture_repo(tmp_path)
-    indexed = run_index(root, config=CLIConfiguration())
+    indexed = run_index(root, config=_local_config())
     indexed.vectorIndex.close()
 
-    served = run_serve(root, config=CLIConfiguration())
+    served = run_serve(root, config=_local_config())
     try:
         assert served.watcher is not None
         assert served.watcher.isRunning()
@@ -382,7 +417,7 @@ def test_run_serve_without_prior_index_raises_index_not_found(tmp_path, cli_home
     root = _copy_fixture_repo(tmp_path)
 
     with pytest.raises(IndexNotFoundError):
-        run_serve(root, config=CLIConfiguration())
+        run_serve(root, config=_local_config())
 
 
 def test_cli_runner_serve_without_prior_index_exits_nonzero_without_starting_server(tmp_path, cli_home, fake_engines, no_bind_server):
@@ -424,17 +459,25 @@ def test_cli_runner_config_scenarios(tmp_path, cli_home, fake_engines):
     assert saved.llmEndpointUrl == "http://localhost:11434"  # unchanged - invalid endpoint was never written
 
 
-def test_configured_llm_model_is_used_by_a_subsequent_index_run(tmp_path, cli_home, fake_engines):
+def test_configured_summary_chain_is_used_by_a_subsequent_index_run(tmp_path, cli_home, fake_engines):
+    """The model a `local:` summary chain entry uses now comes from the
+    chain entry itself (`provider chain set summary local:<model>`), not
+    `config --llm-model` (research.md §10 - that field only supplies
+    connection settings for whichever `local:` entry is configured)."""
     runner = CliRunner()
-    save_result = runner.invoke(cli.main.app, ["config", "--llm-model", "my-custom-model"])
-    assert save_result.exit_code == 0
+    save_result = runner.invoke(
+        cli.main.app, ["provider", "chain", "set", "summary", "local:my-custom-model"], input="y\n"
+    )
+    assert save_result.exit_code == 0, save_result.output
 
     root = _copy_fixture_repo(tmp_path)
     config = cli.config.load_config()
-    assert config.llmModel == "my-custom-model"
+    assert config.summaryChain == ("local:my-custom-model",)
 
     result = run_index(root, config=config)
-    assert result.llmEngine.modelName == "my-custom-model"
+    ref, engine = result.llmEngine.chain[0]
+    assert str(ref) == "local:my-custom-model"
+    assert engine.modelName == "my-custom-model"
 
 
 def test_configured_llm_generate_timeout_is_shown_and_used_by_a_subsequent_index_run(tmp_path, cli_home, fake_engines):
@@ -457,7 +500,8 @@ def test_configured_llm_generate_timeout_is_shown_and_used_by_a_subsequent_index
     assert config.llmGenerateTimeout == 300.0
 
     result = run_index(root, config=config)
-    assert result.llmEngine.generateTimeout == 300.0
+    _ref, engine = result.llmEngine.chain[0]
+    assert engine.generateTimeout == 300.0
     result.vectorIndex.close()
 
 
@@ -500,35 +544,35 @@ def test_index_and_serve_fail_clearly_when_llm_service_unreachable(tmp_path, cli
     root = _copy_fixture_repo(tmp_path)
     scan_calls: list[object] = []
     monkeypatch.setattr(cli.index_command, "scan_repository", lambda *a, **k: scan_calls.append(1))
+    cli.config.save_config(_local_config())
 
     def unreachable_llm_factory(model_name: str, endpoint_url: str = "http://localhost:11434", **_: object) -> RecordingLLMEngine:
         return RecordingLLMEngine(model_name=model_name, service_reachable=False, model_installed=False)
 
-    for module in (cli.index_command, cli.serve_command):
-        monkeypatch.setattr(module, "create_local_llm_engine", unreachable_llm_factory)
-        monkeypatch.setattr(module, "create_embedding_engine", lambda *a, **k: FakeEmbeddingEngine())
+    monkeypatch.setattr(provider_routing.factory, "create_local_llm_engine", unreachable_llm_factory)
+    monkeypatch.setattr(provider_routing.factory, "create_embedding_engine", lambda *a, **k: FakeEmbeddingEngine())
 
     runner = CliRunner()
 
     index_result = runner.invoke(cli.main.app, ["index", str(root)])
     assert index_result.exit_code == 1
-    assert "11434" in index_result.output
+    assert "summary" in index_result.output
     assert scan_calls == []
 
     serve_result = runner.invoke(cli.main.app, ["serve", str(root)])
     assert serve_result.exit_code == 1
-    assert "11434" in serve_result.output
+    assert "summary" in serve_result.output
 
 
 def test_index_and_serve_fail_clearly_when_model_not_installed(tmp_path, cli_home, monkeypatch):
     root = _copy_fixture_repo(tmp_path)
+    cli.config.save_config(_local_config())
 
     def model_missing_factory(model_name: str, endpoint_url: str = "http://localhost:11434", **_: object) -> RecordingLLMEngine:
         return RecordingLLMEngine(model_name=model_name, service_reachable=True, model_installed=False)
 
-    for module in (cli.index_command, cli.serve_command):
-        monkeypatch.setattr(module, "create_local_llm_engine", model_missing_factory)
-        monkeypatch.setattr(module, "create_embedding_engine", lambda *a, **k: FakeEmbeddingEngine())
+    monkeypatch.setattr(provider_routing.factory, "create_local_llm_engine", model_missing_factory)
+    monkeypatch.setattr(provider_routing.factory, "create_embedding_engine", lambda *a, **k: FakeEmbeddingEngine())
 
     runner = CliRunner()
 
@@ -538,11 +582,10 @@ def test_index_and_serve_fail_clearly_when_model_not_installed(tmp_path, cli_hom
     serve_result = runner.invoke(cli.main.app, ["serve", str(root)])
     assert serve_result.exit_code == 1
 
-    # Distinctly worded from the service-unreachable case (previous test):
-    # names the specific model and says "not installed" rather than the
-    # service being down.
-    assert "not installed" in index_result.output
-    assert "qwen2.5-coder" in index_result.output
+    # check_ai_dependencies (spec 029's C1 fix) now names the unavailable
+    # *stage* - a multi-provider chain has no single engine's specific
+    # status message to surface faithfully at the pre-flight check.
+    assert "summary" in index_result.output
 
 
 def test_index_fails_clearly_when_generation_times_out_mid_run(tmp_path, cli_home, fake_engines, monkeypatch):
@@ -575,7 +618,7 @@ def test_index_fails_clearly_when_generation_times_out_mid_run(tmp_path, cli_hom
 
 def test_serve_bind_failure_reports_actionable_message_not_raw_exception(tmp_path, cli_home, fake_engines, monkeypatch):
     root = _copy_fixture_repo(tmp_path)
-    indexed = run_index(root, config=CLIConfiguration())
+    indexed = run_index(root, config=_local_config())
     indexed.vectorIndex.close()
 
     def bind_failure(app, *, host, port):
@@ -605,13 +648,13 @@ def test_none_of_the_failure_scenarios_leak_a_traceback(tmp_path, cli_home, fake
     def unreachable_llm_factory(model_name: str, endpoint_url: str = "http://localhost:11434", **_: object) -> RecordingLLMEngine:
         return RecordingLLMEngine(model_name=model_name, service_reachable=False, model_installed=False)
 
-    monkeypatch.setattr(cli.index_command, "create_local_llm_engine", unreachable_llm_factory)
-    monkeypatch.setattr(cli.index_command, "create_embedding_engine", lambda *a, **k: FakeEmbeddingEngine())
+    monkeypatch.setattr(provider_routing.factory, "create_local_llm_engine", unreachable_llm_factory)
+    monkeypatch.setattr(provider_routing.factory, "create_embedding_engine", lambda *a, **k: FakeEmbeddingEngine())
     scenarios.append(runner.invoke(cli.main.app, ["index", str(root)]))
 
     # Generation fails mid-run (after the availability check already passed).
-    monkeypatch.setattr(cli.index_command, "create_local_llm_engine", fake_engines[0])
-    monkeypatch.setattr(cli.index_command, "create_embedding_engine", fake_engines[1])
+    monkeypatch.setattr(provider_routing.factory, "create_local_llm_engine", fake_engines[0])
+    monkeypatch.setattr(provider_routing.factory, "create_embedding_engine", fake_engines[1])
 
     def timed_out_summarize(self, *args, **kwargs):
         raise GenerationFailedError(
@@ -624,3 +667,38 @@ def test_none_of_the_failure_scenarios_leak_a_traceback(tmp_path, cli_home, fake
     for result in scenarios:
         assert result.exit_code != 0
         assert "Traceback" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Disclosure gate (spec 029: FR-012/FR-013)
+# ---------------------------------------------------------------------------
+
+
+def test_index_shows_disclosure_naming_default_providers_and_blocks_until_acknowledged(tmp_path, cli_home):
+    """A fresh install (no prior config) shows the blocking disclosure before
+    any engine is touched, naming the exact default providers and the
+    full-local opt-out (spec FR-012/FR-013)."""
+    root = _copy_fixture_repo(tmp_path)
+    runner = CliRunner()
+
+    declined = runner.invoke(cli.main.app, ["index", str(root)], input="n\n")
+
+    assert declined.exit_code != 0
+    assert "openai:text-embedding-3-small" in declined.output
+    assert "groq:llama-3.3-70b-versatile" in declined.output
+    assert "provider mode full-local" in declined.output
+    assert _repo_state_dirs(cli_home) == []
+
+
+def test_index_does_not_reshow_disclosure_once_acknowledged(tmp_path, cli_home, fake_engines, no_bind_server):
+    """`fake_engines` already seeds an acknowledged local configuration -
+    the CLI-runner invocations throughout this file only succeed without
+    feeding any confirmation input because the signature already matches
+    (SC-006's "only shown at meaningful configuration moments")."""
+    root = _copy_fixture_repo(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli.main.app, ["index", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert "Continue with this configuration?" not in result.output

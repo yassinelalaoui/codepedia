@@ -9,6 +9,8 @@ from embedding_engine import DEFAULT_MODEL_NAME as DEFAULT_EMBEDDING_MODEL_NAME
 from embedding_engine import create_embedding_engine
 from local_llm import create_local_llm_engine
 from local_llm.models import DEFAULT_ENDPOINT_URL as DEFAULT_LLM_ENDPOINT_URL
+from provider_routing import FailoverExecutor, PathFailoverLog, ProviderRef
+from repository_metadata.sqlite_store import connect as connect_metadata_db
 from vector_index import VectorIndex
 
 from .app import create_app
@@ -68,9 +70,23 @@ def main(argv: list[str] | None = None) -> None:
         else repo_root / ".repo-scanner" / "repository-metadata.sqlite"
     )
 
-    embedding_engine = create_embedding_engine(args.embedding_model, args.embedding_endpoint)
+    # This standalone entrypoint builds single-provider chains, each wrapped
+    # in a `FailoverExecutor` so `ChatSession`/`VectorIndex.search()` see the
+    # same interface (`.stream()`/`.run()`/`.isAvailable()`) as every other
+    # entrypoint (research.md §13's C4 fix) - wrapping is what a real chain
+    # would also produce, just with exactly one entry.
+    failover_log = PathFailoverLog(repository_metadata_db, connect_metadata_db)
+    embedding_engine = FailoverExecutor(
+        "embeddings",
+        ((ProviderRef("local", args.embedding_model), create_embedding_engine(args.embedding_model, args.embedding_endpoint)),),
+        failover_log=failover_log,
+    )
+    llm_engine = FailoverExecutor(
+        "chat",
+        ((ProviderRef("local", args.llm_model), create_local_llm_engine(args.llm_model, args.llm_endpoint)),),
+        failover_log=failover_log,
+    )
     vector_index = VectorIndex(repo_root, metadata_db, embedding_engine=embedding_engine)
-    llm_engine = create_local_llm_engine(args.llm_model, args.llm_endpoint)
     docs_root = Path(args.docs_root)
 
     app = create_app(vector_index, embedding_engine, llm_engine, docs_root, repository_metadata_db)
