@@ -685,7 +685,7 @@ def test_index_shows_disclosure_naming_default_providers_and_blocks_until_acknow
 
     assert declined.exit_code != 0
     assert "openai:text-embedding-3-small" in declined.output
-    assert "groq:llama-3.3-70b-versatile" in declined.output
+    assert "groq:openai/gpt-oss-20b" in declined.output
     assert "provider mode full-local" in declined.output
     assert _repo_state_dirs(cli_home) == []
 

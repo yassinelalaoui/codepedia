@@ -169,7 +169,7 @@ repo-scanner index /path/to/some/repository
 ```
 
 On a fresh install, `index` uses named remote providers by default —
-`groq:llama-3.3-70b-versatile` for summaries and chat, `openai:text-embedding-3-small`
+`groq:openai/gpt-oss-20b` for summaries and chat, `openai:text-embedding-3-small`
 for embeddings — and blocks the first time, printing exactly which
 providers it's about to use and how to opt out, until you explicitly
 acknowledge it. It checks every configured provider's availability up
@@ -199,7 +199,7 @@ auth failure (never silently, never outside this list):
 ```bash
 export GROQ_API_KEY=...       # for a groq: entry
 export OPENAI_API_KEY=...     # for an openai: entry - neither key is ever stored by this tool
-repo-scanner provider chain set chat groq:llama-3.3-70b-versatile local:qwen2.5-coder
+repo-scanner provider chain set chat groq:openai/gpt-oss-20b local:qwen2.5-coder
 repo-scanner provider chain set embeddings openai:text-embedding-3-small
 ```
 

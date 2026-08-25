@@ -25,9 +25,18 @@ DEFAULT_LLM_MODEL = "qwen2.5-coder"
 # A fresh install, with zero configuration, already routes every stage to a
 # named remote provider - full-local remains fully supported, but only via
 # explicit configuration (`provider mode full-local`).
+#
+# Groq retires/renames models from its catalog periodically (confirmed
+# 2026-08-25: "llama-3.3-70b-versatile", this default's original choice, is
+# no longer served - GET https://api.groq.com/openai/v1/models is the source
+# of truth for what's currently available). "openai/gpt-oss-20b" is Groq's
+# current general-purpose open-weight instruct model, a reasonable
+# quality/latency default for per-symbol summarization and chat; switch to a
+# larger model (e.g. "openai/gpt-oss-120b") via `provider chain set` for
+# higher quality at the cost of latency.
 DEFAULT_EMBEDDING_CHAIN: tuple[str, ...] = (f"openai:{DEFAULT_OPENAI_MODEL_NAME}",)
-DEFAULT_SUMMARY_CHAIN: tuple[str, ...] = ("groq:llama-3.3-70b-versatile",)
-DEFAULT_CHAT_CHAIN: tuple[str, ...] = ("groq:llama-3.3-70b-versatile",)
+DEFAULT_SUMMARY_CHAIN: tuple[str, ...] = ("groq:openai/gpt-oss-20b",)
+DEFAULT_CHAT_CHAIN: tuple[str, ...] = ("groq:openai/gpt-oss-20b",)
 
 # `provider mode full-local`'s result (spec FR-004) - all three chains
 # collapse to a single local entry each.
