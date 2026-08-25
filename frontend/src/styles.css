@@ -58,3 +58,62 @@
 .wiki-chat-error {
   color: #b00020;
 }
+
+.wiki-chat-indicator {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+
+.wiki-chat-indicator-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #999;
+  animation: wiki-chat-indicator-pulse 1.2s ease-in-out infinite;
+}
+
+.wiki-chat-indicator-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.wiki-chat-indicator-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.wiki-chat-message pre {
+  background: #f6f8fa;
+  padding: 0.75rem;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+
+.wiki-chat-message code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f6f8fa;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.wiki-chat-message pre code {
+  background: none;
+  padding: 0;
+}
+
+.wiki-chat-message p a {
+  color: #0b5fff;
+}
+
+@keyframes wiki-chat-indicator-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

@@ -30,15 +30,22 @@ picture and *why* it's built this way.
   reachable in one click from anywhere in the wiki that lists every diagram
   above.
 - **Answers questions in chat**, grounded in the indexed code, with
-  clickable citations back to the wiki. Answers stream back progressively
-  as they're generated rather than arriving all at once, and a follow-up
+  clickable citations back to the wiki. A visible activity indicator shows
+  the moment a question is submitted, and answers stream back progressively
+  as they're generated rather than arriving all at once. Answers render as
+  structured content — syntax-highlighted code blocks, and in-text
+  `path/to/file.py :: Symbol.name` references turned into clickable links to
+  the same documentation pages the citation list below the answer links to
+  — rather than as an undifferentiated paragraph of plain text. A follow-up
   question's search is enriched with recent conversation context so
   elliptical questions ("what about the other one?") still find the right
   code. Conversations persist locally, so they survive a server restart or
-  a wiki page reload — and every existing conversation is listable, so a
-  client that lost track of its session id (a closed tab, a dropped
-  connection) can find it again and resume it. Answer generation is local
-  by default; an operator
+  a wiki page reload — the current conversation's id lives in the page's own
+  address, so reopening or sharing that address (even from a different
+  browser or device) restores the same conversation — and every existing
+  conversation is listable, so a client that lost track of its session id
+  (a closed tab, a dropped connection) can find it again and resume it.
+  Answer generation is local by default; an operator
   can explicitly opt into a remote (Groq) engine instead via
   `repo-scanner config --llm-provider groq` — never on by default, and the
   tool discloses that doing so sends chat content to that third-party API.

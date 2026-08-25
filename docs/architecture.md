@@ -82,7 +82,7 @@ Turns the analyzed/derived knowledge into something a human reads or interacts w
 |---|---|
 | `doc_generator` | Render the wiki: a home page, one page per module, dependency-diagram pages, a single repository-wide class diagram (its structurally major classes, capped for legibility), one bounded call-sequence diagram per identified entry point (CLI command, API route handler, or uncalled public function/method), a single repository-wide use-case diagram (one shared actor per entry-point exposure kind, linked to its use cases), and a single always-reachable Diagrams page aggregating links to every diagram above (linked from every generated page's shared navigation); regenerate only the pages a change actually affects. |
 | `chat_api` | The one local process (FastAPI) that serves the generated wiki as static files and exposes the chat session endpoints the browser UI calls: creating a session, streaming an answer, listing every existing session, and reading a chosen session's full history. |
-| `frontend/` (`wiki-ui`) | The React UI running in the browser: symbol search, dependency-diagram click-through, chat panel. |
+| `frontend/` (`wiki-ui`) | The React UI running in the browser: symbol search, dependency-diagram click-through, chat panel. The chat panel (028) shows a visible activity indicator from submission until the first streamed fragment arrives, renders answers as structured Markdown with syntax-highlighted code and clickable in-text symbol/file references (resolved the same way as the separate citation list), and carries the current session id as a URL query parameter so a reload, a copied link, or a different browser/device all restore the same conversation via the existing history route. |
 
 ### 5. Automation
 

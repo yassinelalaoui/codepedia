@@ -125,6 +125,20 @@ a **classic (non-`type="module"`) IIFE bundle** and committed into
   `doc_generator`'s output never depends on Node/npm being available at
   documentation-generation time, only at frontend-development time.
 
+The chat panel (`ChatPanel.tsx`, 028) renders assistant answers as
+structured content instead of plain text: **`react-markdown`** (Markdown to
+React elements via component overrides, no `dangerouslySetInnerHTML`) with
+**`remark-gfm`** (fenced/inline code parsing) and **`rehype-highlight`** +
+**`lowlight`** for syntax highlighting, configured with a curated
+**`highlight.js`** language subset (Python, JavaScript, TypeScript, Java,
+Kotlin, Go, Rust — matching `repo_scanner/language.py`'s
+`COMMON_LANGUAGE_MAP`) rather than the full ~190-language registry, to keep
+the committed client bundle lean. A custom `code` renderer recognizes the
+`path/to/file.ext :: Symbol.name` inline-reference format the chat's system
+prompt already produces and resolves it through the same `findByCitation`
+lookup the separate citation list uses — no new dependency for that part,
+just a new render path over existing data.
+
 ## Testing
 
 **pytest** for the entire Python backend (`tests/unit`, `tests/integration`,
