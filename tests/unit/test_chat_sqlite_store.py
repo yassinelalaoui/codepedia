@@ -57,3 +57,31 @@ def test_create_session_rejects_colliding_id(tmp_path):
 
     with pytest.raises(Exception):
         chat_sqlite_store.create_session(db_path, "session-1")
+
+
+def test_list_sessions_orders_by_last_activity_descending(tmp_path):
+    db_path = make_metadata_db(tmp_path)
+    chat_sqlite_store.create_session(db_path, "session-a")
+    chat_sqlite_store.create_session(db_path, "session-b")
+    # "session-a" was created first but touched last, so it must sort first.
+    chat_sqlite_store.touch_session(db_path, "session-a")
+
+    sessions = chat_sqlite_store.list_sessions(db_path)
+
+    assert [session.id for session in sessions] == ["session-a", "session-b"]
+
+
+def test_list_sessions_includes_a_session_with_no_messages_yet(tmp_path):
+    db_path = make_metadata_db(tmp_path)
+    chat_sqlite_store.create_session(db_path, "session-1")
+
+    sessions = chat_sqlite_store.list_sessions(db_path)
+
+    assert [session.id for session in sessions] == ["session-1"]
+    assert sessions[0].messages == []
+
+
+def test_list_sessions_on_empty_database_returns_empty_tuple(tmp_path):
+    db_path = make_metadata_db(tmp_path)
+
+    assert chat_sqlite_store.list_sessions(db_path) == ()

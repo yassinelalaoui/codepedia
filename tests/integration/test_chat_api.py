@@ -190,11 +190,47 @@ def test_session_history_survives_a_simulated_restart_via_http(tmp_path):
     restarted_app, restarted_index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
     restarted_client = TestClient(restarted_app)
     after = restarted_client.get(f"/sessions/{session_id}/messages").json()
+    listed_sessions = restarted_client.get("/sessions").json()["sessions"]
     restarted_index.close()
 
     assert ask_response.status_code == 200
     assert after == before
     assert len(after["messages"]) == 2
+    # The session is discoverable via GET /sessions after the restart too
+    # (027 FR-002), not just retrievable by an id the client already knows.
+    (listed_session,) = [s for s in listed_sessions if s["sessionId"] == session_id]
+    assert listed_session["createdAt"]
+    assert listed_session["lastActivityAt"]
+
+
+def test_list_sessions_returns_empty_list_when_none_exist(tmp_path):
+    app, index = build_test_app(tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/sessions")
+    index.close()
+
+    assert response.status_code == 200
+    assert response.json() == {"sessions": []}
+
+
+def test_list_sessions_returns_every_session_ordered_most_recently_active_first(tmp_path):
+    metadata_db_path = tmp_path / "repository-metadata.sqlite"
+    app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
+    client = TestClient(app)
+
+    first_session_id = client.post("/sessions").json()["sessionId"]
+    second_session_id = client.post("/sessions").json()["sessionId"]
+    # Asking a question on the first session bumps its lastActivityAt past
+    # the second session's, so it should now sort first despite being older.
+    client.post(f"/sessions/{first_session_id}/messages", json={"question": "where is auth handled?"})
+    response = client.get("/sessions")
+    index.close()
+
+    body = response.json()
+    session_ids = [session["sessionId"] for session in body["sessions"]]
+    assert session_ids == [first_session_id, second_session_id]
+    assert set(body["sessions"][0].keys()) == {"sessionId", "createdAt", "lastActivityAt"}
 
 
 def test_unknown_session_returns_404_after_restart(tmp_path):

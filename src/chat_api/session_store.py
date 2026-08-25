@@ -69,3 +69,20 @@ class SessionRegistry:
             self._sessions[session_id] = stored
             return stored
         raise SessionNotFoundError(session_id)
+
+    def list_sessions(self) -> tuple[ChatSession, ...]:
+        """Every existing session, most-recently-active first (027).
+
+        When a metadata db is configured, this is the authoritative source
+        (`chat.sqlite_store.list_sessions`) rather than the in-memory cache
+        alone, so a session created in a previous process - one this
+        registry's cache has never seen - is still included. Without a
+        metadata db (in-memory-only mode, e.g. a lightweight test), falls
+        back to the in-memory cache, mirroring how `get_session` already
+        treats that cache as authoritative in the no-persistence case.
+        """
+        if self._metadata_db_path is not None:
+            return chat_sqlite_store.list_sessions(self._metadata_db_path)
+        return tuple(
+            sorted(self._sessions.values(), key=lambda session: session.lastActivityAt, reverse=True)
+        )

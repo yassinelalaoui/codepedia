@@ -83,25 +83,46 @@ export function ChatPanel() {
 
     setPending(true);
     setErrorMessage(null);
+    let placeholderAdded = false;
     try {
       if (!sessionIdRef.current) {
         const session = await createSession();
         sessionIdRef.current = session.sessionId;
         window.localStorage.setItem(SESSION_STORAGE_KEY, session.sessionId);
       }
-      const response = await askQuestion(sessionIdRef.current, submittedQuestion);
       setMessages((previous) => [
         ...previous,
         { role: "user", content: submittedQuestion, citedSymbolIds: [], citedFilePaths: [] },
-        {
+        { role: "assistant", content: "", citedSymbolIds: [], citedFilePaths: [] },
+      ]);
+      placeholderAdded = true;
+      setQuestion("");
+
+      const response = await askQuestion(sessionIdRef.current, submittedQuestion, (fragment) => {
+        setMessages((previous) => {
+          const next = [...previous];
+          const last = next[next.length - 1];
+          next[next.length - 1] = { ...last, content: last.content + fragment };
+          return next;
+        });
+      });
+      setMessages((previous) => {
+        const next = [...previous];
+        next[next.length - 1] = {
           role: "assistant",
           content: response.answer,
           citedSymbolIds: response.citedSymbolIds,
           citedFilePaths: response.citedFilePaths,
-        },
-      ]);
-      setQuestion("");
+        };
+        return next;
+      });
     } catch (error) {
+      if (placeholderAdded) {
+        // Nothing is persisted server-side for a failed attempt (FR-007) -
+        // drop the question/in-progress-answer pair we optimistically
+        // rendered rather than leaving a stray empty assistant bubble.
+        setMessages((previous) => previous.slice(0, -2));
+      }
       if (error instanceof ChatApiError) {
         setErrorMessage(error.message);
       } else {

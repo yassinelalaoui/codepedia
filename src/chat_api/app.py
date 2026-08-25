@@ -18,6 +18,8 @@ from .schemas import (
     ChatMessageView,
     CreateSessionResponse,
     SessionHistoryResponse,
+    SessionListResponse,
+    SessionSummary,
 )
 from .session_store import SessionRegistry
 
@@ -70,6 +72,20 @@ def create_app(
                 yield f"event: error\ndata: {error_payload.model_dump_json()}\n\n"
 
         return StreamingResponse(_event_stream(), media_type="text/event-stream")
+
+    @app.get("/sessions")
+    def list_sessions() -> SessionListResponse:
+        sessions = app.state.session_registry.list_sessions()
+        return SessionListResponse(
+            sessions=tuple(
+                SessionSummary(
+                    sessionId=session.id,
+                    createdAt=session.createdAt,
+                    lastActivityAt=session.lastActivityAt,
+                )
+                for session in sessions
+            )
+        )
 
     @app.get("/sessions/{session_id}/messages")
     def get_history(session_id: str) -> SessionHistoryResponse:

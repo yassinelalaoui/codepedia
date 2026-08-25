@@ -1,6 +1,6 @@
 # Major Function: Ask a Question (Chat / RAG)
 
-**Specs**: 011, 014, 025, 026
+**Specs**: 011, 014, 025, 026, 027
 
 A user asks a natural-language question and gets back an answer grounded in the
 actual codebase, with clickable citations — never an unsourced or hallucinated claim.
@@ -10,7 +10,10 @@ enriched with recent conversation context (026, local text/citation concatenatio
 only — no LLM call for this step). The exchange is persisted once, at completion
 (025), so it survives a server restart or a wiki page reload — see
 `01-full-indexing.md`'s storage note and `docs/architecture.md`'s "Storage
-architecture" for where `chat_sessions`/`chat_messages` live.
+architecture" for where `chat_sessions`/`chat_messages` live. A client that lost
+track of which session it was using can list every existing session and pick the
+right one to resume (027), rather than being limited to a session id it already
+happens to know.
 
 ```mermaid
 sequenceDiagram
@@ -19,7 +22,7 @@ sequenceDiagram
     participant ChatSession as "Chat / RAG Session (011/026)"
     participant VectorIndex as "Vector Index (006/007)"
     participant LLMEngine as "LLMEngine: local (008) or\nexplicitly-configured remote (026)"
-    participant ChatStore as "Chat Persistence (025)"
+    participant ChatStore as "Chat Persistence (025/027)"
 
     Reader->>ChatApiApp: POST /sessions
     ChatApiApp->>ChatStore: create_session(id)
@@ -53,7 +56,13 @@ sequenceDiagram
         Reader->>Reader: render the streamed answer, each citation resolved\nto a clickable wiki page link
     end
 
-    Reader->>ChatApiApp: (restart, or page reload) GET /sessions/{session_id}/messages
+    Reader->>ChatApiApp: (restart, page reload, or lost session id) GET /sessions
+    ChatApiApp->>ChatStore: list_sessions()
+    ChatStore-->>ChatApiApp: every session, most-recently-active first
+    ChatApiApp-->>Reader: SessionListResponse (027)
+    Reader->>Reader: pick the session to resume
+
+    Reader->>ChatApiApp: GET /sessions/{session_id}/messages
     ChatApiApp->>ChatStore: load_session(id) + load_messages(id)
     ChatStore-->>ChatApiApp: full history, in order
     ChatApiApp-->>Reader: SessionHistoryResponse

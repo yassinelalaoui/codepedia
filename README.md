@@ -35,7 +35,10 @@ picture and *why* it's built this way.
   question's search is enriched with recent conversation context so
   elliptical questions ("what about the other one?") still find the right
   code. Conversations persist locally, so they survive a server restart or
-  a wiki page reload. Answer generation is local by default; an operator
+  a wiki page reload — and every existing conversation is listable, so a
+  client that lost track of its session id (a closed tab, a dropped
+  connection) can find it again and resume it. Answer generation is local
+  by default; an operator
   can explicitly opt into a remote (Groq) engine instead via
   `repo-scanner config --llm-provider groq` — never on by default, and the
   tool discloses that doing so sends chat content to that third-party API.

@@ -100,6 +100,27 @@ def load_session(db_path: str | Path, session_id: str) -> ChatSession:
         )
 
 
+def list_sessions(db_path: str | Path) -> tuple[ChatSession, ...]:
+    """Every persisted session, most-recently-active first, with an empty
+    `messages` list per entry (a summary, not a history - callers use
+    `load_messages`/`load_session` for a specific session's full content).
+    Reads directly from SQLite rather than any in-memory cache, so a
+    session created in a previous process is included."""
+    with closing(connect(db_path)) as connection:
+        rows = connection.execute(
+            "SELECT id, created_at, last_activity_at FROM chat_sessions ORDER BY last_activity_at DESC",
+        ).fetchall()
+    return tuple(
+        ChatSession(
+            id=row["id"],
+            createdAt=row["created_at"],
+            lastActivityAt=row["last_activity_at"],
+            messages=[],
+        )
+        for row in rows
+    )
+
+
 def load_messages(db_path: str | Path, session_id: str) -> tuple[ChatMessage, ...]:
     """A session's full message history, ordered by (timestamp, sequence),
     in one query. Returns an empty tuple - never raises - for a session that

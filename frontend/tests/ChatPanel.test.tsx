@@ -19,8 +19,43 @@ function jsonResponse(status: number, body: unknown) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
+/** A mock `fetch` Response body exposing just the `getReader()` shape the
+ * client's SSE parsing needs (see chatApiClient.test.ts for the same
+ * helper, kept local here to avoid a cross-test-file import). */
+function sseBody(events: string[]) {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return {
+    getReader() {
+      return {
+        async read() {
+          if (index >= events.length) return { done: true, value: undefined };
+          const value = encoder.encode(events[index]);
+          index += 1;
+          return { done: false, value };
+        },
+      };
+    },
+  };
+}
+
+/** Builds an SSE-formatted ask-a-question response from a list of answer
+ * fragments plus the terminal `done` payload — replaces the plain-JSON
+ * mock this test file used before 027, which is why the frontend never
+ * calling response.json() on an actual SSE body went undetected. */
+function sseAskResponse(fragments: string[], done: { answer: string; citedSymbolIds: string[]; citedFilePaths: string[] }) {
+  return {
+    ok: true,
+    status: 200,
+    body: sseBody([
+      ...fragments.map((fragment) => `data: ${JSON.stringify({ fragment })}\n\n`),
+      `event: done\ndata: ${JSON.stringify(done)}\n\n`,
+    ]),
+  };
+}
+
 function installFetchRouter(handlers: {
-  ask?: () => ReturnType<typeof jsonResponse>;
+  ask?: () => ReturnType<typeof jsonResponse> | ReturnType<typeof sseAskResponse>;
   history?: () => ReturnType<typeof jsonResponse>;
   onCreateSession?: () => void;
 }) {
@@ -39,7 +74,7 @@ function installFetchRouter(handlers: {
         return handlers.history ? handlers.history() : jsonResponse(200, { sessionId: "session-1", messages: [] });
       }
       if (url.startsWith("/sessions/") && init?.method === "POST") {
-        return handlers.ask ? handlers.ask() : jsonResponse(200, { answer: "", citedSymbolIds: [], citedFilePaths: [] });
+        return handlers.ask ? handlers.ask() : sseAskResponse([], { answer: "", citedSymbolIds: [], citedFilePaths: [] });
       }
       throw new Error(`unexpected fetch: ${url}`);
     })
@@ -65,7 +100,7 @@ describe("ChatPanel", () => {
   it("renders the generated answer with a resolvable citation as a working link", async () => {
     installFetchRouter({
       ask: () =>
-        jsonResponse(200, {
+        sseAskResponse(["Authentication is handled ", "by authenticate_user."], {
           answer: "Authentication is handled by authenticate_user.",
           citedSymbolIds: ["auth.authenticate_user"],
           citedFilePaths: ["src/auth/login.py"],
@@ -84,10 +119,69 @@ describe("ChatPanel", () => {
     );
   });
 
+  it("renders the answer progressively as fragments arrive, before citations are attached", async () => {
+    let resolveSecondFragment: (() => void) | undefined;
+    const secondFragmentGate = new Promise<void>((resolve) => {
+      resolveSecondFragment = resolve;
+    });
+    installFetchRouter({
+      ask: () => {
+        const encoder = new TextEncoder();
+        let step = 0;
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader() {
+              return {
+                async read() {
+                  if (step === 0) {
+                    step += 1;
+                    return { done: false, value: encoder.encode(`data: ${JSON.stringify({ fragment: "Authentication is" })}\n\n`) };
+                  }
+                  if (step === 1) {
+                    await secondFragmentGate;
+                    step += 1;
+                    return {
+                      done: false,
+                      value: encoder.encode(
+                        `event: done\ndata: ${JSON.stringify({
+                          answer: "Authentication is handled by authenticate_user.",
+                          citedSymbolIds: ["auth.authenticate_user"],
+                          citedFilePaths: ["src/auth/login.py"],
+                        })}\n\n`
+                      ),
+                    };
+                  }
+                  return { done: true, value: undefined };
+                },
+              };
+            },
+          },
+        };
+      },
+    });
+    render(<ChatPanel />);
+
+    await askQuestionThroughUi("where is authentication handled?");
+
+    await waitFor(() => {
+      expect(screen.getByText("Authentication is")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("link", { name: "authenticate_user" })).not.toBeInTheDocument();
+
+    resolveSecondFragment?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("Authentication is handled by authenticate_user.")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("link", { name: "authenticate_user" })).toBeInTheDocument();
+  });
+
   it("renders an unresolvable citation as a plain label, not a broken link", async () => {
     installFetchRouter({
       ask: () =>
-        jsonResponse(200, {
+        sseAskResponse(["Handled elsewhere."], {
           answer: "Handled elsewhere.",
           citedSymbolIds: ["unknown.symbol"],
           citedFilePaths: [],
@@ -161,7 +255,7 @@ describe("ChatPanel", () => {
       onCreateSession: () => {
         createSessionCalls += 1;
       },
-      ask: () => jsonResponse(200, { answer: "Handled elsewhere.", citedSymbolIds: [], citedFilePaths: [] }),
+      ask: () => sseAskResponse(["Handled elsewhere."], { answer: "Handled elsewhere.", citedSymbolIds: [], citedFilePaths: [] }),
     });
 
     render(<ChatPanel />);
@@ -182,7 +276,7 @@ describe("ChatPanel", () => {
         createSessionCalls += 1;
       },
       history: () => jsonResponse(404, { code: "session_not_found", message: "No session with id 'stale-session'." }),
-      ask: () => jsonResponse(200, { answer: "Handled elsewhere.", citedSymbolIds: [], citedFilePaths: [] }),
+      ask: () => sseAskResponse(["Handled elsewhere."], { answer: "Handled elsewhere.", citedSymbolIds: [], citedFilePaths: [] }),
     });
 
     render(<ChatPanel />);

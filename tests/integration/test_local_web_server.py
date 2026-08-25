@@ -151,8 +151,13 @@ def test_combined_server_accepts_on_loopback_but_refuses_on_lan_interface(tmp_pa
     try:
         home_response = httpx.get(f"http://127.0.0.1:{running.port}/", timeout=5.0)
         session_response = httpx.post(f"http://127.0.0.1:{running.port}/sessions", timeout=5.0)
+        list_sessions_response = httpx.get(f"http://127.0.0.1:{running.port}/sessions", timeout=5.0)
         assert home_response.status_code == 200
         assert session_response.status_code == 201
+        # GET /sessions (027) is reachable on loopback exactly like every
+        # other chat API route - no separate exposure configuration exists
+        # for it.
+        assert list_sessions_response.status_code == 200
 
         lan_ip = _discover_local_lan_ip()
         if lan_ip is None:
@@ -160,6 +165,8 @@ def test_combined_server_accepts_on_loopback_but_refuses_on_lan_interface(tmp_pa
 
         with pytest.raises(httpx.TransportError):
             httpx.get(f"http://{lan_ip}:{running.port}/", timeout=2.0)
+        with pytest.raises(httpx.TransportError):
+            httpx.get(f"http://{lan_ip}:{running.port}/sessions", timeout=2.0)
     finally:
         running.stop()
         index.close()
