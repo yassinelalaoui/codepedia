@@ -274,3 +274,50 @@ def test_append_time_does_not_grow_with_session_length(tmp_path):
     # A generous bound - the point is "doesn't scale with session length",
     # not a tight timing assertion that would make this test flaky.
     assert late_median < early_median * 5 + 0.05
+
+
+def test_ask_stream_answers_from_the_readme_when_no_code_evidence_matches(tmp_path):
+    """The README is always attached as baseline context (unlike retrieved
+    evidence, it isn't subject to retrieval scoring), so a broad
+    project-level question can still be answered - and cited - even when
+    the vector index has nothing relevant (or is empty)."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "README.md").write_text(
+        "# Widget Factory\n\nThis project builds widgets from raw materials.", encoding="utf-8"
+    )
+
+    engine = FakeEmbeddingEngine()
+    index = VectorIndex(repo_root, tmp_path / "meta.sqlite", embedding_engine=engine)
+    llm = FakeLLMEngine("This project builds widgets from raw materials.")
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm))
+
+    fragments, message = asyncio.run(_collect_stream(session, "what does this project do?"))
+    index.close()
+
+    assert fragments, "expected the LLM to actually be called, not the canned no-evidence message"
+    assert "does not contain enough indexed evidence" not in message.content
+    assert llm.calls, "the LLM should have been invoked using the README as context"
+    # Citation is carried as structured data (citedFilePaths), not duplicated
+    # as a plain-text "Sources:" footer inside the answer content.
+    assert "README.md" in message.citedFilePaths
+    assert message.content == "This project builds widgets from raw materials."
+
+
+def test_ask_stream_still_returns_canned_message_when_no_evidence_and_no_readme(tmp_path):
+    engine = FakeEmbeddingEngine()
+    index = _build_index_without_chunks(tmp_path, engine)
+    llm = FakeLLMEngine("unused")
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm))
+
+    _fragments, message = asyncio.run(_collect_stream(session, "what does this project do?"))
+    index.close()
+
+    assert "does not contain enough indexed evidence" in message.content
+    assert not llm.calls, "no README and no evidence - the LLM must not be called at all"
+
+
+def _build_index_without_chunks(tmp_path, engine: FakeEmbeddingEngine) -> VectorIndex:
+    repo_root = tmp_path / "repo-empty"
+    repo_root.mkdir()
+    return VectorIndex(repo_root, tmp_path / "meta-empty.sqlite", embedding_engine=engine)

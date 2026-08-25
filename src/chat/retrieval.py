@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .models import ChatMessage, RetrievedEvidence
@@ -8,6 +9,41 @@ DEFAULT_TOP_K = 5
 DEFAULT_CONTEXT_WINDOW = 3
 INSUFFICIENT_EVIDENCE_SCORE_THRESHOLD = 0.15
 AMBIGUOUS_SCORE_DELTA = 0.05
+
+# Checked in order; the first match wins. Covers the common casing/extension
+# variants without doing a full case-insensitive directory scan.
+_README_CANDIDATES = ("README.md", "Readme.md", "readme.md", "README", "README.rst", "README.txt")
+
+# A generous cap, not a token-accurate budget - keeps one outsized README
+# from dominating every single chat prompt's token cost. Truncated rather
+# than omitted, so even a huge README still contributes its introduction.
+DEFAULT_README_MAX_CHARS = 8000
+
+
+def read_readme_content(
+    repository_root: str | Path, *, max_chars: int = DEFAULT_README_MAX_CHARS
+) -> tuple[str, str]:
+    """The repository's README, read fresh on every call (constitution
+    2.7 - repository read-only; this is the one read, never a write) so a
+    README edited mid-session is picked up on the next question.
+
+    Returns `(relative_path, content)` - `("", "")` when no README file is
+    found or it can't be read as text."""
+    root = Path(repository_root).expanduser()
+    for candidate in _README_CANDIDATES:
+        path = root / candidate
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            return "", ""
+        if not text:
+            return "", ""
+        if len(text) > max_chars:
+            text = text[:max_chars].rstrip() + "\n\n[...truncated...]"
+        return candidate, text
+    return "", ""
 
 
 def build_enriched_query(

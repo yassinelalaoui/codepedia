@@ -102,6 +102,13 @@ class RAGContext:
     conversationHistory: tuple[ChatMessage, ...] = ()
     retrievedEvidence: tuple[RetrievedEvidence, ...] = ()
     citationMap: tuple[Citation, ...] = ()
+    # The repository's README, always attached when one exists - unlike
+    # retrievedEvidence, this isn't found by search; it's unconditional
+    # baseline context so a broad "what does this project do?"-style
+    # question can be answered even when nothing in the vector index
+    # scores as relevant evidence for it.
+    readmePath: str = ""
+    readmeContent: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "question", _normalize_text(self.question))
@@ -112,6 +119,8 @@ class RAGContext:
             "conversationHistory": [item.to_dict() for item in self.conversationHistory],
             "retrievedEvidence": [item.to_dict() for item in self.retrievedEvidence],
             "citationMap": [item.to_dict() for item in self.citationMap],
+            "readmePath": self.readmePath,
+            "readmeContent": self.readmeContent,
         }
 
 

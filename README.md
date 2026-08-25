@@ -29,7 +29,9 @@ picture and *why* it's built this way.
   exposure kind, linked to its use cases), and a single "Diagrams" page
   reachable in one click from anywhere in the wiki that lists every diagram
   above.
-- **Answers questions in chat**, grounded in the indexed code, with
+- **Answers questions in chat**, grounded in the indexed code (plus the
+  repository's README, always attached as baseline context so broad,
+  project-level questions work even without matching code evidence), with
   clickable citations back to the wiki. A visible activity indicator shows
   the moment a question is submitted, and answers stream back progressively
   as they're generated rather than arriving all at once. Answers render as
