@@ -141,17 +141,67 @@ class VectorIndex:
         if self._embedding_engine is None:
             raise RuntimeError("VectorIndex.search requires an EmbeddingEngine configured on the index")
         filters = dict(search_query.filters)
+        auto_filtered_model_id: str | None = None
         if hasattr(self._embedding_engine, "run"):
-            failover_result = self._embedding_engine.run(lambda engine: engine.embed(search_query.queryText))
-            query_vector = failover_result.value
-            # Auto-filter to the querying provider's own model id (spec
-            # FR-010, research.md §8) - the caller never has to specify it,
-            # and it's what keeps a mixed-provider repository's search
-            # results internally consistent instead of blended.
-            filters.setdefault("embeddingModelId", str(failover_result.providerUsed))
+            query_vector, provider_used = self._embed_query_preferring_indexed_provider(search_query.queryText)
+            if "embeddingModelId" not in filters:
+                auto_filtered_model_id = provider_used
+                filters["embeddingModelId"] = provider_used
         else:
             query_vector = self._embedding_engine.embed(search_query.queryText)
-        return rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=filters)
+        results = rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=filters)
+        if not results and auto_filtered_model_id is not None:
+            # `FailoverExecutor` isn't sticky - a transient failure can still
+            # mean this query's embedding was answered by a provider whose
+            # vectors aren't even the same length as what's indexed (e.g. a
+            # rate limit that recovers only after the preferred-provider
+            # check above already gave up). Rather than surface zero matches
+            # when the index actually holds usable content, retry without
+            # the auto-applied filter - still safe, since rank_entries' own
+            # dimensionality check keeps genuinely incompatible vectors from
+            # being compared.
+            relaxed_filters = {key: value for key, value in filters.items() if key != "embeddingModelId"}
+            results = rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=relaxed_filters)
+        return results
+
+    def _dominant_embedding_model_id(self) -> str | None:
+        """The one `embeddingModelId` every stored entry shares, if there is
+        exactly one - `None` for an empty/mixed-model index."""
+        ids = {entry.embeddingModelId for entry in self._entries.values() if entry.embeddingModelId}
+        if len(ids) == 1:
+            return next(iter(ids))
+        return None
+
+    def _embed_query_preferring_indexed_provider(self, query_text: str) -> tuple[Any, str]:
+        """Embed `query_text`, preferring whichever provider already indexed
+        this repository's content over whatever a fresh failover-chain call
+        would naturally pick first.
+
+        `FailoverExecutor` resolves each call independently - it isn't
+        sticky across calls, so a transient failure at index time (answered
+        by provider B) and a since-recovered provider A at query time can
+        otherwise mean the query is embedded by a *different* provider than
+        what's actually indexed, silently returning zero results (not just
+        a mismatched tag - genuinely different vector lengths, e.g. OpenAI's
+        1536-dim vs. a local model's ~768-dim, which no post-hoc filter can
+        reconcile). Deliberately calling the already-indexed provider's own
+        engine first - when the index is (as in the common case)
+        single-model and that provider is still part of the configured
+        chain - keeps a query consistent with what's stored regardless of
+        transient availability elsewhere in the chain.
+        """
+        dominant_model_id = self._dominant_embedding_model_id()
+        if dominant_model_id is not None:
+            preferred_engine = next(
+                (engine for ref, engine in self._embedding_engine.chain if str(ref) == dominant_model_id), None
+            )
+            if preferred_engine is not None:
+                try:
+                    return preferred_engine.embed(query_text), dominant_model_id
+                except Exception:  # noqa: BLE001 - any failure here just falls through to the normal chain below
+                    pass
+        failover_result = self._embedding_engine.run(lambda engine: engine.embed(query_text))
+        return failover_result.value, str(failover_result.providerUsed)
 
     def save(self) -> IndexRecord:
         self._persist_record()

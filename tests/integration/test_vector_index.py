@@ -100,3 +100,95 @@ def test_search_never_blends_vectors_from_different_embedding_providers(tmp_path
 
     results_b = index_b.search("beta helper function", k=5)
     assert {result.chunkId for result in results_b} == {chunk_b.id}
+
+
+class _UnavailableEmbeddingEngine:
+    """Always raises a classified, retryable error - simulates a provider
+    that answered during indexing but is transiently down at query time."""
+
+    def isAvailable(self) -> bool:
+        return False
+
+    def embed(self, text: str):
+        from embedding_engine.errors import ServiceUnavailableError
+
+        raise ServiceUnavailableError("down", endpointUrl="https://x", modelName="m")
+
+
+def test_search_falls_back_to_unfiltered_when_the_querying_provider_differs_from_the_indexed_one(tmp_path):
+    """Regression: FailoverExecutor isn't sticky across calls - a provider
+    that answered while indexing can differ from whichever one answers a
+    later query (e.g. a rate limit that recovers, or one that newly
+    appears). The auto-applied embeddingModelId filter must not silently
+    return zero results just because *this* query happened to be answered
+    by a different provider than what's actually indexed."""
+    index_time_provider = ProviderRef.parse("local:model-a")
+    query_time_provider = ProviderRef.parse("local:model-b")
+
+    indexing_executor = FailoverExecutor("embeddings", ((index_time_provider, FakeEmbeddingEngine()),))
+    index = VectorIndex(tmp_path / "repo", tmp_path / "meta.sqlite", embedding_engine=indexing_executor)
+    chunk = build_code_chunk(
+        "alpha helper function", source_symbol_id="symbol-alpha", source_file_path="src/alpha.py",
+        embedding_engine=indexing_executor,
+    )
+    index.addChunk(chunk)
+    assert chunk.embeddingModelId == str(index_time_provider)
+
+    # Simulate a later query where the *first* provider in the chain (the
+    # one that indexed the content) is down, and a *different* provider
+    # answers this specific call.
+    query_executor = FailoverExecutor(
+        "embeddings",
+        ((ProviderRef.parse("local:model-down"), _UnavailableEmbeddingEngine()), (query_time_provider, FakeEmbeddingEngine())),
+    )
+    index_for_query = VectorIndex(tmp_path / "repo", tmp_path / "meta.sqlite", embedding_engine=query_executor)
+
+    results = index_for_query.search("alpha helper function", k=5)
+
+    assert [result.chunkId for result in results] == [chunk.id]
+
+
+def test_search_prefers_the_already_indexed_provider_over_chain_order(tmp_path):
+    """Regression: when the index is single-model and that provider is
+    still part of the query-time chain, it must be used directly for the
+    query embedding - even if a *different*, currently-available provider
+    would otherwise win by being first in chain order. Confirms the fix
+    works at the vector-length level, not just via the relaxed-filter
+    last resort (which can't help when dimensions genuinely differ)."""
+    index_time_provider = ProviderRef.parse("local:model-a")
+
+    indexing_executor = FailoverExecutor("embeddings", ((index_time_provider, FakeEmbeddingEngine()),))
+    index = VectorIndex(tmp_path / "repo", tmp_path / "meta.sqlite", embedding_engine=indexing_executor)
+    chunk = build_code_chunk(
+        "alpha helper function", source_symbol_id="symbol-alpha", source_file_path="src/alpha.py",
+        embedding_engine=indexing_executor,
+    )
+    index.addChunk(chunk)
+
+    class _TrackedEngine(FakeEmbeddingEngine):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, text: str):
+            self.calls += 1
+            return super().embed(text)
+
+    other_available_provider_engine = _TrackedEngine()
+    same_model_different_instance = _TrackedEngine()
+    # "other_available" is listed FIRST and is fully available - normal
+    # failover ordering would pick it, which is exactly the bug: it isn't
+    # the provider that indexed this content.
+    query_executor = FailoverExecutor(
+        "embeddings",
+        (
+            (ProviderRef.parse("local:model-other"), other_available_provider_engine),
+            (index_time_provider, same_model_different_instance),
+        ),
+    )
+    index_for_query = VectorIndex(tmp_path / "repo", tmp_path / "meta.sqlite", embedding_engine=query_executor)
+
+    results = index_for_query.search("alpha helper function", k=5)
+
+    assert [result.chunkId for result in results] == [chunk.id]
+    assert other_available_provider_engine.calls == 0
+    assert same_model_different_instance.calls == 1
