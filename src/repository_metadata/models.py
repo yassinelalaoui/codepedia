@@ -63,7 +63,10 @@ class ModuleSymbol(Symbol):
     imports: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        # Zero-arg super() breaks here on Python <3.14: @dataclass(slots=True)
+        # recreates the class, but the __post_init__ closure's __class__ cell
+        # still points at the pre-slots class (CPython gh-91126).
+        Symbol.__post_init__(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +76,7 @@ class ClassSymbol(Symbol):
     nestedSymbols: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        Symbol.__post_init__(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +87,7 @@ class FunctionSymbol(Symbol):
     owner: str = "module"
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        Symbol.__post_init__(self)
 
 
 @dataclass(frozen=True, slots=True)
