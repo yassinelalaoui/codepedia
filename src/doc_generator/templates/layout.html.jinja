@@ -2,32 +2,49 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}</title>
-<style>
-  body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; max-width: 60rem; margin: 0 auto; padding: 1.5rem; line-height: 1.55; color: #1a1a1a; }
-  header.site-header { border-bottom: 1px solid #ddd; margin-bottom: 1.5rem; padding-bottom: 0.5rem; }
-  header.site-header a { text-decoration: none; color: #0b5fff; }
-  footer.site-footer { border-top: 1px solid #ddd; margin-top: 2rem; padding-top: 0.5rem; color: #666; font-size: 0.85rem; }
-  pre { background: #f6f8fa; padding: 0.75rem; overflow-x: auto; }
-  code { background: #f6f8fa; padding: 0.1rem 0.3rem; }
-  table { border-collapse: collapse; }
-  th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; }
-  pre.mermaid { background: none; text-align: center; }
-</style>
 <link rel="stylesheet" href="{{ ui_style_href }}">
 </head>
 <body>
-<header class="site-header">
-  <nav><a href="{{ home_href }}">Home</a> · <a href="{{ diagrams_href }}">Diagrams</a></nav>
-</header>
-<main>
+<div class="shell">
+  <nav class="sidebar" aria-label="Repository navigation">
+    <a class="brand" href="{{ home_href }}">
+      <span class="brand-mark" aria-hidden="true">RS</span>
+      <span class="brand-name">repo-scanner</span>
+    </a>
+    <div id="wiki-search-root"></div>
+    <div class="nav-group">
+      <a class="nav-link" href="{{ home_href }}">
+        <svg class="nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>
+        Home
+      </a>
+      <a class="nav-link{{ ' active' if is_diagrams_page else '' }}" href="{{ diagrams_href }}">
+        <svg class="nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Diagrams
+      </a>
+    </div>
+    {% if nav_modules %}
+    <div class="nav-group">
+      <div class="nav-label">Modules</div>
+      {% for entry in nav_modules %}
+      <a class="nav-link module{{ ' active' if entry.active else '' }}" href="{{ entry.href }}">{{ entry.name }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </nav>
+
+  <main class="main">
+    <div class="content-col">
 {{ content_html | safe }}
-</main>
-<div id="wiki-search-root"></div>
-<div id="wiki-chat-root"></div>
-<footer class="site-footer">
-  <p>Generated locally by doc_generator on {{ generated_at }}.</p>
-</footer>
+    </div>
+    <footer class="site-footer">
+      <p>Generated locally by doc_generator on {{ generated_at }}.</p>
+    </footer>
+  </main>
+
+  <div id="wiki-chat-root"></div>
+</div>
 <script src="{{ mermaid_script_href }}"></script>
 <script>
   if (window.mermaid) {

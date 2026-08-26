@@ -1,21 +1,26 @@
-# {{ module.name }}
+# {{ module.name | mdesc }}
 
 {% if module.docstring %}{{ module.docstring }}
 
 {% endif %}
 ## Summary
 
-{% if module.generatedSummary %}{{ module.generatedSummary }}{% else %}_Summary pending — this module has not been summarized yet._{% endif %}
+{% if module.generatedSummary %}
+{{ module.generatedSummary }}
+{: .ai-generated }
+{% else %}
+_Summary pending — this module has not been summarized yet._
+{% endif %}
 
 {% if diagram_link %}
-[View dependency diagram]({{ diagram_link.relativePath }})
+[View dependency diagram]({{ diagram_link.relativePath }}){: .diagram-link }
 {% endif %}
 
 ## Classes
 
 {% if classes %}
 {% for class, methods in classes %}
-### {{ class.name }} {: #{{ class.id }} }
+### {{ class.name | mdesc }} {: #{{ class.id }} }
 
 {% if class.parentClass %}Inherits from `{{ class.parentClass }}`.
 
@@ -23,19 +28,29 @@
 {% if class.docstring %}{{ class.docstring }}
 
 {% endif %}
-{% if class.generatedSummary %}{{ class.generatedSummary }}{% else %}_Summary pending — this class has not been summarized yet._{% endif %}
+{% if class.generatedSummary %}
+{{ class.generatedSummary }}
+{: .ai-generated }
+{% else %}
+_Summary pending — this class has not been summarized yet._
+{% endif %}
 
 {% if methods %}
 {% for method in methods %}
-#### {{ class.name }}.{{ method.name }}({{ method.parameters | map(attribute='name') | join(', ') }}){% if method.returnType %} -> {{ method.returnType }}{% endif %} {: #{{ method.id }} }
+#### {{ class.name | mdesc }}.{{ method.name | mdesc }}({{ method.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if method.returnType %} -> {{ method.returnType | mdesc }}{% endif %} {: #{{ method.id }} }
 
 {% if method.docstring %}{{ method.docstring }}
 
 {% endif %}
-{% if method.generatedSummary %}{{ method.generatedSummary }}{% else %}_Summary pending — this method has not been summarized yet._{% endif %}
+{% if method.generatedSummary %}
+{{ method.generatedSummary }}
+{: .ai-generated }
+{% else %}
+_Summary pending — this method has not been summarized yet._
+{% endif %}
 
 {% if entry_point_links.get(method.id) %}
-[View call sequence]({{ entry_point_links[method.id].relativePath }})
+[View call sequence]({{ entry_point_links[method.id].relativePath }}){: .call-seq-link }
 {% endif %}
 
 {% endfor %}
@@ -49,15 +64,20 @@ _No classes in this module._
 
 {% if functions %}
 {% for function in functions %}
-### {{ function.name }}({{ function.parameters | map(attribute='name') | join(', ') }}){% if function.returnType %} -> {{ function.returnType }}{% endif %} {: #{{ function.id }} }
+### {{ function.name | mdesc }}({{ function.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if function.returnType %} -> {{ function.returnType | mdesc }}{% endif %} {: #{{ function.id }} }
 
 {% if function.docstring %}{{ function.docstring }}
 
 {% endif %}
-{% if function.generatedSummary %}{{ function.generatedSummary }}{% else %}_Summary pending — this function has not been summarized yet._{% endif %}
+{% if function.generatedSummary %}
+{{ function.generatedSummary }}
+{: .ai-generated }
+{% else %}
+_Summary pending — this function has not been summarized yet._
+{% endif %}
 
 {% if entry_point_links.get(function.id) %}
-[View call sequence]({{ entry_point_links[function.id].relativePath }})
+[View call sequence]({{ entry_point_links[function.id].relativePath }}){: .call-seq-link }
 {% endif %}
 
 {% endfor %}
@@ -69,7 +89,7 @@ _No functions in this module._
 
 {% if related_links %}
 {% for link in related_links %}
-- [{{ link.label }}]({{ link.relativePath }})
+- [{{ link.label | mdesc }}]({{ link.relativePath }}){: .related-chip }
 {% endfor %}
 {% else %}
 _No related modules detected._

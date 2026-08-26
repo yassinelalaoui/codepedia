@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Sequence
 
 import markdown as markdown_lib
 
@@ -39,7 +40,14 @@ def _rewrite_internal_links_to_html(content_html: str) -> str:
     return _INTERNAL_MD_LINK_PATTERN.sub(lambda match: f'href="{match.group(1)}.html{match.group(2) or ""}"', content_html)
 
 
-def render_page_html(*, title: str, content_markdown: str, output_path_html: str) -> str:
+def render_page_html(
+    *,
+    title: str,
+    content_markdown: str,
+    output_path_html: str,
+    nav_modules: Sequence[tuple[str, str, str]] = (),
+    active_module_key: str = "",
+) -> str:
     content_html = markdown_lib.markdown(content_markdown, extensions=list(_MARKDOWN_EXTENSIONS))
     content_html = _MERMAID_FENCE_PATTERN.sub(r'<pre class="mermaid">\1</pre>', content_html)
     content_html = _rewrite_internal_links_to_html(content_html)
@@ -53,6 +61,19 @@ def render_page_html(*, title: str, content_markdown: str, output_path_html: str
     search_index_href = relative_output_link(
         from_output_path=output_path_html, to_output_path=SEARCH_INDEX_OUTPUT_PATH
     )
+    # The persistent sidebar's module list (contracts/wiki-ui-shell.md) - every
+    # page passes its own `output_path_html` so each link is relative to
+    # wherever this particular page ends up on disk (diagram pages sit one
+    # directory deeper than module pages, etc.), mirroring how home_href/
+    # diagrams_href are already computed above.
+    nav_entries = [
+        {
+            "name": name,
+            "href": relative_output_link(from_output_path=output_path_html, to_output_path=module_html) or ".",
+            "active": module_key == active_module_key,
+        }
+        for name, module_html, module_key in nav_modules
+    ]
     return render_html_template(
         "layout.html.jinja",
         title=title,
@@ -63,5 +84,7 @@ def render_page_html(*, title: str, content_markdown: str, output_path_html: str
         ui_script_href=ui_script_href,
         ui_style_href=ui_style_href,
         search_index_href=search_index_href,
+        nav_modules=nav_entries,
+        is_diagrams_page=output_path_html == DIAGRAMS_INDEX_OUTPUT_HTML,
         generated_at=datetime.now(timezone.utc).isoformat(),
     )

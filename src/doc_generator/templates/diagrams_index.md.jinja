@@ -4,29 +4,33 @@
 {% if class_diagram_link %}
 ## Class diagram
 
-- [{{ class_diagram_link.label }}]({{ class_diagram_link.relativePath }})
+- [{{ class_diagram_link.label }}]({{ class_diagram_link.relativePath }}){: .diagram-card }
+{: .diag-grid .featured }
 
 {% endif %}
 {% if use_case_diagram_link %}
 ## Use-case diagram
 
-- [{{ use_case_diagram_link.label }}]({{ use_case_diagram_link.relativePath }})
+- [{{ use_case_diagram_link.label }}]({{ use_case_diagram_link.relativePath }}){: .diagram-card }
+{: .diag-grid .featured }
 
 {% endif %}
 {% if sequence_diagram_links %}
 ## Entry point sequence diagrams
 
 {% for link in sequence_diagram_links %}
-- [{{ link.label }}]({{ link.relativePath }})
+- [{{ link.label | mdesc }}]({{ link.relativePath }}){: .diagram-card }
 {% endfor %}
+{: .diag-grid .small }
 
 {% endif %}
 {% if dependency_diagram_links %}
 ## Module dependency diagrams
 
 {% for link in dependency_diagram_links %}
-- [{{ link.label }}]({{ link.relativePath }})
+- [{{ link.label | mdesc }}]({{ link.relativePath }}){: .diagram-card }
 {% endfor %}
+{: .diag-grid .small }
 
 {% endif %}
 {% else %}

@@ -137,7 +137,9 @@ class DocGenerator:
             class_diagram_link=class_diagram_link,
             use_case_diagram_link=use_case_diagram_link,
         )
-        html = render_page_html(title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML)
+        html = render_page_html(
+            title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_modules=self._nav_modules()
+        )
 
         return DocPage(
             id=links.HOME_PAGE_ID,
@@ -222,7 +224,13 @@ class DocGenerator:
             diagram_link=diagram_link,
             entry_point_links=entry_point_links,
         )
-        html = render_page_html(title=moduleSymbol.name, content_markdown=content, output_path_html=module_html)
+        html = render_page_html(
+            title=moduleSymbol.name,
+            content_markdown=content,
+            output_path_html=module_html,
+            nav_modules=self._nav_modules(),
+            active_module_key=module_key,
+        )
 
         return DocPage(
             id=page_id,
@@ -297,7 +305,9 @@ class DocGenerator:
             neighbor_links=[link for link in page_links if link is not owner_link],
             mermaid_source=mermaid_source.sourceText,
         )
-        html = render_page_html(title=title, content_markdown=content, output_path_html=diagram_html)
+        html = render_page_html(
+            title=title, content_markdown=content, output_path_html=diagram_html, nav_modules=self._nav_modules()
+        )
 
         related_symbols = tuple(dict.fromkeys(neighbor_keys))
         return DocPage(
@@ -329,7 +339,9 @@ class DocGenerator:
             "class_diagram.md.jinja",
             class_diagram_source=class_diagram_source,
         )
-        html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+        html = render_page_html(
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+        )
 
         return DocPage(
             id=page_id,
@@ -360,7 +372,9 @@ class DocGenerator:
             "use_case_diagram.md.jinja",
             use_case_diagram_source=use_case_diagram_source,
         )
-        html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+        html = render_page_html(
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+        )
 
         related_symbols = tuple(use_case.entryPointStableKey for use_case in selection.useCases)
         return DocPage(
@@ -405,7 +419,9 @@ class DocGenerator:
                 selection=selection,
                 sequence_diagram_source=sequence_diagram_source,
             )
-            html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+            html = render_page_html(
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+        )
 
             related_symbols = tuple(dict.fromkeys(step.calleeSymbolId for step in selection.steps))
             pages.append(
@@ -497,7 +513,9 @@ class DocGenerator:
             sequence_diagram_links=sequence_diagram_links,
             dependency_diagram_links=dependency_diagram_links,
         )
-        html = render_page_html(title=title, content_markdown=content, output_path_html=output_html)
+        html = render_page_html(
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+        )
 
         return DocPage(
             id=page_id,
@@ -639,6 +657,21 @@ class DocGenerator:
             self._writer.write_search_index(build_search_index(bundle))
 
         return DocumentationSet(repositoryId=self.repositoryId, outputRoot=str(self.outputRoot), pages=tuple(pages))
+
+    def _nav_modules(self) -> list[tuple[str, str, str]]:
+        """Every module's (name, its page's own output_path_html, its stable
+        key) - the persistent sidebar's module list, present on every page.
+        `render_page_html` turns each entry into a link relative to whatever
+        page is actually being rendered."""
+        bundle = self._ensure_bundle()
+        modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
+        entries: list[tuple[str, str, str]] = []
+        for module in modules:
+            module_key = module.sourceFileId
+            slug = links.page_slug(module.name, module_key)
+            _, module_html = links.module_output_paths(slug)
+            entries.append((module.name, module_html, module_key))
+        return entries
 
     def _ensure_bundle(self) -> RepositoryBundle:
         if self._bundle is None:

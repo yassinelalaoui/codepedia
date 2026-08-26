@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -7,12 +8,28 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
+# Symbol/module names routinely contain markdown-special characters that
+# were never meant to be markdown syntax - most commonly `_` (e.g.
+# `__init__`, `sqlite_store`), which python-markdown's classic emphasis
+# processor can pair up across an *entire* list/paragraph block rather than
+# per-word, silently swallowing an unrelated link or bolding a large stray
+# span. Any name used as markdown link text or inline label (not full prose
+# like a docstring/summary, which is meant to render as markdown) must be
+# escaped with this filter before being embedded in a template.
+_MARKDOWN_SPECIAL_CHARS = re.compile(r"([\\`*_{}\[\]()#+\-.!<>|~])")
+
+
+def _markdown_escape(value: object) -> str:
+    return _MARKDOWN_SPECIAL_CHARS.sub(r"\\\1", str(value))
+
+
 _environment = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),
     autoescape=select_autoescape(enabled_extensions=("html.jinja",), default=False),
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_environment.filters["mdesc"] = _markdown_escape
 
 
 def render_markdown_template(template_name: str, **context: Any) -> str:

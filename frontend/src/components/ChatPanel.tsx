@@ -172,6 +172,18 @@ export function ChatPanel() {
 
   return (
     <div className="wiki-chat-panel">
+      <div className="wiki-chat-panel-head">
+        <h2>Ask about this repository</h2>
+        <span className="wiki-chat-local-badge">
+          <span className="led" aria-hidden="true" />
+          Local only
+        </span>
+      </div>
+      {messages.length === 0 ? (
+        <p className="wiki-chat-empty">
+          Ask anything about this codebase — answers are grounded in the indexed code and cited.
+        </p>
+      ) : (
       <ul className="wiki-chat-messages">
         {messages.map((message, index) => (
           <li key={index} className={`wiki-chat-message role-${message.role}`}>
@@ -180,6 +192,7 @@ export function ChatPanel() {
                 <span className="wiki-chat-indicator-dot" />
                 <span className="wiki-chat-indicator-dot" />
                 <span className="wiki-chat-indicator-dot" />
+                Generating an answer…
               </span>
             ) : message.role === "assistant" ? (
               <ReactMarkdown
@@ -204,6 +217,7 @@ export function ChatPanel() {
           </li>
         ))}
       </ul>
+      )}
       {errorMessage && <p className="wiki-chat-error">{errorMessage}</p>}
       <form onSubmit={handleSubmit}>
         <input
@@ -214,6 +228,7 @@ export function ChatPanel() {
           disabled={pending || historyLoadState === "loading"}
           onChange={(event) => setQuestion(event.target.value)}
         />
+        <p className="wiki-chat-foot-note">Runs on this machine — nothing is sent anywhere else.</p>
       </form>
     </div>
   );
