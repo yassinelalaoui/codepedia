@@ -23,7 +23,7 @@ def _missing_key_message(endpoint_url: str, model_name: str) -> str:
     return (
         f"No {API_KEY_ENV_VAR} environment variable is set. Set it to a valid Groq API key "
         f"to use the remote model '{model_name}' at {endpoint_url}. This project never reads "
-        "or stores this key anywhere but the environment - see `repo-scanner config --llm-provider groq`."
+        "or stores this key anywhere but the environment - see `codepedia config --llm-provider groq`."
     )
 
 

@@ -56,7 +56,7 @@ consistent with 013's precedent
 Target Platform: The compiled bundle runs in any standard browser, served
 by the existing local server (015); Node.js/npm are needed only by someone
 building this feature's frontend source, never by someone running the
-already-built `repo-scanner`/`chat_api` tools
+already-built `codepedia`/`chat_api` tools
 
 Project Type: Extension of the existing internal pipeline — a new
 `frontend/` npm project (source only) whose committed build output extends

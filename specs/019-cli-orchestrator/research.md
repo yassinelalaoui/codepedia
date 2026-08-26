@@ -40,7 +40,7 @@
 
 **Rationale**: The project already installs with `pip install -e .`
 (`README.md` "Install") and already declares one console script,
-`repo-scanner = "repo_scanner.cli:app"`. `npx doc-gen` (the plan input's
+`codepedia = "repo_scanner.cli:app"`. `npx doc-gen` (the plan input's
 Node-flavored alternative) has no equivalent meaning for a Python project
 and was only offered as a paired example alongside the Node.js language
 option, which was not chosen (§1).
@@ -52,25 +52,25 @@ nothing in the spec asks for a self-contained executable.
 
 ## 3. Console-script entry point: extend or supersede `repo_scanner.cli`
 
-**Decision**: Repoint the existing `repo-scanner` console script (currently
+**Decision**: Repoint the existing `codepedia` console script (currently
 `repo_scanner.cli:app`) to a new top-level `cli` package
-(`repo-scanner = "cli.main:app"`), whose Typer app registers four
+(`codepedia = "cli.main:app"`), whose Typer app registers four
 commands: the three the spec requires (`index`, `serve`, `config`) plus
 `scan`, which thinly delegates to the same `repo_scanner.scanner.
 scan_repository` / `repo_scanner.output.serialize_scan_result` functions
 `repo_scanner/cli.py`'s existing `scan` command already calls — so
-`repo-scanner scan <path>` keeps working exactly as spec 001's contract
-(`specs/001-local-repo-scanner/contracts/cli.md`) describes.
+`codepedia scan <path>` keeps working exactly as spec 001's contract
+(`specs/001-local-codepedia/contracts/cli.md`) describes.
 
 **Rationale**:
 - The feature's own success criterion (SC-001) is "a developer ... can go
   ... to a browsable documentation wiki by running exactly one command."
-  A single command **name** with subcommands (`repo-scanner index`,
-  `repo-scanner serve`, `repo-scanner config`, `repo-scanner scan`) is
+  A single command **name** with subcommands (`codepedia index`,
+  `codepedia serve`, `codepedia config`, `codepedia scan`) is
   what "one command, no prior knowledge" means in practice — a second,
   differently-named executable for the orchestrator would immediately
   contradict that goal by making the developer choose between two tools.
-- No test exercises the `repo-scanner` console script or
+- No test exercises the `codepedia` console script or
   `repo_scanner.cli.app` directly (confirmed by search across `tests/`);
   only `README.md` and spec 001's own contract document it, and both
   continue to be satisfied since `scan` keeps its exact existing
@@ -92,7 +92,7 @@ scan_repository` / `repo_scanner.output.serialize_scan_result` functions
   `chat_api`, `repo_watcher`, and `reindex_pipeline` would invert the
   project's layering rule for the sake of file convenience.
 - A second, separately named console script (e.g. `doc-gen`) alongside
-  `repo-scanner`: rejected per SC-001 above — two entry points for one
+  `codepedia`: rejected per SC-001 above — two entry points for one
   tool undermines "one command, no prior knowledge."
 
 ## 4. Where CLI-managed state lives on disk
@@ -100,9 +100,9 @@ scan_repository` / `repo_scanner.output.serialize_scan_result` functions
 **Decision**: Two locations, both under the user's home directory, never
 inside the analyzed repository:
 
-- `~/.repo-scanner/config.json` — the persisted `CLIConfiguration`
+- `~/.codepedia/config.json` — the persisted `CLIConfiguration`
   (chosen LLM model/endpoint, embedding model/endpoint), machine-wide.
-- `~/.repo-scanner/repos/<state-id>/` — one directory per indexed
+- `~/.codepedia/repos/<state-id>/` — one directory per indexed
   repository, holding that repository's `repository-metadata.sqlite`
   (005), `dependency-graph.sqlite` (004), `vector-index.sqlite` +
   `vector-metadata.sqlite` (006/007), `doc-manifest.sqlite` (012's
@@ -141,7 +141,7 @@ inside the analyzed repository:
 
 **Alternatives considered**:
 - Reusing `chat_api/server.py`'s existing default,
-  `<repo_root>/.repo-scanner/{vector-index.sqlite,vector-metadata.sqlite}`
+  `<repo_root>/.codepedia/{vector-index.sqlite,vector-metadata.sqlite}`
   (writing inside the analyzed repository): rejected for this new code —
   it is an existing, already-shipped default for *that module's own*
   optional flags (unchanged by this feature), but adopting the same
@@ -153,7 +153,7 @@ inside the analyzed repository:
   home-directory layout avoids re-litigating or duplicating that existing
   flag default, which this feature does not change.
 - A per-repository config file (e.g.
-  `<repo_root>/.repo-scanner/config.json` or the home-directory
+  `<repo_root>/.codepedia/config.json` or the home-directory
   equivalent nested under `repos/<state-id>/config.json`): rejected —
   would force re-selecting the same LLM/embedding model for every
   repository indexed, with no benefit, since the model choice is a
@@ -355,7 +355,7 @@ detail to the terminal with a non-zero exit code, not to reclassify it.
 
 **Decision**: `run_index` writes every stage's output to a fresh, sibling
 staging directory — `repo_state_dir(root) + ".staging-<pid>"`, next to
-(never inside) the real `~/.repo-scanner/repos/<state_id>/` — rather than
+(never inside) the real `~/.codepedia/repos/<state_id>/` — rather than
 directly into the final `RepositoryState` location. Only after every stage
 (scan through the final embedding pass, §6) has completed successfully
 does `run_index` atomically replace the final location with the staging

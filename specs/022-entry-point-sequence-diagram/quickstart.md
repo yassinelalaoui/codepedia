@@ -61,7 +61,7 @@
    `service.py` so `process()` calls `repository.save()` twice more, in a
    different order relative to another call it already makes.
 2. Re-run generation **incrementally** (`incremental=True`, matching how
-   `repo-scanner serve`'s watcher-driven reindex already works).
+   `codepedia serve`'s watcher-driven reindex already works).
 3. **Expected**: `cli.main`'s sequence diagram is regenerated and reflects
    the new order, without a full from-scratch reindex of the fixture
    repository (assert via the same "only impacted pages regenerate"

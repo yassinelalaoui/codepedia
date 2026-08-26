@@ -161,13 +161,13 @@ individual token gets its own database write.
 ## Decision 5 — `GroqLLMEngine`: opt-in configuration, key never touches disk
 
 **Decision**: `CLIConfiguration` gains `llmProvider: str = "local"` and
-`remoteLlmModel: str | None = None` (persisted in `~/.repo-scanner/config.json`,
+`remoteLlmModel: str | None = None` (persisted in `~/.codepedia/config.json`,
 like every other config field). The Groq API key is read only from the
 `GROQ_API_KEY` environment variable at the moment `GroqLLMEngine` is
-constructed — never written to `config.json`, never logged. `repo-scanner
+constructed — never written to `config.json`, never logged. `codepedia
 config --llm-provider groq --remote-llm-model <name>` prints an explicit
 disclosure (FR-013) before saving: that questions and cited code context
-will be sent to Groq's API. `repo-scanner config --llm-provider local`
+will be sent to Groq's API. `codepedia config --llm-provider local`
 switches back, and this is the *only* way the provider changes — there is
 no automatic reversion.
 

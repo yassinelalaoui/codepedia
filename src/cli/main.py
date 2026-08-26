@@ -53,7 +53,7 @@ DEFAULT_PORT = 8000
 
 def _version_callback(show_version: bool) -> None:
     if show_version:
-        typer.echo(importlib.metadata.version("repo-scanner"))
+        typer.echo(importlib.metadata.version("codepedia"))
         raise typer.Exit()
 
 
@@ -65,7 +65,7 @@ def main(
         "--version",
         callback=_version_callback,
         is_eager=True,
-        help="Show the installed repo-scanner version and exit.",
+        help="Show the installed codepedia version and exit.",
     ),
 ) -> None:
     invoked = ctx.invoked_subcommand
@@ -149,7 +149,7 @@ def config_command(
     show: bool = typer.Option(False, "--show", help="Show the current configuration without changing it."),
 ) -> None:
     """View or change local connection settings and see the current provider
-    chains. Use `repo-scanner provider chain set`/`provider mode full-local`
+    chains. Use `codepedia provider chain set`/`provider mode full-local`
     to change which providers a stage actually uses."""
     try:
         run_config(
@@ -167,7 +167,7 @@ def config_command(
 
 @provider_app.command("mode")
 def provider_mode(mode: str = typer.Argument(..., help="Only 'full-local' is currently supported.")) -> None:
-    """`repo-scanner provider mode full-local` - atomically switch all three
+    """`codepedia provider mode full-local` - atomically switch all three
     stages to local-only providers (spec FR-004)."""
     if mode != "full-local":
         report_and_exit(ValueError(f"Unknown provider mode {mode!r}; expected 'full-local'."))
@@ -183,7 +183,7 @@ def provider_chain(
     stage: str = typer.Argument(..., help="'embeddings', 'summary', or 'chat'."),
     providers: List[str] = typer.Argument(..., help="One or more '<provider>:<model>' entries, in try-order."),
 ) -> None:
-    """`repo-scanner provider chain set <stage> <provider:model>...` - replace
+    """`codepedia provider chain set <stage> <provider:model>...` - replace
     one stage's provider chain (spec FR-006/FR-007)."""
     if action != "set":
         report_and_exit(ValueError(f"Unknown provider chain action {action!r}; expected 'set'."))
@@ -195,7 +195,7 @@ def provider_chain(
 
 if __name__ == "__main__":
     # Lets `python -m cli.main` invoke the CLI directly, and gives the
-    # PyInstaller build (packaging/pyinstaller/repo-scanner.spec, 020) a real
-    # entry script to run - the `repo-scanner` console-script wrapper
+    # PyInstaller build (packaging/pyinstaller/codepedia.spec, 020) a real
+    # entry script to run - the `codepedia` console-script wrapper
     # (pyproject.toml) already calls `app()` itself and doesn't need this.
     app()

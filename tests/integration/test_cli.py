@@ -157,10 +157,10 @@ class FakeEmbeddingEngine:
 
 @pytest.fixture()
 def cli_home(tmp_path, monkeypatch):
-    """Redirect every `~/.repo-scanner/...` path this package computes to a
+    """Redirect every `~/.codepedia/...` path this package computes to a
     temp directory, so tests never touch the real developer machine."""
     home = tmp_path / "home"
-    monkeypatch.setattr(cli.config.paths, "repo_scanner_home", lambda: home)
+    monkeypatch.setattr(cli.config.paths, "codepedia_home", lambda: home)
     return home
 
 

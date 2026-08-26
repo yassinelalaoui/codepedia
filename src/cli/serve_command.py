@@ -35,7 +35,7 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     chat_executor = build_stage_executor("chat", config, failover_log=failover_log)
     check_ai_dependencies(embeddings=embeddings_executor, summary=summary_executor, chat=chat_executor)
 
-    not_indexed_message = f"No index found for {root}. Run `repo-scanner index {root}` first."
+    not_indexed_message = f"No index found for {root}. Run `codepedia index {root}` first."
     if not state_dir.exists():
         raise IndexNotFoundError(not_indexed_message)
 

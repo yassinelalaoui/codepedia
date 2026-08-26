@@ -57,7 +57,7 @@
 
 1. Starting from Scenario A's fixture (already generated once), add a new
    module, then re-run generation **incrementally**
-   (`incremental=True`, matching how `repo-scanner serve`'s watcher-driven
+   (`incremental=True`, matching how `codepedia serve`'s watcher-driven
    reindex already works).
 2. **Expected**: `diagrams-index.html` regenerates and now includes a
    dependency-diagram entry for the new module, without a full

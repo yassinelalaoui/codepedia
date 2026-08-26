@@ -2,7 +2,7 @@
 
 **Specs**: 001, 002/003, 004, 005, 009/010, 006/007, 012, 019
 
-The from-scratch flow: `repo-scanner index <path>` (019) points the tool at a
+The from-scratch flow: `codepedia index <path>` (019) points the tool at a
 repository once, and it becomes a fully analyzed, summarized, embedded, and
 documented wiki — staged into a temporary directory and swapped in only on
 full success (research.md §10 of 019), so a failed run never corrupts a
@@ -22,7 +22,7 @@ sequenceDiagram
     participant EmbeddingEngine as "Embedding Engine (009)"
     participant VectorIndex as "Vector Index (006/007)"
 
-    Operator->>cli: repo-scanner index <path>
+    Operator->>cli: codepedia index <path>
     cli->>LocalLLMEngine: checkAvailability()
     cli->>EmbeddingEngine: checkAvailability()
     alt either unavailable

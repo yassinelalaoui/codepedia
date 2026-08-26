@@ -14,7 +14,7 @@
 
 A team member is chatting with the wiki about the analyzed repository. Several
 questions and answers have already been exchanged. The local server is then
-restarted (e.g. the operator re-runs `repo-scanner serve`, or the process
+restarted (e.g. the operator re-runs `codepedia serve`, or the process
 crashes and is relaunched). The reader returns to the same session and finds
 the full conversation exactly as it was, in the original order, before asking
 their next question.
@@ -183,7 +183,7 @@ appends).
 - The existing chat session id (already generated when a session is created,
   per feature 014-local-chat-api) is reused as the stable identifier for
   persistence — no new id scheme is introduced.
-- "Server restart" means the `repo-scanner serve`/`index` process stops and
+- "Server restart" means the `codepedia serve`/`index` process stops and
   is relaunched against the same repository's already-indexed state; it does
   not cover switching to a different repository or deleting the repository's
   stored state.

@@ -95,7 +95,7 @@ resolution already used for the existing citation list."
 via `URLSearchParams(window.location.search)` in a `ChatPanel` mount effect,
 and written back with `history.replaceState` (no navigation, no reload)
 whenever a session is created or confirmed resumable. The existing
-`localStorage`-based persistence (`repo-scanner:chat-session-id`, spec 025)
+`localStorage`-based persistence (`codepedia:chat-session-id`, spec 025)
 is removed and fully replaced by the URL parameter.
 
 **Rationale**: FR-009 requires that a conversation's page address restore

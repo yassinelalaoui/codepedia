@@ -6,18 +6,18 @@ from pathlib import Path
 from repository_metadata.sqlite_store import stable_repository_id
 
 
-def repo_scanner_home() -> Path:
+def codepedia_home() -> Path:
     """Root of every path this package writes to.
 
     A function (not a module-level constant) so tests can redirect it by
     monkeypatching this attribute, without needing every already-imported
     caller to be reloaded.
     """
-    return Path.home() / ".repo-scanner"
+    return Path.home() / ".codepedia"
 
 
 def config_path() -> Path:
-    return repo_scanner_home() / "config.json"
+    return codepedia_home() / "config.json"
 
 
 def state_id(root: Path) -> str:
@@ -33,7 +33,7 @@ def state_id(root: Path) -> str:
 
 
 def repo_state_dir(root: Path) -> Path:
-    return repo_scanner_home() / "repos" / state_id(root)
+    return codepedia_home() / "repos" / state_id(root)
 
 
 def metadata_db_path(state_dir: Path) -> Path:

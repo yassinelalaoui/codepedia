@@ -66,7 +66,7 @@ def test_config_command_accepts_optional_model_endpoint_and_show_flags():
 @pytest.fixture()
 def cli_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    monkeypatch.setattr(cli.paths, "repo_scanner_home", lambda: home)
+    monkeypatch.setattr(cli.paths, "codepedia_home", lambda: home)
     return home
 
 
@@ -108,7 +108,7 @@ def test_version_flag_output_is_a_bare_version_string_matching_the_package():
 
     assert result.exit_code == 0
     output = result.output.strip()
-    assert output == importlib.metadata.version("repo-scanner")
-    # contracts/packaging-interface.md: "prints the installed repo-scanner
+    assert output == importlib.metadata.version("codepedia")
+    # contracts/packaging-interface.md: "prints the installed codepedia
     # version ... and exits" - nothing else on the line.
     assert re.fullmatch(r"[0-9][0-9A-Za-z.+\-]*", output)

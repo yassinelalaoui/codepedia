@@ -26,7 +26,7 @@ point. 019 (CLI orchestrator) reuses this same dependency for its `index`/
 `serve`/`config` commands — no new dependency was introduced — and moved the
 project's `[project.scripts]` console-script target from
 `repo_scanner.cli:app` to `cli.main:app`, which now also re-registers 001's
-`scan` command unchanged, so `repo-scanner` stays the single entry point for
+`scan` command unchanged, so `codepedia` stays the single entry point for
 every command.
 
 ## Multi-language parsing
@@ -176,7 +176,7 @@ for the whole backend. Keeps every package (`repo_scanner`, `parser_engine`,
 **PyInstaller** (020, build-time only — never a runtime dependency of the
 shipped binary) turns that same codebase into a standalone, single-file
 executable per OS, so an end user needs no Python interpreter at all (see
-`packaging/pyinstaller/repo-scanner.spec`, `packaging/build.py`). Chosen
+`packaging/pyinstaller/codepedia.spec`, `packaging/build.py`). Chosen
 over Nuitka (needs a C compiler on every build machine; less predictable
 bundling multiple native tree-sitter grammar packages) and over cx_Freeze
 (smaller community, thinner docs for this native-extension-plus-data-file

@@ -2,19 +2,19 @@
 
 ## Prerequisites
 
-- A repository already indexed (`repo-scanner index /path/to/repo`), with a
+- A repository already indexed (`codepedia index /path/to/repo`), with a
   local embedding engine and local LLM reachable on `localhost`.
 - `curl` (or an equivalent local HTTP client).
 - Access to the repository's state directory to inspect the SQLite file
   directly, if you want to confirm rows exist between steps:
-  `~/.repo-scanner/repos/<state-id>/repository-metadata.sqlite`
+  `~/.codepedia/repos/<state-id>/repository-metadata.sqlite`
   (`sqlite3 <path> ".tables"` / `.schema chat_sessions`).
 
 This validates spec.md's User Stories 1–3 and Success Criteria SC-001–SC-004.
 
 ## Validate: a session survives a full server restart (US1 / SC-001)
 
-1. Start the server: `repo-scanner serve /path/to/repo`.
+1. Start the server: `codepedia serve /path/to/repo`.
 2. Create a session and ask two or three questions, noting the `sessionId`:
 
    ```sh
@@ -31,7 +31,7 @@ This validates spec.md's User Stories 1–3 and Success Criteria SC-001–SC-004
    ```
 
 4. Stop the server process entirely (not just the watcher — the whole
-   process), then start it again: `repo-scanner serve /path/to/repo`.
+   process), then start it again: `codepedia serve /path/to/repo`.
 5. Fetch history for the same `sessionId` again. Confirm it is byte-for-byte
    identical to step 3's result — same messages, same order, same
    `citedSymbolIds`/`citedFilePaths`, same timestamps.

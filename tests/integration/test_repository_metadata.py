@@ -128,7 +128,7 @@ def test_storing_a_file_with_nested_classes_does_not_raise_integrity_error(tmp_p
     used to be double-counted by the extractor (parser_engine), producing
     two Symbol objects with the identical id and crashing this store's
     `symbols.id` UNIQUE constraint on insert - exactly the failure a real
-    `repo-scanner index` run hit against a real-world repository."""
+    `codepedia index` run hit against a real-world repository."""
     root = tmp_path / "nested-repo"
     root.mkdir()
     source_path = root / "nested.py"

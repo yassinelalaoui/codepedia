@@ -32,7 +32,7 @@ ISO-8601 strings.
 No `repository_id` column: per spec Assumptions, sessions are scoped per
 repository the same way the rest of `repository-metadata.sqlite` already is
 — by *which file* they live in (one file per repository under
-`~/.repo-scanner/repos/<state_id>/repository-metadata.sqlite`), not by an
+`~/.codepedia/repos/<state_id>/repository-metadata.sqlite`), not by an
 explicit foreign key. This matches how `repositories`/`source_files` are
 scoped in the same file today.
 

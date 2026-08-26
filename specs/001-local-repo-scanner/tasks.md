@@ -95,6 +95,6 @@ set without an all-at-once memory load.
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [X] T022 Update the CLI contract and quickstart validation steps in `specs/001-local-repo-scanner/contracts/cli.md` and `specs/001-local-repo-scanner/quickstart.md` to reflect the final command and output shape.
-- [X] T023 Review the scan result schema in `specs/001-local-repo-scanner/contracts/scan-output.schema.json` against the implementation and adjust field names or constraints if needed.
+- [X] T022 Update the CLI contract and quickstart validation steps in `specs/001-local-codepedia/contracts/cli.md` and `specs/001-local-codepedia/quickstart.md` to reflect the final command and output shape.
+- [X] T023 Review the scan result schema in `specs/001-local-codepedia/contracts/scan-output.schema.json` against the implementation and adjust field names or constraints if needed.
 - [X] T024 Perform a final pass for read-only repository handling, bounded-memory traversal, and consistent error messages across `src/repo_scanner/cli.py` and `src/repo_scanner/scanner.py`.

@@ -1,7 +1,7 @@
 # Contract: Chat Session URL Parameter
 
 **Status**: New client-facing contract (no backend/API change). Replaces the
-`localStorage` key `repo-scanner:chat-session-id` (spec 025) as the sole
+`localStorage` key `codepedia:chat-session-id` (spec 025) as the sole
 mechanism for retaining a conversation's identity across a reload, a copied
 link, or a different browser/device (FR-008, FR-009).
 

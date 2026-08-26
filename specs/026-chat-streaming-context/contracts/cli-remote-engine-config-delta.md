@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This feature adds configuration surface to the existing `repo-scanner
+This feature adds configuration surface to the existing `codepedia
 config` command (`specs/019-cli-orchestrator/contracts/cli-interface.md`).
 It adds no new command. This document records the delta.
 
-## `repo-scanner config` — new flags
+## `codepedia config` — new flags
 
 - `--llm-provider {local,groq}` — selects which engine `index`/`serve` use
   for chat answer generation. Defaults to `local` when never set (existing
@@ -18,7 +18,7 @@ It adds no new command. This document records the delta.
 The Groq API key is **not** a CLI flag or config field — it is read from the
 `GROQ_API_KEY` environment variable at the moment a `GroqLLMEngine` is
 actually constructed (index/serve startup, or `config`'s own availability
-check). `repo-scanner config` never prints, stores, or otherwise handles
+check). `codepedia config` never prints, stores, or otherwise handles
 the key's value.
 
 ## Behavior
@@ -34,7 +34,7 @@ the key's value.
   unchanged validation (`normalize_endpoint_url`'s local-only hostname
   check still applies to `--llm-endpoint`, completely unaffected by this
   feature).
-- `repo-scanner config` (no flags, status display) now also reports which
+- `codepedia config` (no flags, status display) now also reports which
   provider is active and, for `groq`, whether `GROQ_API_KEY` is set and the
   configured model is reachable — using the same `checkAvailability()`-based
   status reporting already used for the local engine and the embedding
@@ -45,9 +45,9 @@ the key's value.
 
 ## Non-goals
 
-- No per-invocation override (e.g. `repo-scanner serve --llm-provider groq`)
+- No per-invocation override (e.g. `codepedia serve --llm-provider groq`)
   — provider selection is a persisted configuration choice, consistent with
-  how model/endpoint selection already works via `repo-scanner config`, not
+  how model/endpoint selection already works via `codepedia config`, not
   a per-command flag.
 - No support for a second remote provider in this feature — `llm-provider`
   accepts exactly `local` or `groq` today; adding another provider is a

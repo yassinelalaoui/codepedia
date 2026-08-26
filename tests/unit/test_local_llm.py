@@ -169,7 +169,7 @@ def test_engine_raises_generation_failed_on_timeout_not_a_raw_timeout_error():
     built-in TimeoutError out of `generate()` - uncaught by both `local_llm`
     and the CLI's `index`/`serve` commands, crashing with a raw traceback
     instead of report_and_exit's clean, actionable message. See the real
-    `repo-scanner index` run against a large repository that first
+    `codepedia index` run against a large repository that first
     surfaced this."""
 
     class SlowGenerateHandler(_OllamaHandler):

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- A repository already indexed and served (`repo-scanner serve /path/to/repo`),
+- A repository already indexed and served (`codepedia serve /path/to/repo`),
   with a local embedding engine and local LLM reachable on `localhost`.
 - `curl` with `--no-buffer` (or an equivalent client that doesn't wait for
   the connection to close before showing output) to observe SSE events as
@@ -70,18 +70,18 @@ This validates spec.md's User Stories 1-3 and Success Criteria SC-001-005.
 
    ```sh
    export GROQ_API_KEY=...
-   repo-scanner config --llm-provider groq --remote-llm-model llama-3.3-70b-versatile
+   codepedia config --llm-provider groq --remote-llm-model llama-3.3-70b-versatile
    ```
 
 3. Confirm the command prints an explicit disclosure that questions and
    cited code context will be sent to Groq before it saves.
-4. Restart the server (`repo-scanner serve`) and ask a question. Confirm
+4. Restart the server (`codepedia serve`) and ask a question. Confirm
    the answer now streams from the configured Groq model (same SSE shape
    as the local case — streaming is engine-agnostic).
 5. Unset `GROQ_API_KEY` (or otherwise make the endpoint unreachable) and ask
    another question. Confirm the response is a clear "unavailable" error —
    never a silent switch back to the local model.
-6. Revert with `repo-scanner config --llm-provider local` and confirm chat
+6. Revert with `codepedia config --llm-provider local` and confirm chat
    returns to local-only behavior with no remaining Groq usage.
 
 ## Automated coverage

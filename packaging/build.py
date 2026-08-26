@@ -1,4 +1,4 @@
-"""Maintainer-run helper that builds the standalone `repo-scanner` binary
+"""Maintainer-run helper that builds the standalone `codepedia` binary
 for the current OS and smoke-tests it (specs/020-cli-packaging,
 research.md section 8, quickstart.md Scenario 1).
 
@@ -8,7 +8,7 @@ Usage:
 
 PyInstaller does not cross-compile: run this once per target OS
 (Windows/macOS/Linux) on a real machine of that OS. The produced binary is
-written to dist/repo-scanner (dist/repo-scanner.exe on Windows) - see
+written to dist/codepedia (dist/codepedia.exe on Windows) - see
 packaging/README.md for what to do with it next.
 """
 
@@ -21,9 +21,9 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SPEC_FILE = REPO_ROOT / "packaging" / "pyinstaller" / "repo-scanner.spec"
+SPEC_FILE = REPO_ROOT / "packaging" / "pyinstaller" / "codepedia.spec"
 DIST_DIR = REPO_ROOT / "dist"
-BINARY_NAME = "repo-scanner.exe" if sys.platform == "win32" else "repo-scanner"
+BINARY_NAME = "codepedia.exe" if sys.platform == "win32" else "codepedia"
 
 
 def _run(command: list[str]) -> None:

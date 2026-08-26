@@ -154,7 +154,7 @@ necessarily catching it.
 
 Decision: `frontend/`'s build output (`wiki-ui.js`, `wiki-ui.css`) is
 committed into `src/doc_generator/assets/`, the same way `mermaid.min.js`
-is vendored (013). Running `repo-scanner`, `chat_api.server`, or any test
+is vendored (013). Running `codepedia`, `chat_api.server`, or any test
 requires only the existing Python environment — never Node.js or npm.
 
 Rationale: This is the direct continuation of 013's own reasoning for

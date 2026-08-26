@@ -17,7 +17,7 @@ from .scanner import scan_repository
 class _FallbackApp:
     def __call__(self) -> None:
         parser = argparse.ArgumentParser(
-            prog="repo-scanner",
+            prog="codepedia",
             description="Scan a local repository and emit source inventory JSON.",
         )
         subparsers = parser.add_subparsers(dest="command", required=True)

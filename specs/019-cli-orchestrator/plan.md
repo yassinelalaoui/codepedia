@@ -9,7 +9,7 @@
 ## Summary
 
 Add a new `cli` package that becomes the project's single entry point
-(`repo-scanner`, replacing `repo_scanner.cli:app` as the `pyproject.toml`
+(`codepedia`, replacing `repo_scanner.cli:app` as the `pyproject.toml`
 console-script target — research.md §3), exposing four commands: `index`
 (runs the full pipeline — scan 001, parse/extract 002/003, persist 005,
 build the dependency graph 004, summarize 010, embed 006/007/009, generate
@@ -21,7 +21,7 @@ then starts the local web server 014/015 and prints its URL); `serve` (loads an
 already-indexed repository's state, wires the repository watcher 017 to
 the incremental reindexing pipeline 018, and starts the same local web
 server); `config` (reads/writes a new machine-wide `CLIConfiguration` at
-`~/.repo-scanner/config.json`, choosing the local LLM model and embedding
+`~/.codepedia/config.json`, choosing the local LLM model and embedding
 model `index`/`serve` use); and the pre-existing `scan` (001, unchanged,
 re-registered under the same entry point). Every command that touches the
 local LLM or embedding model checks availability
@@ -48,9 +48,9 @@ plus `embedding_engine`'s new `listInstalledModels` — research.md §5),
 `doc_generator` (012), `chat_api.create_app` + `uvicorn` (014/015),
 `repo_watcher` (017), and `reindex_pipeline` (018).
 
-**Storage**: One new machine-wide JSON file, `~/.repo-scanner/config.json`
+**Storage**: One new machine-wide JSON file, `~/.codepedia/config.json`
 (`CLIConfiguration` — research.md §4), plus one new per-repository
-directory tree, `~/.repo-scanner/repos/<state-id>/`, holding the same
+directory tree, `~/.codepedia/repos/<state-id>/`, holding the same
 SQLite files (`repository_metadata`, `dependency_graph`, `vector_index`,
 `doc_generator`'s manifest) and generated `docs/` output every existing
 component already produces — just written to a new, home-directory
@@ -89,7 +89,7 @@ with no prior index rather than serving an empty result (spec FR).
 
 **Scale/Scope**: One CLI process per invocation (`index`/`serve` run as a
 single long-lived foreground process once started; `config` and `scan`
-are short-lived); one `~/.repo-scanner/repos/<state-id>/` directory per
+are short-lived); one `~/.codepedia/repos/<state-id>/` directory per
 distinct repository path a developer has indexed, with no ceiling assumed
 beyond normal local disk usage.
 
@@ -105,7 +105,7 @@ beyond normal local disk usage.
 | 2.4 Traçabilité des réponses IA | The CLI does not change how summaries/chat answers are attributed to source symbols — it only triggers `CodeSummaryPipeline` (010) and `chat_api` (014), whose existing citation behavior is untouched | PASS |
 | 2.5 Ré-indexation incrémentale | `serve` never re-runs the full pipeline on a change — it wires the existing watcher (017) and incremental pipeline (018), which already guarantee this; `index` itself is always a full run, by design (spec Assumptions) | PASS |
 | 2.6 Infrastructure minimale et stockage local | No new dependency; `CLIConfiguration` is one small JSON file; per-repository state reuses the exact SQLite files every underlying component already owns (research.md §4) | PASS |
-| 2.7 Dépôt analysé en lecture seule | All CLI-managed state (`config.json`, per-repository SQLite files, generated `docs/`) is written under `~/.repo-scanner/`, never under the analyzed repository root — stricter than `chat_api/server.py`'s existing default, which this feature does not use (research.md §4) | PASS |
+| 2.7 Dépôt analysé en lecture seule | All CLI-managed state (`config.json`, per-repository SQLite files, generated `docs/`) is written under `~/.codepedia/`, never under the analyzed repository root — stricter than `chat_api/server.py`'s existing default, which this feature does not use (research.md §4) | PASS |
 
 No violations identified; Complexity Tracking is not needed for this feature.
 
@@ -132,7 +132,7 @@ src/
 │   ├── main.py                        # Typer `app`; registers scan/index/serve/config
 │   │                                  # (pyproject.toml [project.scripts] target)
 │   ├── config.py                      # CLIConfiguration dataclass + load_config()/
-│   │                                  # save_config() at ~/.repo-scanner/config.json
+│   │                                  # save_config() at ~/.codepedia/config.json
 │   │                                  # (research.md §4), plus documented default
 │   │                                  # LLM/embedding model constants
 │   ├── paths.py                       # state_id(root), repo_state_dir(root), and the
@@ -187,7 +187,7 @@ tests/
                                       # contracts/cli-interface.md (exit codes, error
                                       # message categories, unchanged `scan` output)
 
-pyproject.toml                         # [project.scripts]: repo-scanner =
+pyproject.toml                         # [project.scripts]: codepedia =
                                       # "repo_scanner.cli:app" -> "cli.main:app"
                                       # (research.md §3)
 ```

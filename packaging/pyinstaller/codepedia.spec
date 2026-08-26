@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller build spec for the standalone `repo-scanner` binary
+"""PyInstaller build spec for the standalone `codepedia` binary
 (specs/020-cli-packaging, research.md sections 2-4).
 
-Build with: pyinstaller packaging/pyinstaller/repo-scanner.spec
+Build with: pyinstaller packaging/pyinstaller/codepedia.spec
 (see packaging/build.py for the maintainer-facing wrapper around this).
 """
 
@@ -13,12 +13,12 @@ from PyInstaller.utils.hooks import copy_metadata
 REPO_ROOT = Path(SPECPATH).resolve().parent.parent  # noqa: F821 (SPECPATH is injected by PyInstaller)
 SRC = REPO_ROOT / "src"
 
-# copy_metadata("repo-scanner") bundles the installed distribution's
+# copy_metadata("codepedia") bundles the installed distribution's
 # .dist-info/METADATA into the frozen app, so `importlib.metadata.version(
-# "repo-scanner")` - what `cli.main`'s `--version` flag calls - can find it
+# "codepedia")` - what `cli.main`'s `--version` flag calls - can find it
 # at runtime even though there is no real site-packages install inside a
 # one-file binary (research.md section 4).
-datas = copy_metadata("repo-scanner")
+datas = copy_metadata("codepedia")
 
 # doc_generator's Jinja templates and static assets are loaded by path at
 # runtime, so PyInstaller's static import analysis can't discover them on
@@ -33,7 +33,7 @@ datas += [
 # grammar module by name from a lookup table (importlib-style dynamic
 # import), which PyInstaller's static analysis cannot follow - every
 # grammar package declared in pyproject.toml's dependencies must be listed
-# here explicitly, or `repo-scanner index` would fail to parse that
+# here explicitly, or `codepedia index` would fail to parse that
 # language's files only inside the frozen binary (research.md sections 2-3).
 hiddenimports = [
     "tree_sitter",
@@ -67,7 +67,7 @@ exe = EXE(  # noqa: F821
     a.zipfiles,
     a.datas,
     [],
-    name="repo-scanner",
+    name="codepedia",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -8,7 +8,7 @@
 
 ## Summary
 
-Produce a standalone, single-file `repo-scanner` executable per supported OS
+Produce a standalone, single-file `codepedia` executable per supported OS
 (Windows/macOS/Linux) via PyInstaller — the Python-ecosystem equivalent of
 the `pkg`/`Nexe` standalone-binary approach named in this plan's input,
 since those two tools are Node.js-only and this project's CLI (019) is
@@ -50,10 +50,10 @@ either.
 
 **Storage**: N/A for the feature's own behavior. The install scripts write
 exactly one file to a fixed, user-writable location (`~/.local/bin/
-repo-scanner` on macOS/Linux, `%LOCALAPPDATA%\repo-scanner\repo-scanner.exe`
+codepedia` on macOS/Linux, `%LOCALAPPDATA%\codepedia\codepedia.exe`
 on Windows — research.md §5); no other runtime state is introduced.
 Per-repository state and configuration remain exactly as 019 defined them
-(`~/.repo-scanner/`), unaffected by how the CLI itself was installed.
+(`~/.codepedia/`), unaffected by how the CLI itself was installed.
 
 **Testing**: `pytest` is unaffected (no CLI *behavior* changes except the
 new `--version` flag, which gets a normal unit/contract test). Verifying
@@ -81,7 +81,7 @@ scripts + a maintainer build helper), and one small source change
 **Performance Goals**: No new functional performance target — this feature
 does not change what any command computes. Soft goal: PyInstaller's
 one-file bootstrap (which unpacks to a temp directory on each run) should
-not make `repo-scanner --version`/`scan` feel unresponsive; kept as a
+not make `codepedia --version`/`scan` feel unresponsive; kept as a
 documented expectation, not a numeric spec requirement, since the spec
 itself sets no performance criterion for packaging.
 
@@ -112,8 +112,8 @@ versions side by side on the same machine.
 | 2.3 Jamais de repli silencieux vers le cloud | Unaffected — availability checks (019) are untouched; packaging only changes how the already-built CLI is obtained | PASS |
 | 2.4 Traçabilité des réponses IA | Unaffected — no change to summary/chat citation behavior | PASS |
 | 2.5 Ré-indexation incrémentale | Unaffected — no change to the watcher/incremental pipeline (017/018) | PASS |
-| 2.6 Infrastructure minimale et stockage local | This principle governs the tool's own *runtime* storage/infrastructure (embedded SQLite + local file-based vector index, no external DB/broker/cloud component while `repo-scanner` is running) — unaffected here. GitHub Releases (research.md §7) is used only as a one-time, install-time distribution channel, not as infrastructure the running tool depends on; the install scripts write exactly one local file and the build process is a manual, maintainer-run script (research.md §8), adding no new hosted runtime infrastructure | PASS |
-| 2.7 Dépôt analysé en lecture seule | Unaffected — the binary writes to the same `~/.repo-scanner/` location 019 established, never to the analyzed repository | PASS |
+| 2.6 Infrastructure minimale et stockage local | This principle governs the tool's own *runtime* storage/infrastructure (embedded SQLite + local file-based vector index, no external DB/broker/cloud component while `codepedia` is running) — unaffected here. GitHub Releases (research.md §7) is used only as a one-time, install-time distribution channel, not as infrastructure the running tool depends on; the install scripts write exactly one local file and the build process is a manual, maintainer-run script (research.md §8), adding no new hosted runtime infrastructure | PASS |
+| 2.7 Dépôt analysé en lecture seule | Unaffected — the binary writes to the same `~/.codepedia/` location 019 established, never to the analyzed repository | PASS |
 
 No violations identified; Complexity Tracking is not needed for this feature.
 
@@ -136,12 +136,12 @@ specs/020-cli-packaging/
 ```text
 packaging/                             # New directory for this feature
 ├── pyinstaller/
-│   └── repo-scanner.spec              # PyInstaller build spec: entry point
+│   └── codepedia.spec              # PyInstaller build spec: entry point
 │                                      # (cli.main:app), hidden imports for every
 │                                      # tree-sitter-* grammar, data files for
 │                                      # doc_generator/templates and
 │                                      # doc_generator/assets, copy_metadata
-│                                      # ("repo-scanner") so --version works in
+│                                      # ("codepedia") so --version works in
 │                                      # the frozen binary (research.md §2-4)
 ├── build.py                           # Maintainer-run helper: invokes PyInstaller
 │                                      # for the current OS, verifies the produced
@@ -151,16 +151,16 @@ packaging/                             # New directory for this feature
 ├── install.sh                         # POSIX one-line installer: detects OS/arch,
 │                                      # downloads the matching asset from the
 │                                      # latest GitHub Release, installs to
-│                                      # ~/.local/bin/repo-scanner, adds it to PATH
+│                                      # ~/.local/bin/codepedia, adds it to PATH
 │                                      # if missing (research.md §5)
 └── install.ps1                        # Windows installer: same, installs to
-                                       # %LOCALAPPDATA%\repo-scanner\repo-scanner.exe
+                                       # %LOCALAPPDATA%\codepedia\codepedia.exe
                                        # and updates the user PATH via the registry
                                        # (research.md §5)
 
 src/cli/main.py                        # + --version flag / version callback,
                                        # reading importlib.metadata.version(
-                                       # "repo-scanner") (FR-006, research.md §4)
+                                       # "codepedia") (FR-006, research.md §4)
 
 pyproject.toml                         # + [tool.setuptools.package-data] for
                                        # doc_generator (templates/*.jinja,

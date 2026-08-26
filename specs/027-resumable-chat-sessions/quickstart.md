@@ -5,9 +5,9 @@ chat API (`src/chat_api`), reusing the same server setup as specs 014/025/026.
 
 ## Prerequisites
 
-- A repository already indexed (`repo-scanner index ...`) so the local
+- A repository already indexed (`codepedia index ...`) so the local
   embedding engine and LLM engine are available.
-- The local web server running (`repo-scanner serve ...`), exposing the
+- The local web server running (`codepedia serve ...`), exposing the
   chat API on `127.0.0.1` (see `docs/quickstart.md` / spec 015 for exact
   invocation).
 - `curl` or any local HTTP client capable of reading a streamed response.
@@ -22,7 +22,7 @@ chat API (`src/chat_api`), reusing the same server setup as specs 014/025/026.
    curl -s -X POST http://127.0.0.1:8000/sessions/<id>/messages \
      -H "Content-Type: application/json" -d '{"question": "What does this repo do?"}'
    ```
-2. Restart the local server process (`Ctrl+C`, then re-run `repo-scanner
+2. Restart the local server process (`Ctrl+C`, then re-run `codepedia
    serve ...`) to prove listing does not depend on the in-memory cache.
 3. List sessions:
    ```sh

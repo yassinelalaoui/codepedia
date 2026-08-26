@@ -336,12 +336,12 @@ mounted as `app.add_typer(provider_app, name="provider")` in `cli/main.py`
 (the first nested command group in this codebase — every existing command
 is currently flat — but an idiomatic, supported Typer pattern). Two
 commands, matching the plan input exactly:
-- `repo-scanner provider chain set <stage> <provider:model> [<provider:model> ...]`
+- `codepedia provider chain set <stage> <provider:model> [<provider:model> ...]`
   — `stage` restricted to `embeddings|summary|chat`; the ordered positional
   arguments become that stage's new chain, validated (non-empty, each entry
   parses, no chain-breaking values) and saved the same way `run_config`
   validates-then-`save_config`s today.
-- `repo-scanner provider mode full-local` — atomically sets all three chains
+- `codepedia provider mode full-local` — atomically sets all three chains
   to `("local:nomic-embed-text",)` / `("local:qwen2.5-coder",)` /
   `("local:qwen2.5-coder",)` in one `save_config` call (one write, not three
   sequential ones, so a crash mid-way can't leave only some chains switched).

@@ -1,6 +1,6 @@
 # Packaging & Release Process (maintainers)
 
-How a maintainer builds and publishes a `repo-scanner` release.
+How a maintainer builds and publishes a `codepedia` release.
 
 See also: `specs/020-cli-packaging/research.md`,
 `specs/020-cli-packaging/contracts/packaging-interface.md`, and
@@ -9,7 +9,7 @@ See also: `specs/020-cli-packaging/research.md`,
 ## 1. Bump the version
 
 Update `[project].version` in `pyproject.toml` (the single source of truth
-`repo-scanner --version` reads at runtime via `importlib.metadata`,
+`codepedia --version` reads at runtime via `importlib.metadata`,
 research.md section 4). Commit and push that change to `main` first.
 
 ## 2. Build and publish via GitHub Actions (primary path)
@@ -22,7 +22,7 @@ git push origin v0.1.0
 ```
 
 This triggers `.github/workflows/release.yml`, which builds
-`repo-scanner` on a real Windows runner (PyInstaller does not
+`codepedia` on a real Windows runner (PyInstaller does not
 cross-compile, so each OS genuinely builds its own binary — see
 research.md §9 for the x86_64-only scope), renames it per the
 release-asset naming contract, and then automatically creates a GitHub
@@ -56,11 +56,11 @@ python -m pip install -e ".[build]"
 python packaging/build.py
 ```
 
-This produces `dist/repo-scanner` (`dist/repo-scanner.exe` on Windows) and
+This produces `dist/codepedia` (`dist/codepedia.exe` on Windows) and
 smoke-tests it (`--version` and `scan` against a throwaway repository)
 before reporting success. Repeat on each OS, renaming each binary per
 `specs/020-cli-packaging/contracts/packaging-interface.md`'s "Release
-asset naming" table (`repo-scanner-<version>-<os>-x86_64[.exe]`), then
+asset naming" table (`codepedia-<version>-<os>-x86_64[.exe]`), then
 attach them plus `install.sh`/`install.ps1` to a GitHub Release yourself.
 
 ### Troubleshooting: `RuntimeError: Execution of 'copyfile'/'set_exe_build_timestamp' failed`
@@ -87,7 +87,7 @@ Two distinct causes produce this same PyInstaller error on Windows:
   enforced, and no recognizable EDR service/process running. Copying the
   raw PyInstaller bootloader file standalone also succeeds. Only
   PyInstaller's own final step — finishing a complete, previously-unseen
-  `repo-scanner.exe` — fails, consistently, every time. `icacls` on the
+  `codepedia.exe` — fails, consistently, every time. `icacls` on the
   project folder showed a local group named `CodexSandboxUsers` with
   Modify-only rights applied specifically to that folder, which is likely
   the actual cause: something related to AI-coding-agent tooling
@@ -103,5 +103,5 @@ Two distinct causes produce this same PyInstaller error on Windows:
 Follow `specs/020-cli-packaging/quickstart.md` Scenario 2 (and ideally
 3-10) against the new release before announcing it — in particular, confirm
 `curl -fsSL <release-url>/install.sh | sh` / `irm <release-url>/install.ps1
-| iex` resolve to this release's assets and that `repo-scanner --version`
+| iex` resolve to this release's assets and that `codepedia --version`
 reports the version from step 1 afterward.

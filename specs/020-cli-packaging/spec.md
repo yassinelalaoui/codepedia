@@ -10,7 +10,7 @@
 
 ## Overview
 
-Package the existing `repo-scanner` CLI (019) so a developer or a technical
+Package the existing `codepedia` CLI (019) so a developer or a technical
 team can install it as a standalone command-line tool with a single command,
 without first setting up the project's own development environment (cloning
 the source repository, creating a build environment, installing the

@@ -1,4 +1,4 @@
-# Repo Scanner
+# Codepedia
 
 A local tool that turns a source code repository into a browsable,
 AI-summarized, searchable documentation wiki — and keeps that wiki current
@@ -51,8 +51,8 @@ picture and *why* it's built this way.
   provider by default on a fresh install (Groq for summaries/chat, OpenAI
   for embeddings) — disclosed once, blockingly, the first time any of these
   run, and again whenever the configured providers actually change. Run
-  `repo-scanner provider mode full-local` to switch every stage to a local
-  model instead, or `repo-scanner provider chain set <stage> <provider:model>...`
+  `codepedia provider mode full-local` to switch every stage to a local
+  model instead, or `codepedia provider chain set <stage> <provider:model>...`
   to configure a specific stage's try-in-order provider chain (e.g. a
   remote provider with a local fallback). A chain with more than one
   provider fails over automatically on a network/rate-limit/auth failure —
@@ -95,14 +95,14 @@ picture and *why* it's built this way.
   the fresh-install defaults, disclosed before first use — **or** a local
   LLM/embedding runtime exposing an Ollama-compatible API on `localhost`
   (e.g. [Ollama](https://ollama.com) itself), selected via
-  `repo-scanner provider mode full-local`. A local runtime is a separate,
+  `codepedia provider mode full-local`. A local runtime is a separate,
   external prerequisite the installer below does not and cannot include —
-  install and start it yourself if you choose that mode; `repo-scanner
+  install and start it yourself if you choose that mode; `codepedia
   index`/`serve` detect and report clearly if a configured provider isn't
   reachable, rather than failing silently.
-  - **Needs one of the above**: `repo-scanner index`, and the AI-backed
-    parts of `repo-scanner serve` (summarization, embedding, chat).
-  - **Doesn't need either**: `repo-scanner scan`, `repo-scanner config`
+  - **Needs one of the above**: `codepedia index`, and the AI-backed
+    parts of `codepedia serve` (summarization, embedding, chat).
+  - **Doesn't need either**: `codepedia scan`, `codepedia config`
     (configuring or viewing your settings works regardless of what's
     installed/configured yet).
 - **Node.js 18+ / npm** — only needed if you're working on the wiki UI
@@ -111,33 +111,33 @@ picture and *why* it's built this way.
 
 ## Install
 
-Install `repo-scanner` as a standalone binary with one command — no
+Install `codepedia` as a standalone binary with one command — no
 Python, no `git clone`, no manually created virtual environment:
 
 ```bash
-curl -fsSL https://github.com/yassinelalaoui/repo-scanner/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/yassinelalaoui/codepedia/releases/latest/download/install.sh | sh
 ```
 
 ```powershell
-irm https://github.com/yassinelalaoui/repo-scanner/releases/latest/download/install.ps1 | iex
+irm https://github.com/yassinelalaoui/codepedia/releases/latest/download/install.ps1 | iex
 ```
 
 Then verify it worked:
 
 ```bash
-repo-scanner --version
+codepedia --version
 ```
 
 Running the same command again upgrades an existing install to the latest
 release in place. To uninstall, delete the single installed file:
 
 ```bash
-rm ~/.local/bin/repo-scanner                                     # macOS/Linux
-Remove-Item "$env:LOCALAPPDATA\repo-scanner\repo-scanner.exe"    # Windows
+rm ~/.local/bin/codepedia                                     # macOS/Linux
+Remove-Item "$env:LOCALAPPDATA\codepedia\codepedia.exe"    # Windows
 ```
 
-Per-repository state and configuration `repo-scanner` writes (see
-`~/.repo-scanner/` below) is untouched by either command.
+Per-repository state and configuration `codepedia` writes (see
+`~/.codepedia/` below) is untouched by either command.
 
 See `specs/020-cli-packaging/contracts/packaging-interface.md` for the
 full install/uninstall contract and [`packaging/README.md`](packaging/README.md)
@@ -145,7 +145,7 @@ for how releases are built and published.
 
 ### Installing from source (for contributors)
 
-Working on `repo-scanner` itself, rather than just using it, still uses an
+Working on `codepedia` itself, rather than just using it, still uses an
 editable Python install:
 
 ```bash
@@ -165,7 +165,7 @@ npm install
 
 ## Running it
 
-`repo-scanner` is the single command-line entry point, with four subcommands:
+`codepedia` is the single command-line entry point, with four subcommands:
 
 **Index a repository** — the one-command path from a fresh repository to a
 browsable wiki. Scans, parses, extracts symbols, builds the dependency
@@ -173,7 +173,7 @@ graph, generates summaries and embeddings, renders the wiki, then starts
 serving it and prints the local URL:
 
 ```bash
-repo-scanner index /path/to/some/repository
+codepedia index /path/to/some/repository
 ```
 
 On a fresh install, `index` uses named remote providers by default —
@@ -190,14 +190,14 @@ API from the previous `index` run and activates the repository watcher, so
 saved edits are reflected automatically without re-running `index`:
 
 ```bash
-repo-scanner serve /path/to/some/repository
+codepedia serve /path/to/some/repository
 ```
 
 **Switch everything to fully local** — one action, atomically sets all
 three stages to a local model and re-discloses immediately:
 
 ```bash
-repo-scanner provider mode full-local
+codepedia provider mode full-local
 ```
 
 **Configure a specific stage's provider chain** — try-in-order, so a chain
@@ -207,8 +207,8 @@ auth failure (never silently, never outside this list):
 ```bash
 export GROQ_API_KEY=...       # for a groq: entry
 export OPENAI_API_KEY=...     # for an openai: entry - neither key is ever stored by this tool
-repo-scanner provider chain set chat groq:openai/gpt-oss-20b local:qwen2.5-coder
-repo-scanner provider chain set embeddings openai:text-embedding-3-small
+codepedia provider chain set chat groq:openai/gpt-oss-20b local:qwen2.5-coder
+codepedia provider chain set embeddings openai:text-embedding-3-small
 ```
 
 **Set connection settings** (endpoint/timeout) for any `local:` chain entry —
@@ -216,15 +216,15 @@ this does not change which providers a stage uses, only how a `local:` one
 is reached:
 
 ```bash
-repo-scanner config --llm-model <your-local-model-name> --embedding-model <your-embedding-model-name>
-repo-scanner config --show   # view the current configuration and chains
+codepedia config --llm-model <your-local-model-name> --embedding-model <your-embedding-model-name>
+codepedia config --show   # view the current configuration and chains
 ```
 
 **Scan a repository only** (no local LLM needed) — prints a JSON inventory
 of its source files, unchanged from the original scanner (001):
 
 ```bash
-repo-scanner scan /path/to/some/repository
+codepedia scan /path/to/some/repository
 # or: python -m repo_scanner scan /path/to/some/repository
 ```
 
@@ -271,7 +271,7 @@ src/            One Python package per feature (repo_scanner, parser_engine,
                  dependency_graph, repository_metadata, embedding_engine,
                  local_llm, chat, doc_generator, chat_api, repo_watcher,
                  reindex_pipeline, vector_index, cli) - see docs/architecture.md
-                 for what each one owns. cli/ is the repo-scanner console
+                 for what each one owns. cli/ is the codepedia console
                  entry point ([project.scripts] in pyproject.toml).
 frontend/       The wiki UI (React + TypeScript + Vite), built into
                  src/doc_generator/assets/.

@@ -1,6 +1,6 @@
 # Quickstart: Validating Provider Fallback Chains
 
-Prerequisites: a fresh checkout with no `~/.repo-scanner` (or equivalent
+Prerequisites: a fresh checkout with no `~/.codepedia` (or equivalent
 `paths.config_path()`) config file yet, so defaults genuinely apply; a
 `GROQ_API_KEY` and `OPENAI_API_KEY` in the environment for Scenarios 1 and
 3; Ollama running locally with `nomic-embed-text` and `qwen2.5-coder`
@@ -12,28 +12,28 @@ pip install -e .
 
 ## Scenario 1 — Zero-config install routes to the named remote defaults (User Story 1)
 
-1. With no prior configuration, run: `repo-scanner index <a small test repo>`.
+1. With no prior configuration, run: `codepedia index <a small test repo>`.
 2. **Expect**: the blocking disclosure appears first, naming
    `openai:text-embedding-3-small` (embeddings), `groq:llama-3.3-70b-versatile`
    (summary and chat), and the exact `provider mode full-local` command to
    opt out — and the run does not proceed until it's acknowledged
    (`y`/confirm at the prompt) (FR-012/FR-013).
 3. **Expect**: after acknowledging, indexing actually produces summaries via
-   Groq and embeddings via OpenAI — confirm via `repo-scanner config --show`-equivalent
+   Groq and embeddings via OpenAI — confirm via `codepedia config --show`-equivalent
    status output showing both chains, and via the produced wiki's rendered
    summaries.
-4. Run `repo-scanner index` again on the same repo, unchanged configuration.
+4. Run `codepedia index` again on the same repo, unchanged configuration.
    **Expect**: the disclosure does NOT block again (SC-006 — only shown "at
    meaningful configuration moments," per an unchanged signature).
 
 ## Scenario 2 — One action switches everything to fully local (User Story 2)
 
-1. `repo-scanner provider mode full-local`.
+1. `codepedia provider mode full-local`.
 2. **Expect**: the disclosure/config-change gate fires once for this change
    (a chain changed, so the signature is stale) — acknowledge it.
-3. **Expect**: `repo-scanner config`-equivalent status output now shows all
+3. **Expect**: `codepedia config`-equivalent status output now shows all
    three chains as `local:...` entries only.
-4. Run `repo-scanner index` on a repository. **Expect**: zero outbound
+4. Run `codepedia index` on a repository. **Expect**: zero outbound
    network calls to Groq or OpenAI (verify via a network monitor or by
    unsetting `GROQ_API_KEY`/`OPENAI_API_KEY` beforehand and confirming the
    run still succeeds, proving neither was contacted) — indexing completes
@@ -41,12 +41,12 @@ pip install -e .
 
 ## Scenario 3 — Automatic failover within a two-provider chain (User Story 3)
 
-1. `repo-scanner provider chain set chat groq:llama-3.3-70b-versatile local:qwen2.5-coder`
+1. `codepedia provider chain set chat groq:llama-3.3-70b-versatile local:qwen2.5-coder`
    (acknowledge the resulting disclosure).
 2. Simulate Groq unavailability: temporarily unset `GROQ_API_KEY` (or point
    `GROQ_API_KEY` at an invalid value to force an auth failure), with Ollama
    running locally.
-3. Ask a chat question against an indexed repository (`repo-scanner serve`
+3. Ask a chat question against an indexed repository (`codepedia serve`
    + a chat request, or the equivalent contract test).
 4. **Expect**: the answer is still produced (via the local engine); the
    response's `generatedBy` field reads `local:qwen2.5-coder`; a
@@ -63,7 +63,7 @@ pip install -e .
 1. With the default remote embedding chain, index a repository (embeddings
    via OpenAI `text-embedding-3-small`).
 2. Switch to local embeddings only:
-   `repo-scanner provider chain set embeddings local:nomic-embed-text`
+   `codepedia provider chain set embeddings local:nomic-embed-text`
    (acknowledge the gate), then modify and re-index one file so at least
    one new chunk is embedded via the local engine while the rest of the
    repository's chunks remain OpenAI-embedded.

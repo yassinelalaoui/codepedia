@@ -4,7 +4,7 @@
 `cli/main.py`); new blocking disclosure enforced in `cli/main.py`'s Typer
 callback.
 
-## `repo-scanner provider chain set <stage> <providerRef> [<providerRef> ...]`
+## `codepedia provider chain set <stage> <providerRef> [<providerRef> ...]`
 
 - `stage`: one of `embeddings`, `summary`, `chat` (exact match, case-sensitive
   — same validation style as `LLM_PROVIDERS` today). Any other value exits
@@ -24,7 +24,7 @@ callback.
 - Prints the new chain back, mirroring `run_config`'s existing
   "Configuration saved."-then-status-echo pattern.
 
-## `repo-scanner provider mode full-local`
+## `codepedia provider mode full-local`
 
 - No arguments. Atomically sets all three chains in one `save_config` call:
   `embeddingChain=("local:nomic-embed-text",)`,

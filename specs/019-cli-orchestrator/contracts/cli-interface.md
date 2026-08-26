@@ -5,10 +5,10 @@
 Define the command surface a developer invokes to go from a local
 repository to a browsable documentation wiki, to keep that wiki current
 while working, and to choose which local models power both — the single
-entry point (`repo-scanner`) this feature adds to the project, superseding
+entry point (`codepedia`) this feature adds to the project, superseding
 `repo_scanner.cli:app` as the `[project.scripts]` target (research.md §3).
 
-## Command: `repo-scanner index [PATH] [--host HOST] [--port PORT]`
+## Command: `codepedia index [PATH] [--host HOST] [--port PORT]`
 
 **Inputs**:
 - `PATH` (optional, positional): repository root to index. Defaults to the
@@ -56,7 +56,7 @@ entry point (`repo-scanner`) this feature adds to the project, superseding
   crashed mid-run) — the staging directory is discarded and any prior
   successful `RepositoryState` is left untouched (research.md §10).
 
-## Command: `repo-scanner serve [PATH] [--host HOST] [--port PORT]`
+## Command: `codepedia serve [PATH] [--host HOST] [--port PORT]`
 
 **Inputs**: identical to `index` (`PATH`, `--host`, `--port`).
 
@@ -66,7 +66,7 @@ entry point (`repo-scanner`) this feature adds to the project, superseding
 - Requires a prior successful `index` run for the resolved `PATH`
   (`RepositoryMetadataStore.load_repository_record` finds a record,
   `data-model.md`); fails with a message directing the developer to run
-  `repo-scanner index` first otherwise, and does not start a server.
+  `codepedia index` first otherwise, and does not start a server.
 - Loads the existing `RepositoryState` (dependency graph, vector index,
   doc manifest) rather than rebuilding it.
 - Starts the repository watcher (017) wired to the incremental reindexing
@@ -85,7 +85,7 @@ entry point (`repo-scanner`) this feature adds to the project, superseding
 - `1`: no prior index exists for `PATH`.
 - `1`: the web server could not bind to `--host`/`--port`.
 
-## Command: `repo-scanner config [--llm-model NAME] [--llm-endpoint URL] [--llm-generate-timeout SECONDS] [--embedding-model NAME] [--embedding-endpoint URL] [--embedding-generate-timeout SECONDS] [--show]`
+## Command: `codepedia config [--llm-model NAME] [--llm-endpoint URL] [--llm-generate-timeout SECONDS] [--embedding-model NAME] [--embedding-endpoint URL] [--embedding-generate-timeout SECONDS] [--show]`
 
 **Inputs**: all optional.
 - `--llm-model` / `--llm-endpoint`: new values for the LLM side of
@@ -118,7 +118,7 @@ entry point (`repo-scanner`) this feature adds to the project, superseding
   write.
 - With one or more model/endpoint flags: validates any given endpoint URL
   (`normalize_endpoint_url`), saves the resulting `CLIConfiguration` to
-  `~/.repo-scanner/config.json`, and prints a warning (not a failure) for
+  `~/.codepedia/config.json`, and prints a warning (not a failure) for
   any newly set model name absent from that endpoint's
   `listInstalledModels()` result.
 - Never fails solely because a selected model isn't installed yet — saving
@@ -130,15 +130,15 @@ entry point (`repo-scanner`) this feature adds to the project, superseding
 - `1`: an endpoint URL flag fails local-only validation (points off
   `localhost`/`127.0.0.1`, wrong scheme, etc.).
 
-## Command: `repo-scanner scan PATH`
+## Command: `codepedia scan PATH`
 
 **Inputs**: `PATH` (required, positional) — unchanged from spec 001.
 
 **Expected behavior**: unchanged — thin delegation to
 `repo_scanner.scanner.scan_repository` /
 `repo_scanner.output.serialize_scan_result` (research.md §3), preserving
-`specs/001-local-repo-scanner/contracts/cli.md` exactly. Included here only
-because it now lives under the same `repo-scanner` entry point as
+`specs/001-local-codepedia/contracts/cli.md` exactly. Included here only
+because it now lives under the same `codepedia` entry point as
 `index`/`serve`/`config`, not because this feature changes its behavior.
 
 ## Error message expectations (all commands)

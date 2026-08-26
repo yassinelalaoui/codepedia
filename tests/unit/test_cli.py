@@ -21,7 +21,7 @@ from local_llm.models import AvailabilityStatus
 @pytest.fixture()
 def cli_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    monkeypatch.setattr(cli.paths, "repo_scanner_home", lambda: home)
+    monkeypatch.setattr(cli.paths, "codepedia_home", lambda: home)
     return home
 
 
@@ -63,7 +63,7 @@ def test_llm_generate_timeout_defaults_and_round_trips(cli_home):
     5-second constant shared with the (much faster) availability check,
     with no way for a user whose local model is genuinely slower than that
     to configure it. It's now its own field, defaulting to a more realistic
-    120s, and configurable via `repo-scanner config --llm-generate-timeout`."""
+    120s, and configurable via `codepedia config --llm-generate-timeout`."""
     default = load_config()
     assert default.llmGenerateTimeout == 120.0
 
@@ -147,9 +147,9 @@ def test_state_id_differs_per_repository_path(tmp_path):
     assert first != second
 
 
-def test_repo_state_dir_is_scoped_under_repo_scanner_home(tmp_path, monkeypatch):
+def test_repo_state_dir_is_scoped_under_codepedia_home(tmp_path, monkeypatch):
     home = tmp_path / "custom-home"
-    monkeypatch.setattr(cli.paths, "repo_scanner_home", lambda: home)
+    monkeypatch.setattr(cli.paths, "codepedia_home", lambda: home)
 
     state_dir = cli.paths.repo_state_dir(tmp_path / "some-repo")
 
@@ -218,4 +218,4 @@ def test_version_flag_prints_the_installed_package_version_and_exits_zero():
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == importlib.metadata.version("repo-scanner")
+    assert result.output.strip() == importlib.metadata.version("codepedia")

@@ -101,7 +101,7 @@ every layer above; nothing depends on it.
 
 | Package | Responsibility |
 |---|---|
-| `cli` | The `repo-scanner` command (`index`/`serve`/`config`/`scan`/`provider`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active; `config` sets connection settings (endpoint/timeout) for any `local:` chain entry; `provider chain set <stage> <provider:model>...`/`provider mode full-local` (029) change which providers a stage's chain actually uses. A Typer-callback-enforced disclosure gate (`cli.disclosure`) blocks `index`/`serve`/`provider` until the operator explicitly acknowledges the three chains' current providers, re-triggered whenever that combination actually changes. |
+| `cli` | The `codepedia` command (`index`/`serve`/`config`/`scan`/`provider`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active; `config` sets connection settings (endpoint/timeout) for any `local:` chain entry; `provider chain set <stage> <provider:model>...`/`provider mode full-local` (029) change which providers a stage's chain actually uses. A Typer-callback-enforced disclosure gate (`cli.disclosure`) blocks `index`/`serve`/`provider` until the operator explicitly acknowledges the three chains' current providers, re-triggered whenever that combination actually changes. |
 
 ## Data flow
 
@@ -167,10 +167,10 @@ one file. All are plain files on local disk — no database server, per constitu
 
 Everything runs as **local processes on the developer's own machine**:
 
-- `repo-scanner index` (`cli`, layer 6) runs the full pipeline once as a
+- `codepedia index` (`cli`, layer 6) runs the full pipeline once as a
   short-lived phase, then becomes the same long-running server process
   described below for `chat_api`.
-- `repo-scanner serve` (`cli`) is the process that keeps the watcher +
+- `codepedia serve` (`cli`) is the process that keeps the watcher +
   reindex pipeline running continuously: it loads an already-indexed
   repository's state, starts `repo_watcher` (5) in-process, and hosts the
   same web server `index` does — the concrete case the watcher's own
@@ -265,6 +265,6 @@ the layer table above. A new feature usually:
 - **Ingestion & Analysis, Local AI Services, Knowledge Derivation, Presentation,
   Automation**: implemented (specs 001–018, provider chains/failover added by
   029).
-- **Entry Point**: implemented (spec 019) — `repo-scanner` is the project's
+- **Entry Point**: implemented (spec 019) — `codepedia` is the project's
   `[project.scripts]` console command; its `provider` subcommands and
   disclosure gate were added by 029.

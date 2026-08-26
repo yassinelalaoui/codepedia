@@ -1,18 +1,18 @@
-# Installs the standalone repo-scanner binary (specs/020-cli-packaging).
+# Installs the standalone codepedia binary (specs/020-cli-packaging).
 # Usage: irm <release-url>/install.ps1 | iex
 #
 # Downloads the Windows/x86_64 release asset from the latest GitHub Release
-# of yassinelalaoui/repo-scanner, installs it to
-# %LOCALAPPDATA%\repo-scanner\repo-scanner.exe, and adds that directory to
+# of yassinelalaoui/codepedia, installs it to
+# %LOCALAPPDATA%\codepedia\codepedia.exe, and adds that directory to
 # the user PATH if it isn't already there. Re-running this script upgrades
 # an existing install in place (research.md sections 5-6;
 # contracts/packaging-interface.md).
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "yassinelalaoui/repo-scanner"
-$InstallDir = Join-Path $env:LOCALAPPDATA "repo-scanner"
-$BinaryPath = Join-Path $InstallDir "repo-scanner.exe"
+$Repo = "yassinelalaoui/codepedia"
+$InstallDir = Join-Path $env:LOCALAPPDATA "codepedia"
+$BinaryPath = Join-Path $InstallDir "codepedia.exe"
 
 function Fail($Message) {
     Write-Error "Error: $Message"
@@ -21,7 +21,7 @@ function Fail($Message) {
 
 $arch = $env:PROCESSOR_ARCHITECTURE
 if ($arch -ne "AMD64") {
-    Fail "Unsupported architecture: $arch. repo-scanner currently only ships x86_64 (AMD64) binaries - see specs/020-cli-packaging/research.md section 9."
+    Fail "Unsupported architecture: $arch. codepedia currently only ships x86_64 (AMD64) binaries - see specs/020-cli-packaging/research.md section 9."
 }
 
 $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
@@ -39,14 +39,14 @@ try {
     }
 }
 
-$asset = $release.assets | Where-Object { $_.name -match "^repo-scanner-.*-windows-x86_64\.exe$" } | Select-Object -First 1
+$asset = $release.assets | Where-Object { $_.name -match "^codepedia-.*-windows-x86_64\.exe$" } | Select-Object -First 1
 if (-not $asset) {
-    Fail "No release asset found for windows-x86_64. This build of repo-scanner does not (yet) support this platform - see specs/020-cli-packaging/research.md section 9."
+    Fail "No release asset found for windows-x86_64. This build of codepedia does not (yet) support this platform - see specs/020-cli-packaging/research.md section 9."
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
-$tmpFile = Join-Path $env:TEMP "repo-scanner-download-$([guid]::NewGuid()).exe"
+$tmpFile = Join-Path $env:TEMP "codepedia-download-$([guid]::NewGuid()).exe"
 try {
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpFile -ErrorAction Stop
 } catch {
@@ -64,5 +64,5 @@ if (-not (";$userPath;" -like "*;$InstallDir;*")) {
 }
 
 $installedVersion = & $BinaryPath --version
-Write-Host "repo-scanner $installedVersion installed to $BinaryPath"
-Write-Host "Verify with: repo-scanner --version"
+Write-Host "codepedia $installedVersion installed to $BinaryPath"
+Write-Host "Verify with: codepedia --version"

@@ -1,7 +1,7 @@
 # Data Model: CLI Packaging & Distribution
 
 This feature introduces no new persisted runtime data — it changes how the
-already-existing `repo-scanner` CLI (019) is built and obtained, not what
+already-existing `codepedia` CLI (019) is built and obtained, not what
 it stores while running. The entities below (from spec.md's Key Entities)
 are conceptual: they describe the shape of the release/install process
 itself, not database rows.
@@ -13,10 +13,10 @@ single install command fetches and installs.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `version` | string | The `repo-scanner` version being released; matches `pyproject.toml`'s `[project].version` (research.md §4) — the single source of truth `--version` reads at runtime via `importlib.metadata`. |
+| `version` | string | The `codepedia` version being released; matches `pyproject.toml`'s `[project].version` (research.md §4) — the single source of truth `--version` reads at runtime via `importlib.metadata`. |
 | `targetOs` | enum: `windows` \| `macos` \| `linux` | One binary per OS (research.md §8/§9); PyInstaller does not cross-compile. |
 | `targetArch` | enum: `x86_64` | Fixed for this feature's scope (research.md §9). |
-| `binaryPath` | string | The single executable file produced by `packaging/build.py` (`dist/repo-scanner` or `dist/repo-scanner.exe`). |
+| `binaryPath` | string | The single executable file produced by `packaging/build.py` (`dist/codepedia` or `dist/codepedia.exe`). |
 | `releaseUrl` | string | The GitHub Release asset URL an install script downloads from (research.md §7). |
 
 Lifecycle: built manually by a maintainer per OS (`packaging/build.py`,

@@ -1,8 +1,8 @@
 # Implementation Plan: Local Repository Scanner
 
-Branch: `001-local-repo-scanner` | Date: 2026-08-10 | Spec: [spec.md](spec.md)
+Branch: `001-local-codepedia` | Date: 2026-08-10 | Spec: [spec.md](spec.md)
 
-Input: Feature specification from `/specs/001-local-repo-scanner/spec.md`
+Input: Feature specification from `/specs/001-local-codepedia/spec.md`
 
 ## Summary
 
@@ -46,7 +46,7 @@ GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.
 
 ### Documentation for this feature
 
-`specs/001-local-repo-scanner/`
+`specs/001-local-codepedia/`
 ├── `plan.md`
 ├── `research.md`
 ├── `data-model.md`

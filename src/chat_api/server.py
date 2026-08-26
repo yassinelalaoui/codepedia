@@ -22,14 +22,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--metadata-db",
         default=None,
-        help="Path to the vector index SQLite file (defaults to <repo>/.repo-scanner/vector-metadata.sqlite).",
+        help="Path to the vector index SQLite file (defaults to <repo>/.codepedia/vector-metadata.sqlite).",
     )
     parser.add_argument(
         "--repository-metadata-db",
         default=None,
         help="Path to the repository-metadata SQLite file used for chat session persistence (025; distinct "
         "from --metadata-db, which is the vector index's own file) - defaults to "
-        "<repo>/.repo-scanner/repository-metadata.sqlite.",
+        "<repo>/.codepedia/repository-metadata.sqlite.",
     )
     parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL_NAME)
     parser.add_argument("--embedding-endpoint", default=DEFAULT_EMBEDDING_ENDPOINT_URL)
@@ -62,12 +62,12 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     repo_root = Path(args.repo).expanduser().resolve()
     metadata_db = (
-        Path(args.metadata_db) if args.metadata_db else repo_root / ".repo-scanner" / "vector-metadata.sqlite"
+        Path(args.metadata_db) if args.metadata_db else repo_root / ".codepedia" / "vector-metadata.sqlite"
     )
     repository_metadata_db = (
         Path(args.repository_metadata_db)
         if args.repository_metadata_db
-        else repo_root / ".repo-scanner" / "repository-metadata.sqlite"
+        else repo_root / ".codepedia" / "repository-metadata.sqlite"
     )
 
     # This standalone entrypoint builds single-provider chains, each wrapped

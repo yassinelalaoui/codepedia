@@ -105,7 +105,7 @@ Project Structure). No frontend changes.
 - [X] T017 [P] [US3] Extend `tests/contract/test_local_llm_engine_interface.py`: assert `GroqLLMEngine` satisfies the same `LLMEngine` Protocol shape as `LocalLLMEngine` (`isAvailableLocally`, `checkAvailability`, `generate`, `generateStream`)
 - [X] T018 [P] [US3] Unit tests in `tests/unit/test_groq_llm_engine.py` (new file): `GroqLLMEngine.generateStream` yields fragments parsed from a fake Groq SSE response; `generate()` concatenates them; `checkAvailability()` reports a clear message when `GROQ_API_KEY` is unset or the endpoint is unreachable
 - [X] T019 [P] [US3] Unit tests in `tests/unit/test_local_llm.py` (extend): `create_llm_engine(config)` returns a `LocalLLMEngine` when `config.llmProvider == "local"` and a `GroqLLMEngine` when `"groq"`; it never returns a composite/fallback engine, and never consults the other provider regardless of availability (FR-014)
-- [X] T020 [P] [US3] Extend `tests/contract/test_cli_interface.py`: `repo-scanner config --llm-provider groq --remote-llm-model <name>` saves the config and prints the required disclosure before doing so; omitting `--remote-llm-model` with `--llm-provider groq` is rejected; `--llm-provider local` reverts cleanly
+- [X] T020 [P] [US3] Extend `tests/contract/test_cli_interface.py`: `codepedia config --llm-provider groq --remote-llm-model <name>` saves the config and prints the required disclosure before doing so; omitting `--remote-llm-model` with `--llm-provider groq` is rejected; `--llm-provider local` reverts cleanly
 
 ### Implementation for User Story 3
 

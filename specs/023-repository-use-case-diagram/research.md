@@ -53,7 +53,7 @@ this project itself, and renders through the same already-vendored, offline
 - Generating `-->|include|`/`-->|extend|` labeled edges between use cases,
   matching every visual detail of the hand-authored diagram — rejected: the
   hand-authored diagram's include/extend edges exist because some of its use
-  cases genuinely compose (e.g. `repo-scanner index` includes generating
+  cases genuinely compose (e.g. `codepedia index` includes generating
   summaries, embeddings, and docs). An entry point identified by 022 has no
   such composition relationship with another entry point; inventing one here
   would misrepresent the data. Only actor-to-use-case associations are

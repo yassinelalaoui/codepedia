@@ -2,7 +2,7 @@
 
 ## Command
 
-`repo-scanner scan <repo-path>`
+`codepedia scan <repo-path>`
 
 ## Purpose
 

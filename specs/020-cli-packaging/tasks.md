@@ -38,12 +38,12 @@ Single project layout (`plan.md`'s Structure Decision): new `packaging/` directo
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T003 [P] Add a `--version` flag/callback to `src/cli/main.py`'s Typer `app`, implemented as `importlib.metadata.version("repo-scanner")` (FR-006, research.md §4)
+- [X] T003 [P] Add a `--version` flag/callback to `src/cli/main.py`'s Typer `app`, implemented as `importlib.metadata.version("codepedia")` (FR-006, research.md §4)
 - [X] T004 [P] Add a unit test for the `--version` flag in `tests/unit/test_cli.py` (asserts it prints the version from `pyproject.toml` and exits 0)
-- [X] T005 [P] Add a contract test asserting the `--version` output format in `tests/contract/test_cli_interface.py`, matching `contracts/packaging-interface.md`'s "Command: `repo-scanner --version`" section
-- [X] T006 Create `packaging/pyinstaller/repo-scanner.spec`: entry point `cli.main:app`, one-file mode, `copy_metadata("repo-scanner")` so `--version` works inside the frozen binary (research.md §2, §4) — depends on T001, T003
-- [X] T007 Create `packaging/build.py`: a maintainer-run helper that invokes PyInstaller with `packaging/pyinstaller/repo-scanner.spec` for the current OS, producing `dist/repo-scanner` (or `dist/repo-scanner.exe`), then runs `--version` and `scan` against a throwaway repository through the freshly built binary as a smoke check before reporting success (research.md §8, quickstart.md Scenario 1) — depends on T006
-- [X] T008 Write `packaging/README.md` documenting the maintainer build + release process: running `packaging/build.py` per OS, and manually uploading `dist/repo-scanner[.exe]` plus `packaging/install.sh`/`packaging/install.ps1` as assets to a new GitHub Release, named per `contracts/packaging-interface.md`'s "Release asset naming" table (research.md §7, §8) — depends on T007
+- [X] T005 [P] Add a contract test asserting the `--version` output format in `tests/contract/test_cli_interface.py`, matching `contracts/packaging-interface.md`'s "Command: `codepedia --version`" section
+- [X] T006 Create `packaging/pyinstaller/codepedia.spec`: entry point `cli.main:app`, one-file mode, `copy_metadata("codepedia")` so `--version` works inside the frozen binary (research.md §2, §4) — depends on T001, T003
+- [X] T007 Create `packaging/build.py`: a maintainer-run helper that invokes PyInstaller with `packaging/pyinstaller/codepedia.spec` for the current OS, producing `dist/codepedia` (or `dist/codepedia.exe`), then runs `--version` and `scan` against a throwaway repository through the freshly built binary as a smoke check before reporting success (research.md §8, quickstart.md Scenario 1) — depends on T006
+- [X] T008 Write `packaging/README.md` documenting the maintainer build + release process: running `packaging/build.py` per OS, and manually uploading `dist/codepedia[.exe]` plus `packaging/install.sh`/`packaging/install.ps1` as assets to a new GitHub Release, named per `contracts/packaging-interface.md`'s "Release asset naming" table (research.md §7, §8) — depends on T007
 
 - [X] T035 [P] Create `.github/workflows/release.yml`: a tag-triggered
   (`vX.Y.Z`) build matrix on `windows-latest`/`macos-13`/`ubuntu-latest`
@@ -64,12 +64,12 @@ story implementation can now begin.
 
 **Goal**: A developer can install the CLI with exactly one command on a machine with no project-specific setup, confirm the install worked via `--version`, and know from the docs exactly what baseline the package itself requires.
 
-**Independent Test**: On a throwaway machine/container with no Python installed, run the one-line install command for that OS, then run `repo-scanner --version` in a new terminal and confirm it prints a version.
+**Independent Test**: On a throwaway machine/container with no Python installed, run the one-line install command for that OS, then run `codepedia --version` in a new terminal and confirm it prints a version.
 
 ### Implementation for User Story 1
 
-- [X] T009 [P] [US1] Write `packaging/install.sh`: detects OS/arch, downloads the matching asset from the latest GitHub Release, installs to `~/.local/bin/repo-scanner`, adds that directory to `PATH` (current user's shell profile) if not already present, prints the installed version and how to verify it; exits non-zero with a distinct message for "no network access" and for "no release asset matches this OS/arch" (research.md §5, §7; contracts/packaging-interface.md)
-- [X] T010 [P] [US1] Write `packaging/install.ps1`: same behavior as T009 for Windows — installs to `%LOCALAPPDATA%\repo-scanner\repo-scanner.exe`, adds it to the user `Path` via the registry if missing, same distinct-error behavior for no network / unsupported arch (research.md §5; contracts/packaging-interface.md)
+- [X] T009 [P] [US1] Write `packaging/install.sh`: detects OS/arch, downloads the matching asset from the latest GitHub Release, installs to `~/.local/bin/codepedia`, adds that directory to `PATH` (current user's shell profile) if not already present, prints the installed version and how to verify it; exits non-zero with a distinct message for "no network access" and for "no release asset matches this OS/arch" (research.md §5, §7; contracts/packaging-interface.md)
+- [X] T010 [P] [US1] Write `packaging/install.ps1`: same behavior as T009 for Windows — installs to `%LOCALAPPDATA%\codepedia\codepedia.exe`, adds it to the user `Path` via the registry if missing, same distinct-error behavior for no network / unsupported arch (research.md §5; contracts/packaging-interface.md)
 - [X] T011 [P] [US1] Document the package's own baseline prerequisite (a supported OS: Windows/macOS/Linux, x86_64 — research.md §9) in `README.md`'s install section, clearly distinct from the separately-installed local LLM engine prerequisite (FR-004)
 - [ ] T012 [US1] Manually validate `quickstart.md` Scenario 1 (build) and Scenario 2 (clean-machine install + `--version`) on a throwaway machine or container with no Python installed — depends on T006, T007, T009, T010, T035 (build may come from either a local `packaging/build.py` run or a CI-published release, per research.md §8's superseding decision)
 - [ ] T013 [US1] Manually validate `quickstart.md` Scenario 8 (`serve` and `config`, not just `index`/`scan`, are runnable immediately after install — FR-003) — depends on T012
@@ -82,18 +82,18 @@ story implementation can now begin.
 
 ## Phase 4: User Story 2 - Running the indexing command right after install (Priority: P2)
 
-**Goal**: A freshly installed binary can run `repo-scanner index` against a real repository successfully, proving the packaging didn't drop anything `index` needs at runtime.
+**Goal**: A freshly installed binary can run `codepedia index` against a real repository successfully, proving the packaging didn't drop anything `index` needs at runtime.
 
-**Independent Test**: On a machine with the binary installed (US1) and a local LLM engine already running, run `repo-scanner index <repo>` and confirm it completes; separately confirm the existing 019 "local LLM unreachable" error still appears unchanged when the engine isn't running.
+**Independent Test**: On a machine with the binary installed (US1) and a local LLM engine already running, run `codepedia index <repo>` and confirm it completes; separately confirm the existing 019 "local LLM unreachable" error still appears unchanged when the engine isn't running.
 
 ### Implementation for User Story 2
 
 - [X] T016 [P] [US2] Add a `[tool.setuptools.package-data]` entry to `pyproject.toml` covering `doc_generator`'s `templates/*.jinja` and `assets/*` — fixes the latent gap where only editable installs happened to include these files (research.md §3)
-- [X] T017 [US2] Add matching `--add-data` entries for `src/doc_generator/templates` and `src/doc_generator/assets` to `packaging/pyinstaller/repo-scanner.spec` (research.md §3) — depends on T006, T016
-- [X] T018 [US2] Add hidden-imports entries to `packaging/pyinstaller/repo-scanner.spec` for every `tree-sitter-<language>` grammar package already declared in `pyproject.toml`'s dependencies (research.md §2-§3 constraint) — depends on T006
+- [X] T017 [US2] Add matching `--add-data` entries for `src/doc_generator/templates` and `src/doc_generator/assets` to `packaging/pyinstaller/codepedia.spec` (research.md §3) — depends on T006, T016
+- [X] T018 [US2] Add hidden-imports entries to `packaging/pyinstaller/codepedia.spec` for every `tree-sitter-<language>` grammar package already declared in `pyproject.toml`'s dependencies (research.md §2-§3 constraint) — depends on T006
 - [ ] T019 [US2] Manually validate `quickstart.md` Scenario 3 (post-install `index` run succeeds against a real repository, with a local LLM engine running) using a binary rebuilt with T017/T018 — depends on T017, T018, T012
-- [X] T020 [US2] Manually validate `quickstart.md` Scenario 4 (indexing with the local LLM engine NOT running still shows 019's unchanged, actionable error — FR-012) using the same binary. The frozen binary itself could not be built in this sandbox (see `packaging/README.md` troubleshooting note), so validated instead against the real installed `repo-scanner` console script - the exact same `cli.main:app` code the binary would run, and packaging is required by FR-012 to never alter it. With no local LLM engine reachable: `repo-scanner index <repo>` printed "Validating repository" / "Checking local model availability" then stopped with 019's unchanged message ("Local LLM service at `http://localhost:11434` is unavailable for model 'qwen2.5-coder'. Start Ollama... This tool never falls back to a cloud provider."), exit 1, no AI work attempted.
-- [X] T021 [US2] Manually validate `quickstart.md` Scenario 7 (`repo-scanner scan` succeeds with no local LLM engine installed at all — FR-010) using the same binary. Same caveat as T020 (validated via the installed console script, not the frozen binary): `repo-scanner scan <repo>` with no LLM engine reachable returned valid JSON output, exit 0.
+- [X] T020 [US2] Manually validate `quickstart.md` Scenario 4 (indexing with the local LLM engine NOT running still shows 019's unchanged, actionable error — FR-012) using the same binary. The frozen binary itself could not be built in this sandbox (see `packaging/README.md` troubleshooting note), so validated instead against the real installed `codepedia` console script - the exact same `cli.main:app` code the binary would run, and packaging is required by FR-012 to never alter it. With no local LLM engine reachable: `codepedia index <repo>` printed "Validating repository" / "Checking local model availability" then stopped with 019's unchanged message ("Local LLM service at `http://localhost:11434` is unavailable for model 'qwen2.5-coder'. Start Ollama... This tool never falls back to a cloud provider."), exit 1, no AI work attempted.
+- [X] T021 [US2] Manually validate `quickstart.md` Scenario 7 (`codepedia scan` succeeds with no local LLM engine installed at all — FR-010) using the same binary. Same caveat as T020 (validated via the installed console script, not the frozen binary): `codepedia scan <repo>` with no LLM engine reachable returned valid JSON output, exit 0.
 
 **Checkpoint**: User Stories 1 AND 2 both work — the installed binary can successfully index a repository end to end.
 
@@ -121,13 +121,13 @@ story implementation can now begin.
 
 **Goal**: The same install command, run on different clean machines, installs the same version, verifiable via `--version`.
 
-**Independent Test**: Run the same one-line install command on two different clean machines/containers and confirm both report the same version via `repo-scanner --version`.
+**Independent Test**: Run the same one-line install command on two different clean machines/containers and confirm both report the same version via `codepedia --version`.
 
 ### Implementation for User Story 4
 
 - [ ] T027 [P] [US4] Manually validate `quickstart.md` Scenario 5 (re-running the install command upgrades the existing install in place, no duplicate/conflicting install — FR-005)
-- [ ] T028 [P] [US4] Manually validate `quickstart.md` Scenario 6 (uninstall via the documented single OS command leaves `repo-scanner` no longer runnable, per-repository state untouched — SC-006)
-- [ ] T029 [US4] Manually validate spec.md's User Story 4 acceptance scenario: run the same install command on two different clean machines/containers and confirm `repo-scanner --version` matches on both
+- [ ] T028 [P] [US4] Manually validate `quickstart.md` Scenario 6 (uninstall via the documented single OS command leaves `codepedia` no longer runnable, per-repository state untouched — SC-006)
+- [ ] T029 [US4] Manually validate spec.md's User Story 4 acceptance scenario: run the same install command on two different clean machines/containers and confirm `codepedia --version` matches on both
 
 **Checkpoint**: All four user stories are independently functional.
 

@@ -37,7 +37,7 @@ extension option is rejected.
   2024 and `Nexe` has long release gaps, so neither is a safe long-term
   choice even for a Node.js project today.
 - *VS Code extension* — rejected, see Rationale above.
-- *Plain `pip install repo-scanner` from a package index* — still requires
+- *Plain `pip install codepedia` from a package index* — still requires
   Python pre-installed; doesn't meet the "binaire autonome" framing of this
   plan's input, though it remains available as a secondary path since
   019's `pyproject.toml` already supports it for contributors working from
@@ -79,7 +79,7 @@ regardless (§3).
 (`src/doc_generator/templates/*.jinja`) and static assets
 (`src/doc_generator/assets/*`) as package data in `pyproject.toml`
 (`[tool.setuptools.package-data]`), and mirror the same paths as explicit
-`--add-data` entries in `packaging/pyinstaller/repo-scanner.spec`.
+`--add-data` entries in `packaging/pyinstaller/codepedia.spec`.
 
 **Rationale**: Investigating this feature surfaced that `pyproject.toml`
 has no `package-data`/`MANIFEST.in` declaration at all for these files.
@@ -90,7 +90,7 @@ artifact — a built wheel or a PyInstaller binary — only includes files
 setuptools/PyInstaller are explicitly told about via static analysis or
 declared data files; Jinja templates and static assets loaded by path at
 runtime are invisible to both unless declared. Left unfixed, a developer's
-first `repo-scanner index` after installing this feature's distributed
+first `codepedia index` after installing this feature's distributed
 binary would fail while rendering the wiki (`doc_generator`, 012) — a
 worse failure than an install-time error, since it happens after the
 tool otherwise looks like it installed and started correctly, directly
@@ -107,8 +107,8 @@ packaging-config file for one addition.
 
 **Decision**: Add a `--version` flag (Typer eager option / callback) to
 `cli.main.app`, implemented as
-`importlib.metadata.version("repo-scanner")`, and add
-`copy_metadata("repo-scanner")` to the PyInstaller spec so the frozen
+`importlib.metadata.version("codepedia")`, and add
+`copy_metadata("codepedia")` to the PyInstaller spec so the frozen
 binary's bundled Python environment actually has the distribution metadata
 `importlib.metadata` reads.
 
@@ -141,8 +141,8 @@ Each script downloads the OS/arch-matching binary from the **latest**
 GitHub Release of this repository and installs it to a fixed,
 user-writable location:
 
-- macOS/Linux: `~/.local/bin/repo-scanner`
-- Windows: `%LOCALAPPDATA%\repo-scanner\repo-scanner.exe`
+- macOS/Linux: `~/.local/bin/codepedia`
+- Windows: `%LOCALAPPDATA%\codepedia\codepedia.exe`
 
 If that location isn't already on `PATH`, the script appends it (to the
 current user's shell profile on macOS/Linux, to the user `Path` registry
@@ -171,15 +171,15 @@ install command and the upgrade command, satisfying FR-005 without a
 separate "update" command. Uninstalling is a single, documented OS-native
 command that deletes that one file:
 
-- macOS/Linux: `rm ~/.local/bin/repo-scanner`
-- Windows: `Remove-Item "$env:LOCALAPPDATA\repo-scanner\repo-scanner.exe"`
+- macOS/Linux: `rm ~/.local/bin/codepedia`
+- Windows: `Remove-Item "$env:LOCALAPPDATA\codepedia\codepedia.exe"`
 
 **Rationale**: Because install always writes to the same fixed path, there
 is never more than one installed copy to reconcile, so "upgrade" and
 "install" are the same operation, and "uninstall" is a plain single-file
 delete — no package-manager state, registry entries (besides the PATH
 addition, which is harmless to leave behind), or version-tracking database
-to maintain. Adding a dedicated `repo-scanner uninstall` subcommand was
+to maintain. Adding a dedicated `codepedia uninstall` subcommand was
 considered but rejected: it would be a new CLI command whose entire
 implementation is "delete the file currently running it," which is both
 awkward (a running program deleting itself) and unnecessary once a single
@@ -190,7 +190,7 @@ commands").
 ## §7. Distribution hosting
 
 **Decision**: GitHub Releases of this project's own repository
-(`github.com/yassinelalaoui/repo-scanner`).
+(`github.com/yassinelalaoui/codepedia`).
 
 **Rationale**: The project is already hosted there; GitHub Releases needs
 no new external account, no new hosted infrastructure, and no cost —
@@ -200,7 +200,7 @@ scripts can resolve "latest" against.
 
 **Alternatives considered**: A package index (PyPI) was considered as a
 *secondary*, lighter-weight channel for developers who already have Python
-(`pip install repo-scanner`), but publishing there requires a new external
+(`pip install codepedia`), but publishing there requires a new external
 account/credential this project doesn't currently have, and doesn't meet
 this plan's "binaire autonome" input — left as a possible future addition,
 not part of this feature.
@@ -210,7 +210,7 @@ not part of this feature.
 **Original decision (superseded below)**: A maintainer-run local build
 (`packaging/build.py`), not an automated CI/CD pipeline. A maintainer runs
 it once per target OS (it must run on a real machine of that OS, since
-PyInstaller does not cross-compile) to produce `dist/repo-scanner[.exe]`,
+PyInstaller does not cross-compile) to produce `dist/codepedia[.exe]`,
 then manually attaches that file plus `install.sh`/`install.ps1` as assets
 to a new GitHub Release tagged with the version being published.
 
@@ -252,7 +252,7 @@ Attack Surface Reduction rules (none configured), Smart App Control (off),
 Device Guard/WDAC policy (not enforced), and any recognizable EDR
 service/process. Copying the raw PyInstaller bootloader file standalone
 also succeeds. Only PyInstaller's own final step — finishing a complete,
-previously-unseen `repo-scanner.exe` — reliably fails
+previously-unseen `codepedia.exe` — reliably fails
 (`RuntimeError: Execution of 'copyfile' failed`), every time, regardless
 of which shell or tool invokes it. `icacls` on the project folder also
 showed a sandbox-branded local group (`CodexSandboxUsers`) with

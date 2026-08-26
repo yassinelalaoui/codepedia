@@ -26,7 +26,7 @@ def _validate_provider_refs(entries: Sequence[str]) -> tuple[str, ...]:
 
 
 def run_provider_chain_set(stage: str, providers: Sequence[str]) -> None:
-    """`repo-scanner provider chain set <stage> <providerRef>...`
+    """`codepedia provider chain set <stage> <providerRef>...`
     (contracts/cli-provider-commands.md). Replaces exactly one stage's
     chain, then immediately re-runs the disclosure gate against the
     freshly-saved configuration (research.md §13's M1 fix) so what's shown
@@ -49,7 +49,7 @@ def run_provider_chain_set(stage: str, providers: Sequence[str]) -> None:
 
 
 def run_provider_mode_full_local() -> None:
-    """`repo-scanner provider mode full-local` (spec FR-004). Atomically sets
+    """`codepedia provider mode full-local` (spec FR-004). Atomically sets
     all three chains to their local-only defaults in one `save_config` call
     (a single write, not three, so a crash mid-way can't leave only some
     chains switched), then immediately re-runs the disclosure gate against

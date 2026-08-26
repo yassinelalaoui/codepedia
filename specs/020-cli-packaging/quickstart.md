@@ -9,7 +9,7 @@ this project installed (see `plan.md`'s Technical Context / `research.md`
 ## Prerequisites
 
 - A maintainer build of the standalone binary for your OS
-  (`packaging/build.py`, produces `dist/repo-scanner[.exe]` — see
+  (`packaging/build.py`, produces `dist/codepedia[.exe]` — see
   `research.md` §8), or a published GitHub Release asset.
 - For the AI-dependent scenario: a running local LLM/embedding engine (e.g.
   Ollama with the default models from 019 pulled).
@@ -23,9 +23,9 @@ this project installed (see `plan.md`'s Technical Context / `research.md`
 python packaging/build.py
 ```
 
-**Expected**: produces `dist/repo-scanner` (or `dist/repo-scanner.exe` on
-Windows); the script's own smoke check (`repo-scanner --version` and
-`repo-scanner scan` against a throwaway repo, run against the freshly built
+**Expected**: produces `dist/codepedia` (or `dist/codepedia.exe` on
+Windows); the script's own smoke check (`codepedia --version` and
+`codepedia scan` against a throwaway repo, run against the freshly built
 binary) passes before the script reports success.
 
 ## Scenario 2 — Standalone install on a clean machine (SC-001, SC-002)
@@ -42,7 +42,7 @@ irm <release-url>/install.ps1 | iex        # Windows PowerShell
 
 - Exactly one command was run; no repository clone, no manually created
   virtual environment, no manual dependency install.
-- `repo-scanner --version` succeeds in a new terminal and prints a version
+- `codepedia --version` succeeds in a new terminal and prints a version
   number (SC-003).
 
 ## Scenario 3 — Indexing works right after install (SC-001, spec US2)
@@ -50,7 +50,7 @@ irm <release-url>/install.ps1 | iex        # Windows PowerShell
 With the local LLM/embedding engine already running (Prerequisites):
 
 ```bash
-repo-scanner index /path/to/some/repository
+codepedia index /path/to/some/repository
 ```
 
 **Expected**: completes exactly as `specs/019-cli-orchestrator/quickstart.md`
@@ -62,7 +62,7 @@ in an editable install).
 ## Scenario 4 — Missing local LLM engine still shows 019's error (US4, unchanged)
 
 ```bash
-repo-scanner index /path/to/some/repository   # local LLM engine not running
+codepedia index /path/to/some/repository   # local LLM engine not running
 ```
 
 **Expected**: the same clear, actionable "local LLM service unreachable"
@@ -75,25 +75,25 @@ with it (FR-012).
 curl -fsSL <release-url>/install.sh | sh   # again, e.g. after a new release
 ```
 
-**Expected**: `repo-scanner --version` afterward reports the newer version;
+**Expected**: `codepedia --version` afterward reports the newer version;
 no duplicate binary or conflicting install is left behind.
 
 ## Scenario 6 — Uninstall (SC-006)
 
 ```bash
-rm ~/.local/bin/repo-scanner        # macOS/Linux
+rm ~/.local/bin/codepedia        # macOS/Linux
 # or
-Remove-Item "$env:LOCALAPPDATA\repo-scanner\repo-scanner.exe"   # Windows
+Remove-Item "$env:LOCALAPPDATA\codepedia\codepedia.exe"   # Windows
 ```
 
-**Expected**: `repo-scanner --version` in a new terminal fails with a
+**Expected**: `codepedia --version` in a new terminal fails with a
 "command not found" (or equivalent) error; any previously created
-`~/.repo-scanner/` state is untouched.
+`~/.codepedia/` state is untouched.
 
 ## Scenario 7 — `scan` works without the local LLM engine (FR-010)
 
 ```bash
-repo-scanner scan /path/to/some/repository
+codepedia scan /path/to/some/repository
 ```
 
 **Expected**: succeeds even with no local LLM engine installed at all —
@@ -106,8 +106,8 @@ On the machine from Scenario 2/3 (binary installed, a repository already
 indexed via Scenario 3):
 
 ```bash
-repo-scanner config --show
-repo-scanner serve /path/to/some/repository
+codepedia config --show
+codepedia serve /path/to/some/repository
 ```
 
 **Expected**: `config --show` prints the current configuration without

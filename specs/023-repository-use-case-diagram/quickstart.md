@@ -55,7 +55,7 @@
 1. Starting from Scenario A's fixture (already generated once), add a new
    `@app.get(...)`-decorated function to `api.py`.
 2. Re-run generation **incrementally** (`incremental=True`, matching how
-   `repo-scanner serve`'s watcher-driven reindex already works).
+   `codepedia serve`'s watcher-driven reindex already works).
 3. **Expected**: the use-case-diagram page regenerates and now shows a third
    use-case node connected to the existing `API` actor, without a full
    from-scratch reindex of the fixture repository (assert via the same

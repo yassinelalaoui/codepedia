@@ -7,7 +7,7 @@ from .config import CLIConfiguration, disclosure_signature, save_config
 _DISCLOSURE_HEADER = (
     "This tool is configured to use the following AI providers by default:"
 )
-_FULL_LOCAL_HINT = "Run `repo-scanner provider mode full-local` to use only local models instead."
+_FULL_LOCAL_HINT = "Run `codepedia provider mode full-local` to use only local models instead."
 
 
 def _format_chain(stage_label: str, chain: tuple[str, ...]) -> str:

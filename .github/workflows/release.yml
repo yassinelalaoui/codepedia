@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the standalone repo-scanner binary on a real Windows runner and
+# Builds the standalone codepedia binary on a real Windows runner and
 # publishes a GitHub Release (specs/020-cli-packaging).
 #
 # PyInstaller does not cross-compile, so each OS's binary must be built on
@@ -38,7 +38,7 @@ jobs:
         include:
           - os: windows-latest
             asset_os: windows
-            binary_name: repo-scanner.exe
+            binary_name: codepedia.exe
             asset_suffix: .exe
     runs-on: ${{ matrix.os }}
     steps:
@@ -66,7 +66,7 @@ jobs:
         run: |
           mkdir -p release-assets
           cp "dist/${{ matrix.binary_name }}" \
-             "release-assets/repo-scanner-${{ steps.version.outputs.version }}-${{ matrix.asset_os }}-x86_64${{ matrix.asset_suffix }}"
+             "release-assets/codepedia-${{ steps.version.outputs.version }}-${{ matrix.asset_os }}-x86_64${{ matrix.asset_suffix }}"
 
       - uses: actions/upload-artifact@v4
         with:

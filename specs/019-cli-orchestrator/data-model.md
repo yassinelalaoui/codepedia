@@ -39,7 +39,7 @@ and written by `config` (spec's Key Entity of the same name).
 | `embeddingModel` | `str` | Defaults to `embedding_engine.models.DEFAULT_MODEL_NAME` (`"nomic-embed-text"`). |
 | `embeddingEndpointUrl` | `str` | Defaults to `embedding_engine.models.DEFAULT_ENDPOINT_URL` (`http://localhost:11434`). |
 
-Storage: one JSON file at `~/.repo-scanner/config.json` (research.md §4).
+Storage: one JSON file at `~/.codepedia/config.json` (research.md §4).
 Validation rules:
 - All four fields are non-empty strings; endpoint URLs must pass
   `local_llm.models.normalize_endpoint_url`/
@@ -57,7 +57,7 @@ The per-repository directory `index` creates and `serve` reads, keyed by
 `state_id = sha256(stable_repository_id(root)).hexdigest()[:16]`
 (research.md §4):
 
-| Path (under `~/.repo-scanner/repos/<state_id>/`) | Owner | Written by |
+| Path (under `~/.codepedia/repos/<state_id>/`) | Owner | Written by |
 |---|---|---|
 | `repository-metadata.sqlite` | `RepositoryMetadataStore` (005) | `index`, then `serve`'s reindex pipeline |
 | `dependency-graph.sqlite` | `DependencyGraph.save`/`.load` (004) | `index`, then `serve`'s reindex pipeline |
@@ -214,7 +214,7 @@ CLI flags supplied? ──▶ [--show only, or no flags] ──▶ print current
       │                                                  (+ live availability of the
       │ [model flags given]                               configured models)
       ▼
-validate endpoint URLs; save CLIConfiguration to ~/.repo-scanner/config.json
+validate endpoint URLs; save CLIConfiguration to ~/.codepedia/config.json
       │
       ▼
 for each of the newly set llmModel/embeddingModel: check against

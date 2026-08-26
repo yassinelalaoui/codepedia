@@ -20,20 +20,20 @@ sequenceDiagram
     participant Watcher as "Repository Watcher"
     participant Reindex as "Incremental Reindex\nPipeline"
 
-    Operator->>Scanner: repo-scanner index <path>\n(cli, checks local model availability first)
+    Operator->>Scanner: codepedia index <path>\n(cli, checks local model availability first)
     Scanner->>Scanner: scan, parse, build dependency graph,\npersist metadata
     Scanner->>AI: analyzed symbols
     AI->>AI: generate summaries, build embeddings
     AI->>Docs: summaries + graph + metadata
     Docs->>Docs: generate wiki pages + diagrams
     Note over Scanner,Docs: cli stages this into a fresh directory and\nswaps it in only on full success
-    Scanner->>Server: repo-scanner index's own\nstart local server (127.0.0.1)
+    Scanner->>Server: codepedia index's own\nstart local server (127.0.0.1)
     Server-->>Operator: wiki + chat API available
 
     Reader->>Server: browse wiki / search / ask a question
     Server-->>Reader: pages, search results, cited answers
 
-    Note over Operator,Watcher: a later session: repo-scanner serve <path>\n(cli) loads the existing index and starts the watcher
+    Note over Operator,Watcher: a later session: codepedia serve <path>\n(cli) loads the existing index and starts the watcher
     Developer->>Watcher: edits a file
     Watcher->>Watcher: debounce, confirm stabilized change
     Watcher->>Reindex: hand off changed-file batch
