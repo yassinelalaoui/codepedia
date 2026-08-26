@@ -150,7 +150,7 @@ editable Python install:
 
 ```bash
 git clone <this repository>
-cd "repo scanner"
+cd codepedia
 pip install -e .          # runtime install
 pip install -e ".[test]"  # add pytest, to also run the test suite
 pip install -e ".[build]" # add PyInstaller, to build the standalone binary (packaging/build.py)
