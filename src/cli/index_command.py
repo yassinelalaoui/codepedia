@@ -92,6 +92,10 @@ def _echo_summary_progress(completed: int, total: int, symbol: Symbol) -> None:
     typer.echo(f"  [{completed}/{total}] {symbol.kind} {symbol.name}")
 
 
+def _echo_embedding_progress(completed: int, total: int, relative_path: str) -> None:
+    typer.echo(f"  [{completed}/{total}] {relative_path}")
+
+
 def validate_repo_path(repo_path: Path) -> Path:
     typer.echo(Stage.VALIDATING.value)
     resolved = Path(repo_path).expanduser().resolve()
@@ -228,7 +232,8 @@ def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: Any, llm_eng
         embedding_engine=embedding_engine,
     )
     try:
-        for entry in scan_result.entries:
+        total_files = len(scan_result.entries)
+        for completed, entry in enumerate(scan_result.entries, start=1):
             update_embeddings(
                 repository_root=root,
                 relative_path=entry.relative_path,
@@ -236,5 +241,6 @@ def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: Any, llm_eng
                 vector_index=vector_index,
                 embedding_engine=embedding_engine,
             )
+            _echo_embedding_progress(completed, total_files, entry.relative_path)
     finally:
         vector_index.close()
