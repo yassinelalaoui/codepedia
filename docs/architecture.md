@@ -189,11 +189,14 @@ Everything runs as **local processes on the developer's own machine**:
   contributors working on the source itself; it is not how an end user is
   expected to obtain the tool.
 - **Producing that binary** (020, `.github/workflows/release.yml`): built
-  on GitHub-hosted Windows/macOS/Linux runners, triggered by a maintainer
-  pushing a version tag, since PyInstaller does not cross-compile and a
-  single maintainer machine can't build all three OS targets. The
-  workflow only publishes on a tag push — nothing runs on ordinary
-  commits (research.md §8's superseding decision).
+  on a GitHub-hosted Windows runner, triggered by a maintainer pushing a
+  version tag, since PyInstaller does not cross-compile and a single
+  maintainer machine can't build all OS targets. The workflow only
+  publishes on a tag push — nothing runs on ordinary commits (research.md
+  §8's superseding decision). The matrix originally also built macOS and
+  Linux legs; those were dropped after repeated CI failures fetching
+  PyInstaller on those runners and are tracked as future work rather than
+  a permanently-red job — see docs/pfa.tex's "Perspectives d'Évolution".
 
 There is no cloud environment this system runs in. That is not a limitation to work
 around — it is the product's core guarantee (constitution 2.1): code never leaves the

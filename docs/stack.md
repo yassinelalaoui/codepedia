@@ -188,12 +188,16 @@ include them — a real built wheel or binary silently omitted them. Fixed
 alongside 020 (research.md §3).
 
 **GitHub Actions** (020, `.github/workflows/release.yml`, tag-triggered
-only) runs `packaging/build.py` on real Windows/macOS(x86_64)/Linux
-runners and publishes the results as a GitHub Release. Added after this
-project's own development machine turned out to be unable to complete a
-local PyInstaller build at all (research.md §8's superseding decision) —
-`packaging/build.py` itself is unchanged and still works standalone on
-any unrestricted machine; CI is an additional path, not a replacement.
+only) runs `packaging/build.py` on a real Windows runner and publishes the
+result as a GitHub Release. Added after this project's own development
+machine turned out to be unable to complete a local PyInstaller build at
+all (research.md §8's superseding decision) — `packaging/build.py` itself
+is unchanged and still works standalone on any unrestricted machine; CI is
+an additional path, not a replacement. The matrix originally built
+macOS(x86_64)/Linux legs too; both were dropped after repeatedly failing
+to fetch PyInstaller on those hosted runners — macOS/Linux binaries are
+deferred to future work (docs/pfa.tex's "Perspectives d'Évolution")
+instead of shipping as a permanently-red CI job.
 
 ## One loose end
 

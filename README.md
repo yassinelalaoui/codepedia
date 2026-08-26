@@ -81,9 +81,15 @@ picture and *why* it's built this way.
 ## Prerequisites
 
 - **A supported OS/architecture for the standalone binary**: Windows,
-  macOS, or Linux, x86_64. This is the *only* thing the installer below
-  needs already present on the machine — no Python, no cloned repository,
-  no manually built development environment (specs/020-cli-packaging).
+  x86_64. This is the *only* thing the installer below needs already
+  present on the machine — no Python, no cloned repository, no manually
+  built development environment (specs/020-cli-packaging). macOS and Linux
+  binaries are not currently published — the release workflow's build
+  matrix for those OSes was dropped after repeated CI failures fetching
+  PyInstaller on those runners; see the project report's "Perspectives
+  d'Évolution" for the plan to bring them back. `install.sh` already
+  detects and reports this clearly on macOS/Linux rather than failing
+  silently.
 - **For the AI-backed features** (summaries, chat): either a `GROQ_API_KEY`
   (summaries/chat) and `OPENAI_API_KEY` (embeddings) in your environment —
   the fresh-install defaults, disclosed before first use — **or** a local

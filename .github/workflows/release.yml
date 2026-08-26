@@ -1,7 +1,7 @@
 name: Release
 
-# Builds the standalone repo-scanner binary on real Windows/macOS/Linux
-# runners and publishes a GitHub Release (specs/020-cli-packaging).
+# Builds the standalone repo-scanner binary on a real Windows runner and
+# publishes a GitHub Release (specs/020-cli-packaging).
 #
 # PyInstaller does not cross-compile, so each OS's binary must be built on
 # that OS - this workflow's build matrix is what makes a single-command
@@ -9,6 +9,14 @@ name: Release
 # because building locally was found to be blocked on this project's own
 # dev machine (see research.md section 8 and packaging/README.md's
 # troubleshooting note) - GitHub-hosted runners sidestep that entirely.
+#
+# Only Windows is built for now: the macos-13/ubuntu-latest legs of this
+# matrix repeatedly failed (PyInstaller could not be fetched on those
+# runners at the time), and rather than carry a permanently-red job, macOS
+# and Linux packaging has been deferred - see the "Perspectives
+# d'Évolution" section of docs/pfa.tex. Re-adding an `os: macos-latest` /
+# `os: ubuntu-latest` matrix entry (mirroring the windows-latest one
+# below) is the way to bring them back once that's revisited.
 #
 # Publishing still requires a maintainer to deliberately push a version
 # tag (vX.Y.Z); nothing runs on ordinary commits.
@@ -32,14 +40,6 @@ jobs:
             asset_os: windows
             binary_name: repo-scanner.exe
             asset_suffix: .exe
-          - os: macos-13 # Intel/x86_64 runner - research.md section 9 scopes this feature to x86_64 only
-            asset_os: macos
-            binary_name: repo-scanner
-            asset_suffix: ""
-          - os: ubuntu-latest
-            asset_os: linux
-            binary_name: repo-scanner
-            asset_suffix: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

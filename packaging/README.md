@@ -22,13 +22,20 @@ git push origin v0.1.0
 ```
 
 This triggers `.github/workflows/release.yml`, which builds
-`repo-scanner` on real Windows, macOS (x86_64), and Linux runners in
-parallel (PyInstaller does not cross-compile, so each OS genuinely builds
-its own binary — see research.md §9 for the x86_64-only scope), renames
-each per the release-asset naming contract, and then automatically
-creates a GitHub Release on that tag with all three binaries plus
-`install.sh`/`install.ps1` attached. Watch it run under the repository's
-**Actions** tab; nothing further to do once it's green.
+`repo-scanner` on a real Windows runner (PyInstaller does not
+cross-compile, so each OS genuinely builds its own binary — see
+research.md §9 for the x86_64-only scope), renames it per the
+release-asset naming contract, and then automatically creates a GitHub
+Release on that tag with the binary plus `install.sh`/`install.ps1`
+attached. Watch it run under the repository's **Actions** tab; nothing
+further to do once it's green.
+
+The matrix originally also built macOS (x86_64) and Linux legs in
+parallel; both were dropped after repeatedly failing to fetch PyInstaller
+on those hosted runners. Re-adding an `os: macos-latest` / `os:
+ubuntu-latest` entry (mirroring the `windows-latest` one) is the way to
+bring them back — tracked as future work rather than shipped as a
+permanently-red job (see docs/pfa.tex's "Perspectives d'Évolution").
 
 This path exists because building locally was found, during this
 feature's own implementation, to be unusable on this project's actual
