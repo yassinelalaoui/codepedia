@@ -4,6 +4,7 @@ import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -24,6 +25,21 @@ SCHEMA_STATEMENTS = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_doc_pages_repository ON doc_pages(repository_id)",
+    # Section titles/descriptions are the one part of a section page that costs
+    # a model call, so they are cached against the membership that produced
+    # them: an unchanged section is never re-narrated, and a section whose
+    # members changed is narrated exactly once more.
+    """
+    CREATE TABLE IF NOT EXISTS doc_section_narrations (
+        repository_id TEXT NOT NULL,
+        section_key TEXT NOT NULL,
+        membership_hash TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        generated_at TEXT NOT NULL,
+        PRIMARY KEY (repository_id, section_key)
+    )
+    """,
 )
 
 
@@ -101,6 +117,51 @@ class DocPageManifestStore:
         with closing(_connect(self.db_path)) as connection:
             with connection:
                 connection.execute("DELETE FROM doc_pages WHERE page_id = ?", (page_id,))
+
+    def load_section_narration(
+        self, repository_id: str, section_key: str, membership_hash: str
+    ) -> tuple[str, str] | None:
+        """The cached (title, description) for this exact membership, if any.
+
+        A row whose `membership_hash` no longer matches is treated as absent
+        rather than returned stale - the section it described is not the section
+        being rendered.
+        """
+        with closing(_connect(self.db_path)) as connection:
+            row = connection.execute(
+                """
+                SELECT title, description FROM doc_section_narrations
+                WHERE repository_id = ? AND section_key = ? AND membership_hash = ?
+                """,
+                (repository_id, section_key, membership_hash),
+            ).fetchone()
+            return (row["title"], row["description"]) if row is not None else None
+
+    def save_section_narration(
+        self, repository_id: str, section_key: str, membership_hash: str, *, title: str, description: str
+    ) -> None:
+        with closing(_connect(self.db_path)) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO doc_section_narrations (
+                        repository_id, section_key, membership_hash, title, description, generated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(repository_id, section_key) DO UPDATE SET
+                        membership_hash = excluded.membership_hash,
+                        title = excluded.title,
+                        description = excluded.description,
+                        generated_at = excluded.generated_at
+                    """,
+                    (
+                        repository_id,
+                        section_key,
+                        membership_hash,
+                        title,
+                        description,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
 
     def delete_entries(self, page_ids: Iterable[str]) -> None:
         with closing(_connect(self.db_path)) as connection:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from dependency_graph import DependencyGraph, DiagramExport
 from repository_metadata import ModuleSymbol, Repository, RepositoryMetadataStore
@@ -21,11 +21,14 @@ from .mermaid_diagram import (
     ClassDiagramSource,
     build_class_diagram_mermaid_source,
     build_mermaid_source,
+    build_section_diagram_mermaid_source,
     build_sequence_diagram_mermaid_source,
     build_use_case_diagram_mermaid_source,
 )
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
 from .search_index import SearchIndexDocument, build_search_index
+from .section_narrator import SectionNarrator, apply_section_narrations
+from .sections import Section, SectionSelection, build_sections
 from .use_case_diagram import select_use_cases
 from .writer import DocumentationWriter
 
@@ -50,6 +53,7 @@ class DocGenerator:
         manifestStore: DocPageManifestStore,
         outputRoot: str | Path,
         repositoryRoot: str | Path,
+        sectionNarrator: SectionNarrator | None = None,
     ) -> None:
         self.metadataStore = metadataStore
         self.dependencyGraph = dependencyGraph
@@ -62,11 +66,13 @@ class DocGenerator:
             manifestStore=manifestStore,
             repositoryId=self.repositoryId,
         )
+        self.sectionNarrator = sectionNarrator
         self._bundle: RepositoryBundle | None = None
         self._bundle_by_module_id: dict[str, SourceFileBundle] = {}
         self._bundle_by_file_path: dict[str, SourceFileBundle] = {}
         self._search_index: SearchIndexDocument | None = None
         self._symbol_lookup: SymbolLookup | None = None
+        self._sections: SectionSelection | None = None
 
     def generateOverviewPage(
         self,
@@ -79,8 +85,22 @@ class DocGenerator:
         bundle = self._ensure_bundle()
         modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
         architecture_summary = self._build_architecture_summary(bundle.files)
+        selection = self._ensure_sections()
 
         page_links: list[PageLink] = []
+        section_entries: list[dict[str, object]] = []
+        for section in selection.sections:
+            section_page_id, section_md, _section_html = self._section_identity(section)
+            section_link = links.build_page_link(
+                from_page_id=links.HOME_PAGE_ID,
+                from_output_path_markdown=links.HOME_OUTPUT_MARKDOWN,
+                to_page_id=section_page_id,
+                to_output_path_markdown=section_md,
+                label=section.title,
+            )
+            if section_link:
+                page_links.append(section_link)
+            section_entries.append({"section": section, "sectionLink": section_link})
         class_diagram_link: PageLink | None = None
         if classDiagramPage is not None:
             class_diagram_link = links.build_page_link(
@@ -138,13 +158,14 @@ class DocGenerator:
             repository=repository,
             repository_name=repository_name,
             module_entries=module_entries,
+            section_entries=section_entries,
             architecture_summary=architecture_summary,
             class_diagram_link=class_diagram_link,
             use_case_diagram_link=use_case_diagram_link,
             class_diagram_source=classDiagramSource,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
         return DocPage(
@@ -170,6 +191,18 @@ class DocGenerator:
         module_md, module_html = links.module_output_paths(slug)
         page_id = links.module_page_id(module_key)
 
+        owning_section = self._ensure_sections().by_module_key().get(module_key)
+        section_link: PageLink | None = None
+        if owning_section is not None:
+            owning_page_id, owning_md, _owning_html = self._section_identity(owning_section)
+            section_link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=module_md,
+                to_page_id=owning_page_id,
+                to_output_path_markdown=owning_md,
+                label=owning_section.title,
+            )
+
         related_modules = self._related_modules(moduleSymbol)
         related_links: list[PageLink] = []
         for related_key, related_name in related_modules:
@@ -185,6 +218,8 @@ class DocGenerator:
             if link:
                 related_links.append(link)
         page_links: list[PageLink] = list(related_links)
+        if section_link:
+            page_links.append(section_link)
 
         diagram_md, _ = links.diagram_output_paths(slug)
         diagram_link = links.build_page_link(
@@ -228,14 +263,16 @@ class DocGenerator:
             functions=functions,
             related_links=related_links,
             diagram_link=diagram_link,
+            section_link=section_link,
             entry_point_links=entry_point_links,
         )
         html = render_page_html(
             title=moduleSymbol.name,
             content_markdown=content,
             output_path_html=module_html,
-            nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup,
+            nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup,
             active_module_key=module_key,
+            active_section_key=owning_section.key if owning_section else "",
             current_file_path=moduleSymbol.filePath,
         )
 
@@ -250,6 +287,83 @@ class DocGenerator:
             renderedHtml=html,
             outputPathMarkdown=module_md,
             outputPathHtml=module_html,
+            links=tuple(page_links),
+        )
+
+    def generateSectionPage(self, section: Section, *, sectionsByKey: Mapping[str, Section]) -> DocPage:
+        """One page per section: what the area is, what it contains, how it hangs together.
+
+        The page is assembled entirely from already-derived structure - the
+        section's members, its internal import edges, and its neighbouring
+        sections - so it costs no source re-parse and, narration aside, no model
+        call.
+        """
+        page_id, section_md, section_html = self._section_identity(section)
+
+        page_links: list[PageLink] = []
+        member_entries: list[dict[str, object]] = []
+        for member in section.members:
+            slug = links.page_slug(member.name, member.moduleKey)
+            module_md, _ = links.module_output_paths(slug)
+            member_link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=section_md,
+                to_page_id=links.module_page_id(member.moduleKey),
+                to_output_path_markdown=module_md,
+                label=member.name,
+            )
+            if member_link:
+                page_links.append(member_link)
+            member_entries.append({"member": member, "moduleLink": member_link})
+
+        neighbor_links: list[PageLink] = []
+        for neighbor_key in section.neighborKeys:
+            neighbor = sectionsByKey.get(neighbor_key)
+            if neighbor is None:
+                continue
+            neighbor_page_id, neighbor_md, _ = self._section_identity(neighbor)
+            neighbor_link = links.build_page_link(
+                from_page_id=page_id,
+                from_output_path_markdown=section_md,
+                to_page_id=neighbor_page_id,
+                to_output_path_markdown=neighbor_md,
+                label=neighbor.title,
+            )
+            if neighbor_link:
+                neighbor_links.append(neighbor_link)
+                page_links.append(neighbor_link)
+
+        section_diagram_source = build_section_diagram_mermaid_source(
+            section, section_output_path_html=section_html
+        )
+
+        content = render_markdown_template(
+            "section.md.jinja",
+            section=section,
+            member_entries=member_entries,
+            neighbor_links=neighbor_links,
+            section_diagram_source=section_diagram_source,
+        )
+        html = render_page_html(
+            title=section.title,
+            content_markdown=content,
+            output_path_html=section_html,
+            nav_sections=self._nav_sections(),
+            active_section_key=section.key,
+            symbol_lookup=self._symbol_lookup,
+        )
+
+        return DocPage(
+            id=page_id,
+            title=section.title,
+            contentMarkdown=content,
+            relatedSymbols=section.moduleKeys,
+            kind="section",
+            sourceEntityId=section.key,
+            contentSymbolIds=section.moduleKeys,
+            renderedHtml=html,
+            outputPathMarkdown=section_md,
+            outputPathHtml=section_html,
             links=tuple(page_links),
         )
 
@@ -313,7 +427,7 @@ class DocGenerator:
             mermaid_source=mermaid_source.sourceText,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=diagram_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=diagram_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
         related_symbols = tuple(dict.fromkeys(neighbor_keys))
@@ -357,7 +471,7 @@ class DocGenerator:
             class_diagram_source=class_diagram_source,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
         return DocPage(
@@ -390,7 +504,7 @@ class DocGenerator:
             use_case_diagram_source=use_case_diagram_source,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
         related_symbols = tuple(use_case.entryPointStableKey for use_case in selection.useCases)
@@ -437,7 +551,7 @@ class DocGenerator:
                 sequence_diagram_source=sequence_diagram_source,
             )
             html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
             related_symbols = tuple(dict.fromkeys(step.calleeSymbolId for step in selection.steps))
@@ -531,7 +645,7 @@ class DocGenerator:
             dependency_diagram_links=dependency_diagram_links,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
         return DocPage(
@@ -561,8 +675,11 @@ class DocGenerator:
         self.repositoryId = stable_repository_id(repositoryRoot)
         self._writer.repositoryId = self.repositoryId
         self._bundle = None
+        self._sections = None
         bundle = self._ensure_bundle()
         _ensure_output_root_is_separate(self.outputRoot, repository_root=Path(repositoryRoot), bundle=bundle)
+
+        selection = self._ensure_sections()
 
         previous_entries = self.manifestStore.list_entries(self.repositoryId)
         run_incremental = incremental and len(previous_entries) > 0
@@ -576,12 +693,21 @@ class DocGenerator:
                 changed_paths=changedPaths,
                 changed_symbol_ids=changedSymbolIds,
                 changed_dependency_edge_ids=changedDependencyEdgeIds,
+                sections=selection.sections,
             )
             target_page_ids = set(impact.impactedPageIds)
             if impact.requiresHomePageRegeneration:
                 target_page_ids.add(links.HOME_PAGE_ID)
             for removed_page_id in impact.removedPageIds:
                 self._writer.remove_page(removed_page_id)
+            if impact.requiresNavigationRegeneration:
+                # The section/module tree is rendered into every page's sidebar,
+                # so a change to its shape makes every already-written page stale
+                # in a way no per-page impact set can express. Regenerating
+                # everything is the only correct answer here - and it stays rare,
+                # because the tree only reshapes when files are added, removed or
+                # moved, not when their contents change.
+                target_page_ids = None
 
         pages: list[DocPage] = []
 
@@ -647,6 +773,14 @@ class DocGenerator:
             self._writer.write_page(diagrams_index_page)
             pages.append(diagrams_index_page)
 
+        sections_by_key = {section.key: section for section in selection.sections}
+        for section in selection.sections:
+            section_page_id = links.section_page_id(section.key)
+            if target_page_ids is None or section_page_id in target_page_ids:
+                section_page = self.generateSectionPage(section, sectionsByKey=sections_by_key)
+                self._writer.write_page(section_page)
+                pages.append(section_page)
+
         for file_bundle in bundle.files:
             module = file_bundle.module
             module_key = module.sourceFileId
@@ -676,20 +810,57 @@ class DocGenerator:
 
         return DocumentationSet(repositoryId=self.repositoryId, outputRoot=str(self.outputRoot), pages=tuple(pages))
 
-    def _nav_modules(self) -> list[tuple[str, str, str]]:
-        """Every module's (name, its page's own output_path_html, its stable
-        key) - the persistent sidebar's module list, present on every page.
-        `render_page_html` turns each entry into a link relative to whatever
-        page is actually being rendered."""
-        bundle = self._ensure_bundle()
-        modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
-        entries: list[tuple[str, str, str]] = []
-        for module in modules:
-            module_key = module.sourceFileId
-            slug = links.page_slug(module.name, module_key)
-            _, module_html = links.module_output_paths(slug)
-            entries.append((module.name, module_html, module_key))
+    def _nav_sections(self) -> list[tuple[str, str, str, list[tuple[str, str, str]]]]:
+        """The persistent sidebar's navigation tree, present on every page.
+
+        One entry per section - (title, its page's own output_path_html, its
+        stable key, its member modules) - with each module carried as (name, its
+        page's own output_path_html, its stable key). `render_page_html` turns
+        every path into a link relative to whatever page is actually being
+        rendered, so nothing here depends on where the current page sits on
+        disk. Modules are grouped rather than listed flat, which is what makes
+        the sidebar readable once a repository has more modules than fit on a
+        screen.
+        """
+        selection = self._ensure_sections()
+        entries: list[tuple[str, str, str, list[tuple[str, str, str]]]] = []
+        for section in selection.sections:
+            _page_id, _section_md, section_html = self._section_identity(section)
+            modules = []
+            for member in section.members:
+                slug = links.page_slug(member.name, member.moduleKey)
+                _, module_html = links.module_output_paths(slug)
+                modules.append((member.name, module_html, member.moduleKey))
+            entries.append((section.title, section_html, section.key, modules))
         return entries
+
+    def _section_identity(self, section: Section) -> tuple[str, str, str]:
+        """Return (page_id, output_path_markdown, output_path_html) for a section page.
+
+        The slug is built from the section's *directory path*, never its title:
+        a title can be rewritten by the narrator between runs, and keying the
+        output file on it would orphan the previous file and break every link
+        pointing at it. The directory path only moves when the code does.
+        """
+        slug = links.section_slug(section.directoryPath, section.key)
+        section_md, section_html = links.section_output_paths(slug)
+        return links.section_page_id(section.key), section_md, section_html
+
+    def _ensure_sections(self) -> SectionSelection:
+        """The repository's sections for this run, derived once and reused.
+
+        Derivation is deterministic (`sections.build_sections`); the narrator
+        only fills in each section's title and description, and is skipped
+        entirely when no LLM engine was supplied. Both happen once per run, so
+        every page rendered in a run shows the same sidebar.
+        """
+        if self._sections is None:
+            bundle = self._ensure_bundle()
+            selection = build_sections(bundle, self.dependencyGraph, repository_root=self.repositoryRoot)
+            if self.sectionNarrator is not None:
+                self.sectionNarrator.repositoryId = self.repositoryId
+            self._sections = apply_section_narrations(selection, self.sectionNarrator)
+        return self._sections
 
     def _ensure_bundle(self) -> RepositoryBundle:
         if self._bundle is None:

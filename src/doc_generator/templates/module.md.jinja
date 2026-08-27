@@ -3,6 +3,10 @@
 {% if module.docstring %}{{ module.docstring }}
 
 {% endif %}
+{% if section_link %}
+[In section: {{ section_link.label | mdesc }}]({{ section_link.relativePath }}){: .section-link }
+
+{% endif %}
 ## Summary
 
 {% if module.generatedSummary %}

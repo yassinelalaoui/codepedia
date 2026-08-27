@@ -36,11 +36,17 @@
         Diagrams
       </a>
     </div>
-    {% if nav_modules %}
+    {% if nav_sections %}
     <div class="nav-group">
-      <div class="nav-label">Modules</div>
-      {% for entry in nav_modules %}
-      <a class="nav-link module{{ ' active' if entry.active else '' }}" href="{{ entry.href }}">{{ entry.name }}</a>
+      <div class="nav-label">Sections</div>
+      {% for section in nav_sections %}
+      <details class="nav-section"{{ ' open' if section.expanded else '' }}>
+        <summary class="nav-link section{{ ' active' if section.active else '' }}">{{ section.title }}</summary>
+        <a class="nav-link section-overview{{ ' active' if section.active else '' }}" href="{{ section.href }}">Section overview</a>
+        {% for entry in section.modules %}
+        <a class="nav-link module{{ ' active' if entry.active else '' }}" href="{{ entry.href }}">{{ entry.name }}</a>
+        {% endfor %}
+      </details>
       {% endfor %}
     </div>
     {% endif %}

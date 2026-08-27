@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import PurePosixPath
 
@@ -19,6 +20,8 @@ USE_CASE_DIAGRAM_PAGE_ID = "diagram:use-case-overview"
 USE_CASE_DIAGRAM_OUTPUT_MARKDOWN = "diagrams/use-case-overview.md"
 USE_CASE_DIAGRAM_OUTPUT_HTML = "diagrams/use-case-overview.html"
 
+SECTION_PAGE_ID_PREFIX = "section:"
+
 DIAGRAMS_INDEX_PAGE_ID = "diagrams-index"
 DIAGRAMS_INDEX_OUTPUT_MARKDOWN = "diagrams-index.md"
 DIAGRAMS_INDEX_OUTPUT_HTML = "diagrams-index.html"
@@ -30,6 +33,10 @@ def module_page_id(module_id: str) -> str:
 
 def diagram_page_id(module_id: str) -> str:
     return f"diagram:{module_id}"
+
+
+def section_page_id(section_key: str) -> str:
+    return f"{SECTION_PAGE_ID_PREFIX}{section_key}"
 
 
 def class_diagram_page_id() -> str:
@@ -76,6 +83,25 @@ def module_output_paths(slug: str) -> tuple[str, str]:
 
 def diagram_output_paths(slug: str) -> tuple[str, str]:
     return f"diagrams/{slug}.md", f"diagrams/{slug}.html"
+
+
+def section_slug(directory_path: str, section_key: str) -> str:
+    """A readable, stable file name for a section page.
+
+    Built from the section's directory rather than its title: a title can be
+    rewritten by the narrator between runs, and keying the output file on it
+    would orphan the previous file and break every link pointing at it. The
+    hashed suffix disambiguates two sections carved out of the same directory,
+    which `page_slug`'s "last 8 characters of the id" rule cannot do for keys
+    that are paths.
+    """
+    base = slugify(directory_path) if directory_path not in ("", ".") else "root"
+    suffix = hashlib.sha1(section_key.encode("utf-8")).hexdigest()[:8]
+    return f"{base}-{suffix}"
+
+
+def section_output_paths(slug: str) -> tuple[str, str]:
+    return f"sections/{slug}.md", f"sections/{slug}.html"
 
 
 def relative_output_link(*, from_output_path: str, to_output_path: str, anchor: str | None = None) -> str:

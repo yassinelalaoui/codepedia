@@ -9,11 +9,11 @@
 
 This repository has {{ architecture_summary.moduleCount }} documented module{{ '' if architecture_summary.moduleCount == 1 else 's' }}, {{ architecture_summary.classCount }} class{{ '' if architecture_summary.classCount == 1 else 'es' }}, and {{ architecture_summary.functionCount }} top-level function{{ '' if architecture_summary.functionCount == 1 else 's' }}.
 
-{% if architecture_summary.groups %}
-| Area | Modules |
+{% if section_entries %}
+| Section | Modules |
 | --- | --- |
-{% for group in architecture_summary.groups %}
-| {{ group.name | mdesc }} | {{ group.moduleCount }} |
+{% for entry in section_entries %}
+| [{{ entry.section.title | mdesc }}]({{ entry.sectionLink.relativePath if entry.sectionLink else '#' }}) | {{ entry.section.members | length }} |
 {% endfor %}
 
 {% endif %}
@@ -31,6 +31,17 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 [View the repository use-case diagram]({{ use_case_diagram_link.relativePath }}){: .diagram-link }
 
 {% endif %}
+## Sections
+
+{% if section_entries %}
+{% for entry in section_entries %}
+- [{{ entry.section.title | mdesc }}]({{ entry.sectionLink.relativePath if entry.sectionLink else '#' }}){% if entry.section.description %} — {{ entry.section.description.split() | join(' ') | mdesc }}{% endif +%}
+{% endfor %}
+{: .module-list }
+{% else %}
+_No sections derived yet._
+{% endif %}
+
 ## Modules
 
 {% if module_entries %}

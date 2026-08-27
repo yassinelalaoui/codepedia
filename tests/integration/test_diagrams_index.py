@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator, open_doc_manifest_store
 from parser_engine import SourceFile, extract_symbols
-from repository_metadata import DependencyEdge, RepositoryMetadataStore, compute_content_hash
-from repository_metadata.sqlite_store import stable_repository_id, stable_source_file_id
+from repository_metadata import RepositoryMetadataStore, compute_content_hash
 
-from ._doc_generator_support import build_indexed_repo
+from ._doc_generator_support import build_indexed_repo, index_repo
 
 
 def _build_generator(tmp_path: Path, root: Path, store, graph, *, db_name: str = "repo.sqlite") -> DocGenerator:
@@ -20,34 +20,6 @@ def _build_generator(tmp_path: Path, root: Path, store, graph, *, db_name: str =
         outputRoot=root / "docs",
         repositoryRoot=root,
     )
-
-
-def _index_repo(tmp_path: Path, root: Path, file_paths: list[Path], db_name: str):
-    inventories = [extract_symbols(SourceFile(path=path, language="python")) for path in file_paths]
-    graph = DependencyGraph.build_from_inventories(inventories, sourceFile=str(root))
-    repository_id = stable_repository_id(root)
-    edges = [
-        DependencyEdge(
-            sourceId=edge.sourceId,
-            targetId=edge.targetId,
-            type=edge.type,
-            sourceFileId=stable_source_file_id(repository_id, edge.sourceFile or root),
-            metadata=dict(edge.metadata),
-        )
-        for edge in graph.edges.values()
-    ]
-    store = RepositoryMetadataStore(tmp_path / db_name)
-    store.ensure_repository(root, detected_languages=("python",))
-    for inventory in inventories:
-        source_path = Path(inventory.sourceFile)
-        store.store_inventory(
-            repository_root=root,
-            source_file=SourceFile(path=source_path, language="python"),
-            inventory=inventory,
-            dependency_edges=edges,
-            content_hash=compute_content_hash(source_path),
-        )
-    return store, graph
 
 
 def test_diagrams_index_lists_every_diagram_category_and_no_module_pages(tmp_path):
@@ -80,10 +52,23 @@ def test_diagrams_link_present_and_resolvable_from_every_page_kind(tmp_path):
     kinds_seen = set()
     for page in doc_set.pages:
         kinds_seen.add(page.kind)
-        assert "Diagrams</a>" in page.renderedHtml, f"no Diagrams nav link on {page.id} ({page.kind})"
+        # Compared with whitespace collapsed: the nav link's label and its
+        # closing tag sit on separate template lines, which says nothing about
+        # whether the link is present.
+        compact_html = re.sub(r"\s+", "", page.renderedHtml)
+        assert "Diagrams</a>" in compact_html, f"no Diagrams nav link on {page.id} ({page.kind})"
         assert "diagrams-index.html" in page.renderedHtml, f"Diagrams nav link doesn't target diagrams-index.html on {page.id}"
 
-    assert kinds_seen == {"home", "module", "diagram", "class-diagram", "sequence-diagram", "use-case-diagram", "diagrams-index"}
+    assert kinds_seen == {
+        "home",
+        "module",
+        "section",
+        "diagram",
+        "class-diagram",
+        "sequence-diagram",
+        "use-case-diagram",
+        "diagrams-index",
+    }
 
 
 def _build_no_class_no_entry_point_repo(tmp_path: Path):
@@ -93,7 +78,7 @@ def _build_no_class_no_entry_point_repo(tmp_path: Path):
     root.mkdir()
     (root / "a.py").write_text('"""A module."""\n\nfrom b import b\n\n\ndef a() -> int:\n    return b()\n', encoding="utf-8")
     (root / "b.py").write_text('"""B module."""\n\nfrom a import a\n\n\ndef b() -> int:\n    return a()\n', encoding="utf-8")
-    store, graph = _index_repo(tmp_path, root, [root / "a.py", root / "b.py"], "no-class-no-entry-point-repo.sqlite")
+    store, graph = index_repo(tmp_path, root, [root / "a.py", root / "b.py"], "no-class-no-entry-point-repo.sqlite")
     return root, store, graph
 
 
@@ -142,7 +127,7 @@ def _build_single_module_repo(tmp_path: Path, *, content: str):
     root = tmp_path / "single-module-repo"
     root.mkdir()
     (root / "main.py").write_text(content, encoding="utf-8")
-    store, graph = _index_repo(tmp_path, root, [root / "main.py"], "single-module-repo.sqlite")
+    store, graph = index_repo(tmp_path, root, [root / "main.py"], "single-module-repo.sqlite")
     return root, store, graph
 
 

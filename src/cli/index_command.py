@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 import typer
 from dependency_graph import DependencyGraph
-from doc_generator import DocGenerator, open_doc_manifest_store
+from doc_generator import DocGenerator, SectionNarrator, open_doc_manifest_store
 from parser_engine import SourceFile, extract_symbols
 from provider_routing import FailoverExecutor, PathFailoverLog, build_stage_executor
 from reindex_pipeline.embeddings import update_embeddings
@@ -213,6 +213,11 @@ def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: Any, llm_eng
         manifestStore=manifest_store,
         outputRoot=paths.docs_output_dir(state_dir),
         repositoryRoot=root,
+        # One call per section, not per page, and cached in the manifest store
+        # against the section's membership - so an unchanged section is never
+        # narrated twice, and a repository indexed with no provider reachable
+        # still gets its sections, just under their directory-derived names.
+        sectionNarrator=SectionNarrator(llm_engine, cache=manifest_store),
     )
 
     typer.echo(Stage.GENERATING_DOCS_STRUCTURE.value)

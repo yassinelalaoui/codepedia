@@ -5,7 +5,14 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 PageKind = Literal[
-    "home", "module", "diagram", "class-diagram", "sequence-diagram", "use-case-diagram", "diagrams-index"
+    "home",
+    "module",
+    "section",
+    "diagram",
+    "class-diagram",
+    "sequence-diagram",
+    "use-case-diagram",
+    "diagrams-index",
 ]
 
 
@@ -102,6 +109,11 @@ class RegenerationImpactSet:
     removedPageIds: tuple[str, ...] = ()
     requiresHomePageRegeneration: bool = False
     requiresDiagramsIndexRegeneration: bool = False
+    # The sidebar's section/module tree is rendered into *every* page, so a
+    # change to its shape leaves every already-written page showing stale
+    # navigation. Unlike the flags above, this one is not a request to
+    # regenerate one more page - it invalidates the whole set.
+    requiresNavigationRegeneration: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -112,4 +124,5 @@ class RegenerationImpactSet:
             "removedPageIds": list(self.removedPageIds),
             "requiresHomePageRegeneration": self.requiresHomePageRegeneration,
             "requiresDiagramsIndexRegeneration": self.requiresDiagramsIndexRegeneration,
+            "requiresNavigationRegeneration": self.requiresNavigationRegeneration,
         }

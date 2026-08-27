@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 from dependency_graph import DependencyGraph
-from doc_generator import DocGenerator, open_doc_manifest_store
+from doc_generator import DocGenerator, SectionNarrator, open_doc_manifest_store
 from reindex_pipeline import IncrementalReindexPipeline
 from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore
@@ -61,6 +61,11 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         manifestStore=manifest_store,
         outputRoot=docs_root,
         repositoryRoot=root,
+        # One call per section, not per page, and cached in the manifest store
+        # against the section's membership - so an unchanged section is never
+        # narrated twice, and a repository indexed with no provider reachable
+        # still gets its sections, just under their directory-derived names.
+        sectionNarrator=SectionNarrator(summary_executor, cache=manifest_store),
     )
     summary_pipeline = CodeSummaryPipeline(metadataStore=metadata_store, dependencyGraph=graph, llmEngine=summary_executor)
 

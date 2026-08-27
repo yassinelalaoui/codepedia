@@ -44,8 +44,16 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
     # 1 home + 3 modules + 3 diagrams + 1 class diagram + 3 entry-point sequence
     # diagrams (alpha_entry, Child.run, shared_value - beta_helper is called by
     # both alpha_entry and Child.run, so it does not itself qualify) + 1
-    # repository-wide use-case diagram + 1 diagrams-index page.
-    assert len(doc_set.pages) == 13
+    # repository-wide use-case diagram + 1 diagrams-index page + 1 section page
+    # (the fixture repository is flat, so its three modules form a single
+    # section rooted at the repository directory).
+    assert len(doc_set.pages) == 14
+    section_pages = [page for page in doc_set.pages if page.kind == "section"]
+    assert len(section_pages) == 1
+    section_markdown = section_pages[0].contentMarkdown
+    assert "## Modules in this section" in section_markdown
+    for module_name in ("alpha", "beta", "gamma"):
+        assert f"[{module_name}](" in section_markdown
     home_page = next(page for page in doc_set.pages if page.kind == "home")
     assert "alpha" in home_page.contentMarkdown
     assert "beta" in home_page.contentMarkdown
@@ -137,9 +145,14 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
     # also touches, per research.md Decision 8). The repository-wide use-case
     # diagram refreshes too, for the same "any qualifying change" reason as
     # the class diagram (research.md Decision 6 of 023).
+    #
+    # beta.py's owning section page also refreshes: unlike a module page, a
+    # section page embeds its members' docstrings and summaries, so a member's
+    # change really does make it stale. Its *set* of members is unchanged, so
+    # the navigation tree keeps its shape and nothing else is dragged in.
     regenerated_kinds = {page.kind for page in doc_set.pages}
-    assert regenerated_kinds == {"module", "class-diagram", "sequence-diagram", "use-case-diagram"}
-    assert len(doc_set.pages) == 5
+    assert regenerated_kinds == {"module", "section", "class-diagram", "sequence-diagram", "use-case-diagram"}
+    assert len(doc_set.pages) == 6
     module_page = next(page for page in doc_set.pages if page.kind == "module")
     assert module_page.title == "beta"
     sequence_diagram_pages = [page for page in doc_set.pages if page.kind == "sequence-diagram"]
@@ -149,9 +162,12 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
     changed_paths = {path for path in before_mtimes if before_mtimes[path] != after_mtimes.get(path)}
     class_diagram_page = next(page for page in doc_set.pages if page.kind == "class-diagram")
     use_case_diagram_page = next(page for page in doc_set.pages if page.kind == "use-case-diagram")
+    section_page = next(page for page in doc_set.pages if page.kind == "section")
     expected_changed_paths = {
         output_root / "modules" / Path(module_page.outputPathMarkdown).name,
         output_root / "modules" / Path(module_page.outputPathHtml).name,
+        output_root / Path(section_page.outputPathMarkdown),
+        output_root / Path(section_page.outputPathHtml),
         output_root / Path(class_diagram_page.outputPathMarkdown),
         output_root / Path(class_diagram_page.outputPathHtml),
         output_root / Path(use_case_diagram_page.outputPathMarkdown),

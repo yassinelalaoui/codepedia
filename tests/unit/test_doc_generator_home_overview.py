@@ -27,6 +27,10 @@ def test_home_page_presents_architecture_summary(tmp_path):
 
     assert "Architecture overview" in home_page.contentMarkdown
     assert "3 documented modules" in home_page.contentMarkdown
-    assert "| Area | Modules |" in home_page.contentMarkdown
+    # The architecture table now counts modules per derived section rather than
+    # per raw directory name, and each row links to that section's own page.
+    assert "| Section | Modules |" in home_page.contentMarkdown
+    assert "sections/" in home_page.contentMarkdown
+    assert "## Sections" in home_page.contentMarkdown
     # The existing flat module list must still be present alongside the summary.
     assert "## Modules" in home_page.contentMarkdown

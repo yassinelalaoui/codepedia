@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from dependency_graph import DependencyGraph
 from repository_metadata.models import RepositoryBundle
@@ -10,6 +10,7 @@ from . import links
 from .entry_point_diagram import identify_entry_points
 from .manifest_store import PageManifestEntry
 from .models import EdgeId, RegenerationImpactSet
+from .sections import Section
 
 
 def compute_regeneration_impact(
@@ -20,6 +21,7 @@ def compute_regeneration_impact(
     changed_paths: Iterable[str | Path] = (),
     changed_symbol_ids: Iterable[str] = (),
     changed_dependency_edge_ids: Iterable[EdgeId] = (),
+    sections: Sequence[Section] = (),
 ) -> RegenerationImpactSet:
     entries = list(previous_entries)
     changed_path_strings = {_normalize(path) for path in changed_paths}
@@ -73,6 +75,20 @@ def compute_regeneration_impact(
     for module_key in impacted_diagram_module_keys:
         impacted_page_ids.add(links.diagram_page_id(module_key))
 
+    # A section page lists its members with their docstrings and summaries, so
+    # unlike a module page - which links to its neighbours by stable id/name and
+    # is therefore untouched by what they contain - it really does go stale when
+    # a member changes. Membership is read from the freshly derived sections
+    # rather than from the previous manifest, so a module that moved between
+    # sections invalidates both the section it left and the one it joined.
+    section_key_by_module_key = {
+        member.moduleKey: section.key for section in sections for member in section.members
+    }
+    for module_key in impacted_module_keys:
+        section_key = section_key_by_module_key.get(module_key)
+        if section_key:
+            impacted_page_ids.add(links.section_page_id(section_key))
+
     # The class diagram is repository-wide: which classes rank as "major" can
     # change from a single edit anywhere in the repository, so it always
     # refreshes on any qualifying change rather than being scoped like a
@@ -100,6 +116,7 @@ def compute_regeneration_impact(
     if has_any_entry_point and (direct_symbol_ids or changed_edges):
         impacted_page_ids.add(links.use_case_diagram_page_id())
 
+    current_section_page_ids = {links.section_page_id(section.key) for section in sections}
     current_module_page_ids = {links.module_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_diagram_page_ids = {links.diagram_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_class_diagram_page_ids = {links.class_diagram_page_id()} if has_any_class else set()
@@ -108,7 +125,8 @@ def compute_regeneration_impact(
     # conditionally present like the class/use-case diagram pages), so its id
     # is unconditionally current - it must never appear in removedPageIds.
     current_page_ids = (
-        current_module_page_ids
+        current_section_page_ids
+        | current_module_page_ids
         | current_diagram_page_ids
         | current_class_diagram_page_ids
         | current_sequence_diagram_page_ids
@@ -123,7 +141,23 @@ def compute_regeneration_impact(
     _add_referrers_of(impacted_page_ids, removed_page_ids, entries)
 
     previous_module_page_ids = {entry.pageId for entry in entries if entry.kind == "module"}
-    requires_home_regeneration = previous_module_page_ids != current_module_page_ids
+    previous_section_page_ids = {entry.pageId for entry in entries if entry.kind == "section"}
+    requires_home_regeneration = (
+        previous_module_page_ids != current_module_page_ids
+        or previous_section_page_ids != current_section_page_ids
+    )
+
+    # The sidebar renders the whole section/module tree into *every* page, so a
+    # page that is otherwise untouched still shows stale navigation once that
+    # tree changes shape. No per-page impact set can express that, hence a
+    # separate flag the generator answers by regenerating everything. It stays
+    # cheap because the tree only reshapes when files are added, removed or
+    # moved - never when their contents change, which is the ordinary case the
+    # incremental path exists to make fast.
+    requires_navigation_regeneration = (
+        previous_module_page_ids != current_module_page_ids
+        or previous_section_page_ids != current_section_page_ids
+    )
 
     # The diagrams-index page (024, research.md Decision 6) reflects four
     # independent, repository-wide facts: the module-page set, the
@@ -149,6 +183,7 @@ def compute_regeneration_impact(
         removedPageIds=tuple(sorted(removed_page_ids)),
         requiresHomePageRegeneration=requires_home_regeneration,
         requiresDiagramsIndexRegeneration=requires_diagrams_index_regeneration,
+        requiresNavigationRegeneration=requires_navigation_regeneration,
     )
 
 
