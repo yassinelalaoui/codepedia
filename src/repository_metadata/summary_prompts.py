@@ -8,7 +8,10 @@ from .summary_context import SummaryContext
 SYSTEM_PROMPT = (
     "You summarize repository code locally. "
     "Return a concise natural-language description of the symbol's role. "
-    "Do not mention unavailable context or external services."
+    "Do not mention unavailable context or external services. "
+    "Whenever you name a specific class, function, method, or file from this repository, "
+    "wrap it in backticks exactly as it appears (e.g. `ClassName`, `some_function`, "
+    "`src/path/to/file.py`) so the wiki can link it to its own page."
 )
 
 

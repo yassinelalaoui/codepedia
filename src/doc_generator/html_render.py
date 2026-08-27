@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import html
 import re
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Any, Sequence
 
 import markdown as markdown_lib
 
+from .cross_references import SymbolLookup, SymbolReferenceExtension
 from .links import DIAGRAMS_INDEX_OUTPUT_HTML, HOME_OUTPUT_HTML, relative_output_link
 from .markdown_render import render_html_template
 from .writer import (
@@ -40,6 +42,51 @@ def _rewrite_internal_links_to_html(content_html: str) -> str:
     return _INTERNAL_MD_LINK_PATTERN.sub(lambda match: f'href="{match.group(1)}.html{match.group(2) or ""}"', content_html)
 
 
+def _toc_label(token: dict[str, Any]) -> str:
+    """Plain text for one rail entry.
+
+    The `toc` extension leaves HTML entities in its `name` (a signature heading
+    arrives as `f(x) -&gt; int`). The layout template autoescapes, so handing that
+    over verbatim would double-escape it and print the entity itself.
+    """
+    return html.unescape(token.get("name", ""))
+
+
+def _build_page_toc(toc_tokens: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Flatten python-markdown's `toc_tokens` into this page's section rail.
+
+    Only H2 and H3 are kept. H1 is the page title, already rendered as the page
+    heading, and H4 is the per-method level, which would swamp the rail on a
+    large module. The walk descends through levels above H2 because the `toc`
+    extension nests tokens under the page's H1 rather than emitting H2 at the
+    top level. Anchors are the extension's own heading ids - the same ids
+    `attr_list` pins on symbol headings - so a rail link always resolves.
+    """
+    sections: list[dict[str, Any]] = []
+
+    def walk(tokens: Sequence[dict[str, Any]]) -> None:
+        for token in tokens:
+            level = token.get("level")
+            children = token.get("children") or ()
+            if level == 2:
+                sections.append(
+                    {
+                        "id": token.get("id", ""),
+                        "name": _toc_label(token),
+                        "children": [
+                            {"id": child.get("id", ""), "name": _toc_label(child)}
+                            for child in children
+                            if child.get("level") == 3
+                        ],
+                    }
+                )
+            elif level is not None and level < 2:
+                walk(children)
+
+    walk(toc_tokens)
+    return sections
+
+
 def render_page_html(
     *,
     title: str,
@@ -47,8 +94,29 @@ def render_page_html(
     output_path_html: str,
     nav_modules: Sequence[tuple[str, str, str]] = (),
     active_module_key: str = "",
+    symbol_lookup: SymbolLookup | None = None,
+    current_file_path: str = "",
 ) -> str:
-    content_html = markdown_lib.markdown(content_markdown, extensions=list(_MARKDOWN_EXTENSIONS))
+    # A fresh Markdown instance per page, rather than the module-level
+    # convenience function, is what makes `toc_tokens` reachable. Building a
+    # new one each call also keeps the `toc` extension's used-id set scoped to
+    # one page, so a heading repeated on the next page never inherits a `_1`
+    # dedup suffix from this one.
+    extensions: list[Any] = list(_MARKDOWN_EXTENSIONS)
+    if symbol_lookup is not None:
+        # Appended last so it registers after the built-ins; it only rewrites
+        # inline <code> elements, leaving fenced blocks (Mermaid included)
+        # untouched.
+        extensions.append(
+            SymbolReferenceExtension(
+                lookup=symbol_lookup,
+                output_path_html=output_path_html,
+                current_file_path=current_file_path,
+            )
+        )
+    md = markdown_lib.Markdown(extensions=extensions)
+    content_html = md.convert(content_markdown)
+    page_toc = _build_page_toc(getattr(md, "toc_tokens", ()))
     content_html = _MERMAID_FENCE_PATTERN.sub(r'<pre class="mermaid">\1</pre>', content_html)
     content_html = _rewrite_internal_links_to_html(content_html)
     home_href = relative_output_link(from_output_path=output_path_html, to_output_path=HOME_OUTPUT_HTML)
@@ -85,6 +153,7 @@ def render_page_html(
         ui_style_href=ui_style_href,
         search_index_href=search_index_href,
         nav_modules=nav_entries,
+        page_toc=page_toc,
         is_diagrams_page=output_path_html == DIAGRAMS_INDEX_OUTPUT_HTML,
         generated_at=datetime.now(timezone.utc).isoformat(),
     )

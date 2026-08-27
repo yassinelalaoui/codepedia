@@ -17,6 +17,12 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 {% endfor %}
 
 {% endif %}
+{% if class_diagram_source %}
+```mermaid
+{{ class_diagram_source.sourceText }}
+```
+
+{% endif %}
 {% if class_diagram_link %}
 [View the repository class diagram]({{ class_diagram_link.relativePath }}){: .diagram-link }
 

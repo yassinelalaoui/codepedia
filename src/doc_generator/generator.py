@@ -10,6 +10,7 @@ from repository_metadata.sqlite_store import stable_repository_id
 
 from . import links
 from .class_diagram import select_major_classes
+from .cross_references import SymbolLookup, build_symbol_lookup
 from .diagrams import build_module_diagram
 from .entry_point_diagram import build_entry_point_call_sequence, build_method_class_index, identify_entry_points
 from .html_render import render_page_html
@@ -17,13 +18,14 @@ from .impact import compute_regeneration_impact
 from .manifest_store import DocPageManifestStore
 from .markdown_render import render_markdown_template
 from .mermaid_diagram import (
+    ClassDiagramSource,
     build_class_diagram_mermaid_source,
     build_mermaid_source,
     build_sequence_diagram_mermaid_source,
     build_use_case_diagram_mermaid_source,
 )
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
-from .search_index import build_search_index
+from .search_index import SearchIndexDocument, build_search_index
 from .use_case_diagram import select_use_cases
 from .writer import DocumentationWriter
 
@@ -63,6 +65,8 @@ class DocGenerator:
         self._bundle: RepositoryBundle | None = None
         self._bundle_by_module_id: dict[str, SourceFileBundle] = {}
         self._bundle_by_file_path: dict[str, SourceFileBundle] = {}
+        self._search_index: SearchIndexDocument | None = None
+        self._symbol_lookup: SymbolLookup | None = None
 
     def generateOverviewPage(
         self,
@@ -70,6 +74,7 @@ class DocGenerator:
         *,
         classDiagramPage: DocPage | None = None,
         useCaseDiagramPage: DocPage | None = None,
+        classDiagramSource: ClassDiagramSource | None = None,
     ) -> DocPage:
         bundle = self._ensure_bundle()
         modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
@@ -136,9 +141,10 @@ class DocGenerator:
             architecture_summary=architecture_summary,
             class_diagram_link=class_diagram_link,
             use_case_diagram_link=use_case_diagram_link,
+            class_diagram_source=classDiagramSource,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_modules=self._nav_modules()
+            title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
         )
 
         return DocPage(
@@ -228,8 +234,9 @@ class DocGenerator:
             title=moduleSymbol.name,
             content_markdown=content,
             output_path_html=module_html,
-            nav_modules=self._nav_modules(),
+            nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup,
             active_module_key=module_key,
+            current_file_path=moduleSymbol.filePath,
         )
 
         return DocPage(
@@ -306,7 +313,7 @@ class DocGenerator:
             mermaid_source=mermaid_source.sourceText,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=diagram_html, nav_modules=self._nav_modules()
+            title=title, content_markdown=content, output_path_html=diagram_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
         )
 
         related_symbols = tuple(dict.fromkeys(neighbor_keys))
@@ -324,13 +331,23 @@ class DocGenerator:
             links=tuple(page_links),
         )
 
-    def generateClassDiagramPage(self) -> DocPage | None:
+    def _class_diagram_source(self) -> ClassDiagramSource | None:
+        """The repository class diagram, or None when no class qualifies.
+
+        Shared by the standalone diagram page and the overview page, which
+        embeds the same diagram inline rather than only linking to it.
+        """
         bundle = self._ensure_bundle()
         selection = select_major_classes(bundle, self.dependencyGraph)
         if not selection.includedClasses:
             return None
+        return build_class_diagram_mermaid_source(selection)
 
-        class_diagram_source = build_class_diagram_mermaid_source(selection)
+    def generateClassDiagramPage(self) -> DocPage | None:
+        class_diagram_source = self._class_diagram_source()
+        if class_diagram_source is None:
+            return None
+
         output_md, output_html = links.class_diagram_output_paths()
         page_id = links.class_diagram_page_id()
         title = "Repository Class Diagram"
@@ -340,7 +357,7 @@ class DocGenerator:
             class_diagram_source=class_diagram_source,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
         )
 
         return DocPage(
@@ -373,7 +390,7 @@ class DocGenerator:
             use_case_diagram_source=use_case_diagram_source,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
         )
 
         related_symbols = tuple(use_case.entryPointStableKey for use_case in selection.useCases)
@@ -420,7 +437,7 @@ class DocGenerator:
                 sequence_diagram_source=sequence_diagram_source,
             )
             html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
         )
 
             related_symbols = tuple(dict.fromkeys(step.calleeSymbolId for step in selection.steps))
@@ -514,7 +531,7 @@ class DocGenerator:
             dependency_diagram_links=dependency_diagram_links,
         )
         html = render_page_html(
-            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules()
+            title=title, content_markdown=content, output_path_html=output_html, nav_modules=self._nav_modules(), symbol_lookup=self._symbol_lookup
         )
 
         return DocPage(
@@ -603,6 +620,7 @@ class DocGenerator:
                 bundle.repository,
                 classDiagramPage=class_diagram_page,
                 useCaseDiagramPage=use_case_diagram_page,
+                classDiagramSource=self._class_diagram_source(),
             )
             self._writer.write_page(home_page)
             pages.append(home_page)
@@ -654,7 +672,7 @@ class DocGenerator:
             # Same reasoning for the wiki UI bundle (016 research.md Decision 8)
             # and the search index it and the chat panel both depend on.
             self._writer.ensure_wiki_ui_assets()
-            self._writer.write_search_index(build_search_index(bundle))
+            self._writer.write_search_index(self._search_index or build_search_index(bundle))
 
         return DocumentationSet(repositoryId=self.repositoryId, outputRoot=str(self.outputRoot), pages=tuple(pages))
 
@@ -682,6 +700,11 @@ class DocGenerator:
             self._bundle_by_file_path = {
                 _normalize_path(file_bundle.file.path): file_bundle for file_bundle in self._bundle.files
             }
+            # Built here rather than at the end of the run: page rendering needs
+            # it to resolve inline symbol mentions, and it is a pure function of
+            # the bundle, so the same document is reused for the manifest write.
+            self._search_index = build_search_index(self._bundle)
+            self._symbol_lookup = build_symbol_lookup(self._search_index)
         return self._bundle
 
     def _module_bundle(self, moduleSymbol: ModuleSymbol) -> SourceFileBundle | None:

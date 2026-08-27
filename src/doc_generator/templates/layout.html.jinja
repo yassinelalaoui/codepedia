@@ -14,6 +14,18 @@
       <span class="brand-name">codepedia</span>
     </a>
     <div id="wiki-search-root"></div>
+    <div id="wiki-toc-root"></div>
+{% if page_toc %}
+    <div class="nav-group page-toc">
+      <div class="nav-label">On this page</div>
+{% for section in page_toc %}
+      <a class="page-toc-link" href="#{{ section.id }}">{{ section.name }}</a>
+{% for child in section.children %}
+      <a class="page-toc-link child" href="#{{ child.id }}">{{ child.name }}</a>
+{% endfor %}
+{% endfor %}
+    </div>
+{% endif %}
     <div class="nav-group">
       <a class="nav-link" href="{{ home_href }}">
         <svg class="nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>

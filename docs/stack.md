@@ -107,10 +107,21 @@ and `chunks` gained their own new columns), not a new database.
 
 **Jinja2** (page templates) + **Python-Markdown** (Markdown → HTML, with the
 `attr_list` extension added in 016 so headings get stable anchor ids for
-search/citation links) + a **vendored, locally-committed `mermaid.min.js`** for the
+search/citation links, and the `toc` extension's `toc_tokens` read back to build
+each page's section rail — which is why rendering builds an explicit `Markdown()`
+instance per page rather than calling the module-level convenience function) + a **vendored, locally-committed `mermaid.min.js`** for the
 dependency diagrams. Vendored instead of a CDN `<script>` tag because of constitution
 2.2 (zero network exposure) — a generated wiki page must render fully offline, so
 nothing in the shipped HTML may reach out to a CDN.
+
+Inline symbol and file mentions in generated prose become wiki links through a
+Python-Markdown **treeprocessor** (`doc_generator/cross_references.py`) rather
+than a regex pass over the rendered HTML. A treeprocessor sees the element tree
+after inline processing, so an inline `<code>` span is structurally
+distinguishable from a fenced `<pre><code>` block — a regex over HTML is not, and
+would eventually inject an anchor into a Mermaid diagram source. It also rewrites
+only `DocPage.renderedHtml`, leaving `contentMarkdown` untouched, so the `.md`
+artifacts on disk do not churn when the symbol manifest changes.
 
 ## Web / API layer
 
