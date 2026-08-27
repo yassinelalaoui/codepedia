@@ -9,6 +9,9 @@ LANGUAGE_MODULES = {
     "python": ("tree_sitter_python", ("language",)),
     "javascript": ("tree_sitter_javascript", ("language",)),
     "typescript": ("tree_sitter_typescript", ("language_typescript", "language")),
+    # .tsx needs its own grammar: the plain TypeScript grammar reports JSX
+    # elements as syntax errors, which would cost every React component.
+    "tsx": ("tree_sitter_typescript", ("language_tsx",)),
     "java": ("tree_sitter_java", ("language",)),
     "go": ("tree_sitter_go", ("language",)),
     "rust": ("tree_sitter_rust", ("language",)),

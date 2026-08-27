@@ -250,11 +250,11 @@ and are skipped or will fail without one running — most of the suite,
 including everything under `tests/unit/` and `tests/contract/`, does not
 need one.
 
-> Three pre-existing tests under `tests/contract/test_parser_interface.py`
-> and `tests/integration/test_multi_language_batch.py` /
-> `test_parse_failures.py` currently fail on a fresh checkout, due to a
-> Tree-sitter grammar version mismatch (AST node naming) unrelated to any
-> single feature. Everything else should pass.
+> Those Tree-sitter-related parser failures are fixed: the AST node naming
+> mismatch came from the grammar being present but never wired into the
+> extractor, and `parse_result` reporting a tree full of `ERROR` nodes as a
+> success. Install with `pip install -e .` after pulling — `tree-sitter` is
+> now capped below `0.26`, which segfaults on any large file.
 
 Frontend (`vitest`):
 

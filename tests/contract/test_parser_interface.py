@@ -9,7 +9,8 @@ def test_parser_interface_returns_ast():
     ast = parser.parse(source)
     assert ast.language == "python"
     assert ast.parser_name == "PythonParser"
-    assert ast.root.type == "Module"
+    # tree-sitter names the root "module", the `ast`-module fallback "Module".
+    assert ast.root.type.lower() == "module"
 
 
 def test_parser_interface_works_for_js():

@@ -11,6 +11,9 @@ from ..parser_base import Parser
 from ..treesitter_runtime import get_runtime, normalize_language_key
 
 
+_DIALECT_GRAMMARS = {("typescript", ".tsx"): "tsx"}
+
+
 class TreeSitterOrFallbackParser(Parser):
     language_key: str = ""
     parser_name: str = "Parser"
@@ -21,7 +24,7 @@ class TreeSitterOrFallbackParser(Parser):
 
     def parse(self, source_file: SourceFile) -> AST:
         text = source_file.read_text()
-        key = normalize_language_key(self.language_key or source_file.language)
+        key = self.runtime_key(source_file)
         runtime = get_runtime()
         if runtime.is_available(key):
             try:
@@ -41,6 +44,14 @@ class TreeSitterOrFallbackParser(Parser):
                     recoverable=True,
                 )
         return self._parse_fallback(source_file, text)
+
+    def runtime_key(self, source_file: SourceFile) -> str:
+        """Grammar to parse this file with; a dialect may need its own."""
+        key = normalize_language_key(self.language_key or source_file.language)
+        dialect = _DIALECT_GRAMMARS.get((key, Path(source_file.path).suffix.lower()))
+        if dialect is not None and get_runtime().is_available(dialect):
+            return dialect
+        return key
 
     @property
     def display_language(self) -> str:

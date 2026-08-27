@@ -39,6 +39,22 @@ six parsers — it is local (no network), fast, and error-tolerant (keeps produc
 tree even with syntax errors, which matters for the "report a failure, keep going"
 edge case in the parser spec).
 
+`parser_engine/treesitter_symbols.py` walks that AST to build the symbol
+inventory for the brace languages; `extractor.py`'s line-oriented regex scanner
+is now only the fallback, used when no grammar is available for a language.
+A line-at-a-time scanner cannot see a signature that spans lines, an arrow
+function bound to a `const`, a Rust `impl` block's methods or a Go method's
+receiver — and it reads `if (…) {` as a declaration named `if`. On this
+repository's own `frontend/`, switching the default path raised the real symbol
+count from 49 to 78 and removed 35 such phantom symbols
+(`python scripts/inventory_report.py <repo>` reproduces the comparison).
+
+`.tsx` needs `tree_sitter_typescript.language_tsx()`: the plain TypeScript
+grammar reports JSX as a syntax error, which would cost every React component.
+`tree-sitter` itself is capped below `0.26` — `0.26.0` segfaults when a node's
+point is read after its children have been walked, which crashes on any file of
+a few thousand nodes.
+
 ## Dependency graph
 
 **Hand-rolled** (`dependency_graph/graph.py`'s `_SimpleDiGraph` — a dict of nodes plus
@@ -212,11 +228,15 @@ instead of shipping as a permanently-red CI job.
 
 ## One loose end
 
-- **`pathspec`** and **`networkx`** are both declared in `pyproject.toml` but
-  **unused** anywhere in `src/` — the scanner hand-rolled its own `.gitignore`
-  matcher instead of `pathspec`, and the dependency graph hand-rolled its own
-  adjacency structure instead of `networkx`. Not a functional problem, just dead
-  weight in the dependency list; worth pruning if the manifest should reflect reality.
+- **`networkx`** is declared in `pyproject.toml` but **unused** anywhere in
+  `src/` — the dependency graph hand-rolled its own adjacency structure instead.
+  Not a functional problem, just dead weight in the dependency list; worth
+  pruning if the manifest should reflect reality.
+
+  (`pathspec` was in the same state until `repo_scanner/ignore.py` was rewritten
+  on top of its `GitIgnoreSpec`. The hand-rolled matcher silently ignored
+  negations — `!keep.log` never re-included anything — and only ever read the
+  repository-root `.gitignore`, so per-directory ignore files did nothing.)
 
 (`httpx` was transitive-only through 025; as of 026 it is a genuine direct
 dependency — see "Local AI access" above.)

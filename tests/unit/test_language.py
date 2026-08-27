@@ -18,3 +18,17 @@ def test_language_detector_maps_js_and_java(tmp_path: Path):
     assert detector.detect(js_file) == "JavaScript"
     assert detector.detect(java_file) == "Java"
 
+
+
+def test_language_detector_maps_react_and_module_extensions(tmp_path: Path):
+    """.tsx/.jsx used to be dropped at scan time, hiding every React component."""
+    detector = LanguageDetector()
+    for name, expected in (
+        ("Panel.tsx", "TypeScript"),
+        ("Panel.jsx", "JavaScript"),
+        ("config.mts", "TypeScript"),
+        ("config.cts", "TypeScript"),
+    ):
+        path = tmp_path / name
+        path.write_text("export const value = 1;\n", encoding="utf-8")
+        assert detector.detect(path) == expected

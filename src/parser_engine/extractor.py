@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import treesitter_symbols
 from .inventory import CallRelation, FileSymbolInventory, ImportRecord, InheritanceRelation
 from .models import AST, SourceFile
 from .symbols import ClassSymbol, FunctionSymbol, ModuleSymbol, Parameter, Symbol
@@ -24,6 +25,11 @@ class SymbolExtractor:
         if language == PYTHON_LANG:
             return _extract_python_inventory(source_file=source_file, text=text)
         if language in BRACE_LANGUAGES:
+            inventory = _extract_treesitter_inventory(
+                source_file=source_file, text=text, language=language, ast=ast
+            )
+            if inventory is not None:
+                return inventory
             return _extract_brace_inventory(source_file=source_file, text=text, language=language)
         return _extract_generic_inventory(source_file=source_file, text=text)
 
@@ -404,6 +410,7 @@ class _DeclaredItem:
     start_line: int
     end_line: int
     parent_class: str | None = None
+    interfaces: tuple[str, ...] = field(default_factory=tuple)
     parameters: tuple[Parameter, ...] = field(default_factory=tuple)
     return_type: str | None = None
     owner: str = "module"
@@ -416,20 +423,202 @@ class _DeclaredItem:
     symbol: Symbol | None = None
 
 
-def _extract_brace_inventory(*, source_file: SourceFile, text: str, language: str) -> FileSymbolInventory:
-    lines = _split_lines(text)
+def _extract_treesitter_inventory(
+    *, source_file: SourceFile, text: str, language: str, ast: AST | None = None
+) -> FileSymbolInventory | None:
+    """Build the inventory from a real syntax tree.
+
+    Returns ``None`` when no grammar is available for the language, when the
+    file cannot be parsed, or when the tree yields nothing - the caller then
+    falls back to the line-oriented regex scanner.
+    """
+    tree = ast if ast is not None and _normalize_language(ast.language) == language else _parse_source(source_file, language)
+    if tree is None:
+        return None
+    facts = treesitter_symbols.extract_file_facts(ast=tree, text=text, language=language)
+    if facts is None or not (facts.declarations or facts.imports):
+        return None
+
     source_path = str(source_file.path)
-    items = _scan_brace_declarations(text=text, language=language, lines=lines)
-    _assign_brace_parents(items)
-    classes: list[ClassSymbol] = []
-    functions: list[FunctionSymbol] = []
+    line_count = max(1, len(_split_lines(text)))
+    # Anonymous declarations are dropped, so declaration indexes are remapped
+    # onto the kept items; a dropped parent is replaced by its own closest
+    # kept ancestor.
+    items: list[_DeclaredItem] = []
+    index_map: dict[int, int] = {}
+    for position, declaration in enumerate(facts.declarations):
+        if not declaration.name:
+            continue
+        index_map[position] = len(items)
+        items.append(
+            _DeclaredItem(
+                kind=declaration.kind,
+                name=declaration.name,
+                start_line=min(declaration.start_line, line_count),
+                end_line=min(max(declaration.end_line, declaration.start_line), line_count),
+                parent_class=declaration.parent_class,
+                interfaces=declaration.interfaces,
+                parameters=declaration.parameters,
+                return_type=declaration.return_type,
+                owner=declaration.owner,
+                docstring=declaration.docstring,
+            )
+        )
+    class_by_name: dict[str, int] = {}
+    for position, item in enumerate(items):
+        if item.kind == "class":
+            class_by_name.setdefault(item.name, position)
+    for position, declaration in enumerate(facts.declarations):
+        if position not in index_map:
+            continue
+        item = items[index_map[position]]
+        item.parent_index = _kept_ancestor(facts.declarations, index_map, declaration.parent_index)
+        if item.parent_index is None and declaration.impl_type:
+            # Go methods and Rust `impl` blocks declare their methods outside
+            # the type's own body; hang them off the type they belong to.
+            owner_index = class_by_name.get(declaration.impl_type)
+            if owner_index is not None and owner_index != index_map[position]:
+                item.parent_index = owner_index
+    _link_parent_children(items)
+
+    classes, functions = _materialize_items(source_path, items)
+    inheritance = _inheritance_relations(source_path, items)
+    inheritance.extend(_treesitter_impl_relations(source_path, items, facts.inheritance))
+
+    imports = [
+        ImportRecord(
+            id=_stable_id("import", source_path, record.text, record.start_line, record.end_line),
+            sourceFile=source_path,
+            text=record.text,
+            lineStart=min(record.start_line, line_count),
+            lineEnd=min(max(record.end_line, record.start_line), line_count),
+        )
+        for record in facts.imports
+        if record.text
+    ]
+    module = ModuleSymbol(
+        id=_stable_id("module", source_path, Path(source_path).name, 1, line_count),
+        name=Path(source_path).stem,
+        lineStart=1,
+        lineEnd=line_count,
+        docstring=facts.module_docstring,
+        generatedSummary="",
+        filePath=source_path,
+        imports=tuple(imports),
+    )
+    calls = _treesitter_calls(
+        source_path=source_path,
+        items=items,
+        module_id=module.id,
+        facts=facts,
+        index_map=index_map,
+        line_count=line_count,
+    )
+    return FileSymbolInventory(
+        sourceFile=source_path,
+        module=module,
+        classes=tuple(classes),
+        functions=tuple(functions),
+        imports=tuple(imports),
+        callRelations=tuple(calls),
+        inheritanceRelations=tuple(inheritance),
+    )
+
+
+def _parse_source(source_file: SourceFile, language: str) -> AST | None:
+    from .parser_registry import get_parser
+
+    try:
+        return get_parser(language).parse(source_file)
+    except Exception:
+        return None
+
+
+def _treesitter_impl_relations(
+    source_path: str,
+    items: list[_DeclaredItem],
+    relations: list[Any],
+) -> list[InheritanceRelation]:
+    """Relations declared away from the type itself (Rust `impl Trait for T`)."""
+    by_name: dict[str, _DeclaredItem] = {}
+    for item in items:
+        if isinstance(item.symbol, ClassSymbol) and item.name not in by_name:
+            by_name[item.name] = item
+    built: list[InheritanceRelation] = []
+    for relation in relations:
+        item = by_name.get(relation.type_name)
+        if item is None or item.symbol is None:
+            continue
+        built.append(
+            InheritanceRelation(
+                id=_stable_id("inherit", source_path, item.name, relation.start_line, relation.end_line, relation.parent_name),
+                sourceFile=source_path,
+                subclassSymbolId=item.symbol.id,
+                parentClassName=relation.parent_name,
+                lineStart=relation.start_line,
+                lineEnd=relation.end_line,
+            )
+        )
+    return built
+
+
+def _kept_ancestor(
+    declarations: list[Any],
+    index_map: dict[int, int],
+    position: int | None,
+) -> int | None:
+    while position is not None and position not in index_map:
+        position = declarations[position].parent_index
+    return None if position is None else index_map[position]
+
+
+def _treesitter_calls(
+    *,
+    source_path: str,
+    items: list[_DeclaredItem],
+    module_id: str,
+    facts: Any,
+    index_map: dict[int, int],
+    line_count: int,
+) -> list[CallRelation]:
     calls: list[CallRelation] = []
-    inheritance: list[InheritanceRelation] = []
-    imports = _extract_brace_imports(source_path=source_path, language=language, lines=lines)
+    seen: set[str] = set()
+    for call in facts.calls:
+        caller_id = module_id
+        caller_index = _kept_ancestor(facts.declarations, index_map, call.declaration_index)
+        if caller_index is not None:
+            symbol = items[caller_index].symbol
+            if symbol is not None:
+                caller_id = symbol.id
+        line = min(max(1, call.line), line_count)
+        call_id = _stable_id("call", source_path, call.name or "call", line, line, caller_id)
+        if call_id in seen:
+            continue
+        seen.add(call_id)
+        calls.append(
+            CallRelation(
+                id=call_id,
+                sourceFile=source_path,
+                callerSymbolId=caller_id,
+                calleeSymbolIdOrName=call.name,
+                lineStart=line,
+                lineEnd=line,
+            )
+        )
+    return calls
+
+
+def _materialize_items(source_path: str, items: list[_DeclaredItem]) -> tuple[list[ClassSymbol], list[FunctionSymbol]]:
+    """Turn declared items into symbols and wire their parent/child links.
+
+    Shared by the tree-sitter and the regex path: both produce the same
+    `_DeclaredItem` shape, only the way they discover the declarations
+    differs.
+    """
     item_to_symbol: dict[int, Symbol] = {}
     for index, item in enumerate(items):
         if item.kind == "class":
-            symbol = ClassSymbol(
+            item.symbol = ClassSymbol(
                 id=_stable_id("class", source_path, item.name, item.start_line, item.end_line, item.parent_class or ""),
                 name=item.name,
                 lineStart=item.start_line,
@@ -438,11 +627,9 @@ def _extract_brace_inventory(*, source_file: SourceFile, text: str, language: st
                 generatedSummary="",
                 parentClass=item.parent_class,
             )
-            item.symbol = symbol
-            classes.append(symbol)
-            item_to_symbol[index] = symbol
+            item_to_symbol[index] = item.symbol
         elif item.kind == "function":
-            symbol = FunctionSymbol(
+            item.symbol = FunctionSymbol(
                 id=_stable_id("function", source_path, item.name, item.start_line, item.end_line, item.parent_class or item.owner),
                 name=item.name,
                 lineStart=item.start_line,
@@ -453,29 +640,47 @@ def _extract_brace_inventory(*, source_file: SourceFile, text: str, language: st
                 returnType=item.return_type,
                 owner=item.owner,
             )
-            item.symbol = symbol
-            functions.append(symbol)
-            item_to_symbol[index] = symbol
+            item_to_symbol[index] = item.symbol
     _attach_brace_relationships(items, item_to_symbol)
     # _attach_brace_relationships replaces each item.symbol with a new,
     # relationship-populated object (ClassSymbol/FunctionSymbol are frozen,
-    # so it can't update them in place) - classes/functions collected above
-    # still hold the pre-attachment objects (empty `methods`), so rebuild
-    # both from the now-final item.symbol values.
+    # so it can't update them in place), so read the final symbols back off
+    # the items rather than collecting them in the loop above.
     classes = [item.symbol for item in items if isinstance(item.symbol, ClassSymbol)]
     functions = [item.symbol for item in items if isinstance(item.symbol, FunctionSymbol)]
+    return classes, functions
+
+
+def _inheritance_relations(source_path: str, items: list[_DeclaredItem]) -> list[InheritanceRelation]:
+    relations: list[InheritanceRelation] = []
     for item in items:
-        if isinstance(item.symbol, ClassSymbol) and item.parent_class:
-            inheritance.append(
+        if not isinstance(item.symbol, ClassSymbol):
+            continue
+        for parent_name in (item.parent_class, *item.interfaces):
+            if not parent_name:
+                continue
+            relations.append(
                 InheritanceRelation(
-                    id=_stable_id("inherit", source_path, item.name, item.start_line, item.end_line, item.parent_class),
+                    id=_stable_id("inherit", source_path, item.name, item.start_line, item.end_line, parent_name),
                     sourceFile=source_path,
                     subclassSymbolId=item.symbol.id,
-                    parentClassName=item.parent_class,
+                    parentClassName=parent_name,
                     lineStart=item.start_line,
                     lineEnd=item.end_line,
                 )
             )
+    return relations
+
+
+def _extract_brace_inventory(*, source_file: SourceFile, text: str, language: str) -> FileSymbolInventory:
+    lines = _split_lines(text)
+    source_path = str(source_file.path)
+    items = _scan_brace_declarations(text=text, language=language, lines=lines)
+    _assign_brace_parents(items)
+    calls: list[CallRelation] = []
+    imports = _extract_brace_imports(source_path=source_path, language=language, lines=lines)
+    classes, functions = _materialize_items(source_path, items)
+    inheritance = _inheritance_relations(source_path, items)
     module = ModuleSymbol(
         id=_stable_id("module", source_path, Path(source_path).name, 1, max(1, len(lines))),
         name=Path(source_path).stem,
@@ -862,6 +1067,11 @@ def _assign_brace_parents(items: list[_DeclaredItem]) -> None:
                     if (candidate.end_line - candidate.start_line) < (current.end_line - current.start_line):
                         parent_index = candidate_index
         item.parent_index = parent_index
+    _link_parent_children(items)
+
+
+def _link_parent_children(items: list[_DeclaredItem]) -> None:
+    """Fill each item's `methods`/`nested` lists from its `parent_index`."""
     for index, item in enumerate(items):
         parent_index = item.parent_index
         if parent_index is None:

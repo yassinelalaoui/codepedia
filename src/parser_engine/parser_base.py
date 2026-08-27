@@ -28,5 +28,18 @@ class Parser(ABC):
                 recoverable=True,
             )
             return ParseResult.from_failure(error.to_failure())
+        if ast.has_errors:
+            # tree-sitter recovers from broken syntax instead of raising, so a
+            # tree carrying ERROR nodes would otherwise be reported as a clean
+            # parse. Callers that only need an outline can still use
+            # `parse()` directly and read `AST.has_errors` themselves.
+            error = ParseError.from_source_file(
+                source_file,
+                language=source_file.language,
+                parser_name=self.parser_name,
+                message="source contains syntax errors",
+                recoverable=True,
+            )
+            return ParseResult.from_failure(error.to_failure())
         return ParseResult.from_ast(ast)
 
