@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -83,6 +84,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
     _ensure_chunks_embedding_model_id_column(connection)
+    _ensure_chunks_fts_index(connection)
 
 
 def _ensure_chunks_embedding_model_id_column(connection: sqlite3.Connection) -> None:
@@ -93,6 +95,78 @@ def _ensure_chunks_embedding_model_id_column(connection: sqlite3.Connection) -> 
     if "embedding_model_id" not in columns:
         with connection:
             connection.execute("ALTER TABLE chunks ADD COLUMN embedding_model_id TEXT NOT NULL DEFAULT ''")
+
+
+def _ensure_chunks_fts_index(connection: sqlite3.Connection) -> None:
+    """Create and, for a pre-existing database, backfill the lexical index.
+
+    A standalone FTS5 table rather than an external-content one: `chunks.id` is
+    TEXT, and external content requires an INTEGER rowid that stays stable
+    across a VACUUM. Duplicating `content` costs disk but keeps the two tables
+    independently correct, and sync is explicit at the only two write points
+    (`upsert_chunk`, `delete_chunks_for_file`).
+
+    Additive and idempotent, matching `_ensure_chunks_embedding_model_id_column`
+    and contracts/sqlite-schema-deltas.md - there is no schema-version column in
+    this project, so migrations are introspection-guarded.
+    """
+    connection.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts "
+        "USING fts5(content, chunk_id UNINDEXED, index_id UNINDEXED)"
+    )
+    # Backfill runs once, for a database indexed before this table existed. The
+    # guard matters: ensure_schema runs on every connect(), and `serve` reopens a
+    # populated index on every start.
+    already = connection.execute("SELECT 1 FROM chunks_fts LIMIT 1").fetchone()
+    if already is not None:
+        return
+    pending = connection.execute("SELECT 1 FROM chunks LIMIT 1").fetchone()
+    if pending is None:
+        return
+    with connection:
+        connection.execute(
+            "INSERT INTO chunks_fts (content, chunk_id, index_id) "
+            "SELECT content, id, index_id FROM chunks"
+        )
+
+
+def _replace_fts_row(connection: sqlite3.Connection, *, chunk_id: str, index_id: str, content: str) -> None:
+    connection.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
+    connection.execute(
+        "INSERT INTO chunks_fts (content, chunk_id, index_id) VALUES (?, ?, ?)",
+        (content, chunk_id, index_id),
+    )
+
+
+def build_match_expression(query_text: str) -> str:
+    """Turn free text into an FTS5 MATCH expression that cannot be a syntax error.
+
+    A raw user question reaches FTS5 with quotes, hyphens and parentheses that
+    are all operators in its query grammar. Every token is extracted and quoted
+    as a string literal instead, then OR-ed, so the worst case is no match rather
+    than an OperationalError mid-question.
+    """
+    tokens = re.findall(r"[A-Za-z0-9_]+", query_text)
+    if not tokens:
+        return ""
+    quoted = [chr(34) + token + chr(34) for token in dict.fromkeys(tokens)]
+    return " OR ".join(quoted)
+
+
+def search_lexical(
+    connection: sqlite3.Connection, *, index_id: str, query_text: str, limit: int
+) -> tuple[str, ...]:
+    """Chunk ids for `query_text`, best BM25 match first."""
+    expression = build_match_expression(query_text)
+    if not expression or limit <= 0:
+        return ()
+    rows = connection.execute(
+        "SELECT chunk_id FROM chunks_fts "
+        "WHERE index_id = ? AND chunks_fts MATCH ? "
+        "ORDER BY bm25(chunks_fts) LIMIT ?",
+        (index_id, expression, limit),
+    ).fetchall()
+    return tuple(row["chunk_id"] for row in rows)
 
 
 def utc_now() -> str:
@@ -245,6 +319,9 @@ def upsert_chunk(
             """,
             (entry.chunkId, entry.sourceFilePath, state, timestamp),
         )
+        _replace_fts_row(
+            connection, chunk_id=entry.chunkId, index_id=index_id, content=entry.content
+        )
     return entry
 
 
@@ -341,6 +418,8 @@ def delete_chunks_for_file(connection: sqlite3.Connection, *, index_id: str, sou
             "DELETE FROM chunks WHERE index_id = ? AND source_file_path = ?",
             (index_id, normalized),
         )
+        for chunk_id in chunk_ids:
+            connection.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
     return chunk_ids
 
 

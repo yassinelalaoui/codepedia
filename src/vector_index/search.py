@@ -80,6 +80,44 @@ def _coerce_entry(entry: VectorEntry | CodeChunk) -> VectorEntry:
     return VectorEntry.from_chunk(entry)
 
 
+RRF_K = 60
+"""Reciprocal Rank Fusion damping constant, the value from the original paper.
+
+It flattens the contribution of deep ranks so a result the lexical side ranked
+first cannot be buried by a long vector ranking, and vice versa.
+"""
+
+
+def score_entry(query_vector: Sequence[float], entry: VectorEntry | CodeChunk, *, filters: Mapping[str, Any] | None = None) -> float | None:
+    """Cosine score for one entry, or None when it fails the same gates as `rank_entries`.
+
+    Used to give a lexical-only hit a real similarity score: the fused ordering
+    decides position, but `SearchResult.score` must stay a raw cosine value
+    because the chat layer compares it against absolute thresholds
+    (`chat/retrieval.py`'s insufficient/ambiguous banners).
+    """
+    coerced = _coerce_entry(entry)
+    if not _matches_filters(coerced, filters or {}):
+        return None
+    if coerced.dimensionality != len(query_vector):
+        return None
+    return cosine_similarity(query_vector, coerced.vector)
+
+
+def reciprocal_rank_fusion(rankings: Sequence[Sequence[str]], *, k_constant: int = RRF_K) -> list[str]:
+    """Fuse several ranked id lists into one order, best first.
+
+    Ties are broken by chunk id so the same inputs always produce the same
+    output - `rank_entries` makes the same guarantee, and existing tests depend
+    on search being deterministic.
+    """
+    fused: dict[str, float] = {}
+    for ranking in rankings:
+        for position, chunk_id in enumerate(ranking):
+            fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (k_constant + position + 1)
+    return sorted(fused, key=lambda chunk_id: (-fused[chunk_id], chunk_id))
+
+
 def rank_entries(
     query_vector: Sequence[float],
     entries: Iterable[VectorEntry | CodeChunk],

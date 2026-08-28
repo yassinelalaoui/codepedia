@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import threading
 from dataclasses import replace
 from pathlib import Path
@@ -7,11 +8,14 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from .chunking import build_code_chunk
 from .models import CodeChunk, IndexRecord, SearchQuery, SearchResult, VectorEntry
-from .search import rank_entries
+from .search import rank_entries, reciprocal_rank_fusion, score_entry
 from . import storage
 
 
 class VectorIndex:
+    # How far past k each side is sampled before fusion.
+    HYBRID_OVERSAMPLE = 4
+
     def __init__(
         self,
         repositoryRoot: str | Path,
@@ -157,7 +161,7 @@ class VectorIndex:
                 filters["embeddingModelId"] = provider_used
         else:
             query_vector = self._embedding_engine.embed(search_query.queryText)
-        results = rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=filters)
+        results = self._hybrid_search(query_vector, search_query, filters)
         if not results and auto_filtered_model_id is not None:
             # `FailoverExecutor` isn't sticky - a transient failure can still
             # mean this query's embedding was answered by a provider whose
@@ -169,8 +173,76 @@ class VectorIndex:
             # dimensionality check keeps genuinely incompatible vectors from
             # being compared.
             relaxed_filters = {key: value for key, value in filters.items() if key != "embeddingModelId"}
-            results = rank_entries(query_vector, self._entries.values(), k=search_query.k, filters=relaxed_filters)
+            results = self._hybrid_search(query_vector, search_query, relaxed_filters)
         return results
+
+    def _hybrid_search(
+        self,
+        query_vector: Sequence[float],
+        search_query: SearchQuery,
+        filters: Mapping[str, object],
+    ) -> list[SearchResult]:
+        """Vector similarity fused with BM25, ordered by rank, scored by cosine.
+
+        Both sides are over-sampled so a result the other side ranked highly can
+        still surface, then Reciprocal Rank Fusion decides the final order.
+
+        `SearchResult.score` deliberately stays the raw cosine similarity rather
+        than the fused score: `chat/retrieval.py` compares it against absolute
+        thresholds (below 0.15 means "not enough evidence", within 0.05 of the
+        top means "ambiguous"), and an RRF score of ~0.016 would trip both on
+        every single answer. Fusion changes the order, never the score.
+        """
+        depth = max(search_query.k * self.HYBRID_OVERSAMPLE, search_query.k)
+        vector_results = rank_entries(query_vector, self._entries.values(), k=depth, filters=filters)
+        vector_ranking = [result.chunkId for result in vector_results]
+        scored: dict[str, SearchResult] = {result.chunkId: result for result in vector_results}
+
+        lexical_ranking: list[str] = []
+        for chunk_id in self._lexical_candidates(search_query.queryText, depth):
+            if chunk_id in scored:
+                lexical_ranking.append(chunk_id)
+                continue
+            entry = self._entries.get(chunk_id)
+            if entry is None:
+                continue
+            # A lexical-only hit still needs a real similarity, and must clear
+            # the same filter and dimensionality gates the vector side applied.
+            score = score_entry(query_vector, entry, filters=filters)
+            if score is None:
+                continue
+            scored[chunk_id] = SearchResult(
+                chunkId=entry.chunkId,
+                content=entry.content,
+                score=score,
+                sourceSymbolId=entry.sourceSymbolId,
+                sourceFilePath=entry.sourceFilePath,
+                chunkType=entry.chunkType,
+            )
+            lexical_ranking.append(chunk_id)
+
+        if not lexical_ranking:
+            return vector_results[: search_query.k]
+        fused = reciprocal_rank_fusion([vector_ranking, lexical_ranking])
+        return [scored[chunk_id] for chunk_id in fused[: search_query.k] if chunk_id in scored]
+
+    def _lexical_candidates(self, query_text: str, limit: int) -> tuple[str, ...]:
+        """BM25 matches, or nothing at all if the lexical index is unavailable.
+
+        Failing open matters: an index written before the FTS table existed, or
+        a SQLite build without FTS5, must degrade to pure vector search rather
+        than break every question.
+        """
+        try:
+            with self._lock:
+                return storage.search_lexical(
+                    self._connection,
+                    index_id=self._record.id,
+                    query_text=query_text,
+                    limit=limit,
+                )
+        except sqlite3.Error:
+            return ()
 
     def _dominant_embedding_model_id(self) -> str | None:
         """The one `embeddingModelId` every stored entry shares, if there is
