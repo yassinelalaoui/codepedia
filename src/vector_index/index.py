@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -22,6 +23,9 @@ class VectorIndex:
         self.repositoryRoot = str(Path(repositoryRoot).expanduser().resolve())
         self.metadataPath = Path(metadataPath).expanduser()
         self.metadataPath.parent.mkdir(parents=True, exist_ok=True)
+        # Reentrant because the public write methods nest: reindexFile ->
+        # removeChunksForFile, and _store_entry -> _persist_record.
+        self._lock = threading.RLock()
         self._connection = storage.connect(self.metadataPath)
         self._record = storage.ensure_index_record(
             self._connection,
@@ -57,9 +61,10 @@ class VectorIndex:
     def _load_if_needed(self, *, auto_load: bool) -> None:
         if not auto_load:
             return
-        loaded = storage.load_entries(self._connection, index_id=self._record.id)
-        self._entries = {entry.chunkId: entry for entry in loaded}
-        self._rebuild_file_index()
+        with self._lock:
+            loaded = storage.load_entries(self._connection, index_id=self._record.id)
+            self._entries = {entry.chunkId: entry for entry in loaded}
+            self._rebuild_file_index()
 
     def _rebuild_file_index(self) -> None:
         mapping: dict[str, set[str]] = {}
@@ -68,20 +73,22 @@ class VectorIndex:
         self._file_to_chunks = mapping
 
     def _persist_record(self) -> None:
-        storage.touch_index(self._connection, self._record.id)
-        self._record = storage.load_index_record(self._connection, self._record.id)
+        with self._lock:
+            storage.touch_index(self._connection, self._record.id)
+            self._record = storage.load_index_record(self._connection, self._record.id)
 
     def _store_entry(self, chunk: CodeChunk, *, source_file_path: str | Path | None = None) -> VectorEntry:
-        entry = storage.upsert_chunk(
-            self._connection,
-            index_id=self._record.id,
-            chunk=chunk,
-            source_file_path=source_file_path,
-        )
-        self._entries[entry.chunkId] = entry
-        self._file_to_chunks.setdefault(entry.sourceFilePath, set()).add(entry.chunkId)
-        self._persist_record()
-        return entry
+        with self._lock:
+            entry = storage.upsert_chunk(
+                self._connection,
+                index_id=self._record.id,
+                chunk=chunk,
+                source_file_path=source_file_path,
+            )
+            self._entries[entry.chunkId] = entry
+            self._file_to_chunks.setdefault(entry.sourceFilePath, set()).add(entry.chunkId)
+            self._persist_record()
+            return entry
 
     def addChunk(self, chunk: CodeChunk, *, sourceFilePath: str | Path | None = None) -> VectorEntry:
         return self._store_entry(chunk, source_file_path=sourceFilePath)
@@ -98,17 +105,18 @@ class VectorIndex:
 
     def removeChunksForFile(self, path: str | Path) -> tuple[str, ...]:
         normalized = storage.normalize_path(path)
-        removed_ids = storage.delete_chunks_for_file(self._connection, index_id=self._record.id, source_file_path=normalized)
-        for chunk_id in removed_ids:
-            entry = self._entries.pop(chunk_id, None)
-            if entry is not None:
-                bucket = self._file_to_chunks.get(entry.sourceFilePath)
-                if bucket is not None:
-                    bucket.discard(chunk_id)
-                    if not bucket:
-                        self._file_to_chunks.pop(entry.sourceFilePath, None)
-        self._persist_record()
-        return removed_ids
+        with self._lock:
+            removed_ids = storage.delete_chunks_for_file(self._connection, index_id=self._record.id, source_file_path=normalized)
+            for chunk_id in removed_ids:
+                entry = self._entries.pop(chunk_id, None)
+                if entry is not None:
+                    bucket = self._file_to_chunks.get(entry.sourceFilePath)
+                    if bucket is not None:
+                        bucket.discard(chunk_id)
+                        if not bucket:
+                            self._file_to_chunks.pop(entry.sourceFilePath, None)
+            self._persist_record()
+            return removed_ids
 
     def reindexFile(self, path: str | Path, chunks: Iterable[CodeChunk]) -> tuple[VectorEntry, ...]:
         normalized = storage.normalize_path(path)
@@ -208,12 +216,14 @@ class VectorIndex:
         return self._record
 
     def close(self) -> None:
-        self._connection.close()
+        with self._lock:
+            self._connection.close()
 
     def refresh(self) -> None:
-        loaded = storage.load_entries(self._connection, index_id=self._record.id)
-        self._entries = {entry.chunkId: entry for entry in loaded}
-        self._rebuild_file_index()
+        with self._lock:
+            loaded = storage.load_entries(self._connection, index_id=self._record.id)
+            self._entries = {entry.chunkId: entry for entry in loaded}
+            self._rebuild_file_index()
 
     def chunks_for_file(self, path: str | Path) -> tuple[VectorEntry, ...]:
         normalized = storage.normalize_path(path)
@@ -221,5 +231,6 @@ class VectorIndex:
         return tuple(self._entries[chunk_id] for chunk_id in chunk_ids if chunk_id in self._entries)
 
     def get_lifecycle(self, path: str | Path | None = None) -> dict[str, str]:
-        with self._connection:
-            return storage.load_lifecycle_state(self._connection, source_file_path=path)
+        with self._lock:
+            with self._connection:
+                return storage.load_lifecycle_state(self._connection, source_file_path=path)

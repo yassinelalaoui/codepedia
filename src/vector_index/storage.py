@@ -68,7 +68,11 @@ def stable_index_id(repository_root: str | Path, metadata_path: str | Path) -> s
 def connect(metadata_path: str | Path) -> sqlite3.Connection:
     path = Path(metadata_path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(path))
+    # `serve` opens the index on the main thread but writes from the watcher's
+    # debounce timer thread, and answers chat searches from uvicorn's loop
+    # thread. sqlite3's default same-thread guard rejects both. Access is
+    # serialized by VectorIndex's own reentrant lock instead.
+    connection = sqlite3.connect(str(path), check_same_thread=False)
     connection.row_factory = sqlite3.Row
     ensure_schema(connection)
     return connection
