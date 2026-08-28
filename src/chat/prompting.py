@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from local_llm import PromptEnvelope
 
+from .budget import DEFAULT_CONTEXT_TOKEN_BUDGET, fit_to_budget
 from .models import ChatMessage, RAGContext, RetrievedEvidence
 
 SYSTEM_PROMPT = (
@@ -40,14 +41,29 @@ def _format_history_block(history: tuple[ChatMessage, ...]) -> str:
     return "\n".join(f"{message.role}: {message.content}" for message in history)
 
 
-def build_prompt_envelope(context: RAGContext) -> PromptEnvelope:
+def build_prompt_envelope(
+    context: RAGContext, *, token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET
+) -> PromptEnvelope:
+    """Assemble the prompt, trimmed to a bounded size.
+
+    The budget is applied here rather than on `PromptEnvelope`, which is frozen
+    and shared with `repository_metadata/summary_prompts.py` and
+    `doc_generator/section_narrator.py` - budgeting there would silently reshape
+    wiki generation too.
+    """
+    budgeted = fit_to_budget(
+        conversation_history=context.conversationHistory,
+        readme_content=context.readmeContent,
+        retrieved_evidence=context.retrievedEvidence,
+        token_budget=token_budget,
+    )
     context_sections: list[str] = []
-    if context.conversationHistory:
-        context_sections.append(f"Conversation so far:\n{_format_history_block(context.conversationHistory)}")
-    if context.readmeContent:
-        context_sections.append(f"Project README ({context.readmePath}):\n{context.readmeContent}")
-    if context.retrievedEvidence:
-        context_sections.append(f"Retrieved evidence:\n{_format_evidence_block(context.retrievedEvidence)}")
+    if budgeted.conversationHistory:
+        context_sections.append(f"Conversation so far:\n{_format_history_block(budgeted.conversationHistory)}")
+    if budgeted.readmeContent:
+        context_sections.append(f"Project README ({context.readmePath}):\n{budgeted.readmeContent}")
+    if budgeted.retrievedEvidence:
+        context_sections.append(f"Retrieved evidence:\n{_format_evidence_block(budgeted.retrievedEvidence)}")
     return PromptEnvelope.from_prompt(
         context.question,
         context=context_sections,
