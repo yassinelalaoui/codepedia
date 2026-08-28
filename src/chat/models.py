@@ -135,6 +135,10 @@ class ChatSession:
     createdAt: str = field(default_factory=_utc_now)
     lastActivityAt: str = field(default_factory=_utc_now)
     messageStore: Any | None = None
+    # Optional: retrieval works without it, and reranking simply does nothing
+    # when it is absent (in-memory test sessions, or a repository indexed
+    # before the graph snapshot existed).
+    dependencyGraph: Any | None = None
 
     def __post_init__(self) -> None:
         self.id = _normalize_text(self.id)

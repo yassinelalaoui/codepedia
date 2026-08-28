@@ -96,4 +96,5 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         metadataDbPath=metadata_db_path,
         chatLlmEngine=chat_executor,
         watcher=watcher,
+        dependencyGraph=graph,
     )

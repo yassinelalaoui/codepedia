@@ -18,13 +18,17 @@ def start_local_server(
     host: str,
     port: int,
     metadata_db_path: Path | None = None,
+    dependency_graph: Any = None,
 ) -> None:
     """Serve the generated wiki + chat API and block until interrupted.
 
     Shared by `index` and `serve` (research.md §8) so both commands print the
     same URL message and handle a bind failure the same way.
     """
-    app = create_app(vector_index, embedding_engine, llm_engine, docs_root, metadata_db_path)
+    app = create_app(
+        vector_index, embedding_engine, llm_engine, docs_root, metadata_db_path,
+        dependency_graph=dependency_graph,
+    )
     typer.echo(f"Documentation wiki available at http://{host}:{port}/")
     try:
         uvicorn.run(app, host=host, port=port)

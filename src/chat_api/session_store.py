@@ -26,11 +26,13 @@ class SessionRegistry:
         embedding_engine: Any,
         llm_engine: Any,
         metadata_db_path: str | Path | None = None,
+        dependency_graph: Any = None,
     ) -> None:
         self._vector_index = vector_index
         self._embedding_engine = embedding_engine
         self._llm_engine = llm_engine
         self._metadata_db_path = metadata_db_path
+        self._dependency_graph = dependency_graph
         self._sessions: dict[str, ChatSession] = {}
 
     def create_session(self) -> ChatSession:
@@ -43,6 +45,7 @@ class SessionRegistry:
             embeddingEngine=self._embedding_engine,
             llmEngine=self._llm_engine,
             messageStore=self._metadata_db_path,
+            dependencyGraph=self._dependency_graph,
         )
         self._sessions[session_id] = session
         return session
@@ -65,6 +68,10 @@ class SessionRegistry:
             stored.embeddingEngine = self._embedding_engine
             stored.llmEngine = self._llm_engine
             stored.messageStore = self._metadata_db_path
+            # Easy to forget, and invisible when forgotten: a session resumed
+            # after a restart would silently lose graph reranking while still
+            # answering normally.
+            stored.dependencyGraph = self._dependency_graph
             stored.messages = list(chat_sqlite_store.load_messages(self._metadata_db_path, session_id))
             self._sessions[session_id] = stored
             return stored

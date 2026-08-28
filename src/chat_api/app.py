@@ -39,9 +39,12 @@ def create_app(
     llm_engine: Any,
     docs_root: str | Path,
     metadata_db_path: str | Path | None = None,
+    dependency_graph: Any = None,
 ) -> FastAPI:
     app = FastAPI(title="Local Chat API")
-    app.state.session_registry = SessionRegistry(vector_index, embedding_engine, llm_engine, metadata_db_path)
+    app.state.session_registry = SessionRegistry(
+        vector_index, embedding_engine, llm_engine, metadata_db_path, dependency_graph=dependency_graph
+    )
     app.state.metadata_db_path = metadata_db_path
     register_exception_handlers(app)
 

@@ -96,7 +96,8 @@ def index(
     try:
         result = run_index(path, config=cfg)
         start_local_server(
-            result.vectorIndex, result.embeddingEngine, result.chatLlmEngine, result.docsRoot, host, port, result.metadataDbPath
+            result.vectorIndex, result.embeddingEngine, result.chatLlmEngine, result.docsRoot, host, port, result.metadataDbPath,
+            dependency_graph=result.dependencyGraph,
         )
     except (RepositoryNotFoundError, LocalModelUnavailableError, ServerBindError, *_AI_PIPELINE_ERRORS) as exc:
         report_and_exit(exc)
@@ -115,7 +116,8 @@ def serve(
         result = run_serve(path, config=cfg)
         try:
             start_local_server(
-                result.vectorIndex, result.embeddingEngine, result.chatLlmEngine, result.docsRoot, host, port, result.metadataDbPath
+                result.vectorIndex, result.embeddingEngine, result.chatLlmEngine, result.docsRoot, host, port, result.metadataDbPath,
+            dependency_graph=result.dependencyGraph,
             )
         finally:
             if result.watcher is not None:

@@ -86,6 +86,7 @@ class IndexRunResult:
     metadataDbPath: Path
     chatLlmEngine: FailoverExecutor
     watcher: Optional[RepositoryWatcher] = None
+    dependencyGraph: Optional[DependencyGraph] = None
 
 
 def _echo_summary_progress(completed: int, total: int, symbol: Symbol) -> None:
@@ -165,6 +166,11 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         paths.vector_metadata_db_path(final_state_dir),
         embedding_engine=embeddings_executor,
     )
+    # Reloaded from the snapshot _run_pipeline just wrote: the chat path uses it
+    # to rerank retrieved evidence by proximity to symbols already cited.
+    dependency_graph = DependencyGraph.load(
+        paths.graph_db_path(final_state_dir), graph_id=stable_repository_id(root)
+    )
     return IndexRunResult(
         docsRoot=docs_root,
         vectorIndex=vector_index,
@@ -172,6 +178,7 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         llmEngine=summary_executor,
         metadataDbPath=paths.metadata_db_path(final_state_dir),
         chatLlmEngine=chat_executor,
+        dependencyGraph=dependency_graph,
     )
 
 

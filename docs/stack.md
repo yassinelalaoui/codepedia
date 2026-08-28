@@ -62,6 +62,32 @@ a dict of edges keyed by `(source, target, type)`), *not* a graph library. The a
 query needs are narrow (`dependents()`, `dependencies()`, `exportDiagram()`), so a
 purpose-built structure was simpler than pulling in a general-purpose graph library.
 
+## Retrieval
+
+**Hybrid search: vector similarity fused with SQLite FTS5 (BM25).** Vector search
+alone buries an exact identifier under text that is merely semantically close, so
+a lexical index runs alongside it and the two rankings are combined with
+Reciprocal Rank Fusion. FTS5 is compiled into the stdlib's SQLite build, so this
+costs no new dependency — the same reasoning that keeps the rest of persistence
+on `sqlite3`.
+
+Fusion decides the **order** only. `SearchResult.score` stays the raw cosine
+similarity, because `chat/retrieval.py` compares it against absolute thresholds
+(below 0.15 is "not enough evidence", within 0.05 of the top is "ambiguous"); an
+RRF score of ~0.016 would trip both on every answer. A lexical-only hit is given
+a cosine computed on demand from its stored vector.
+
+Results are then reordered by **proximity in the dependency graph**: a chunk whose
+symbol calls, is called by, or inherits from a symbol the conversation already
+cited moves ahead of one that is merely textually similar. The graph was already
+built for documentation and summarization; this is the retrieval path reading it.
+Reranking is a stable partition, never a rescoring — scores stay untouched.
+
+Similarity itself is still a brute-force cosine pass in Python over the in-memory
+index, not an approximate-nearest-neighbour structure. That is the next
+bottleneck, and the reason `vector_index`'s connection is now usable across
+threads (see below).
+
 ## Local persistence
 
 **SQLite via the Python stdlib `sqlite3`** — used independently by four components
@@ -71,6 +97,12 @@ a direct requirement of constitution principle 2.6 ("pas de serveur de base de
 données externe... stockage embarqué uniquement"). Each component keeps its own
 SQLite file rather than sharing one schema, trading some duplicated
 connection-handling code for simpler ownership boundaries.
+
+`vector_index` is the one component holding a **long-lived** connection (the
+others open one per call), and it opens with `check_same_thread=False` behind its
+own reentrant lock. `serve` opens the index on the main thread but writes from
+the watcher's debounce timer thread and answers chat questions from uvicorn's
+loop thread; sqlite3's default same-thread guard rejected both.
 
 ## Local AI access (LLM + embeddings)
 

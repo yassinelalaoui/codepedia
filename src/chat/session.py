@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator
 from . import sqlite_store
 from .models import ChatMessage, ChatSession as _ChatSessionData, RAGContext
 from .prompting import build_prompt_envelope, render_answer_text, render_insufficient_evidence_text
+from .rerank import recent_cited_symbol_ids, rerank_by_graph_proximity
 from .retrieval import detect_ambiguous_evidence, is_insufficient_evidence, read_readme_content, retrieve_evidence
 
 
@@ -57,8 +58,17 @@ class ChatSession(_ChatSessionData):
             generated_by = ""
             yield content
         else:
+            # Computed while `evidence` is still in similarity order: both read
+            # `evidence[0].score` against absolute thresholds, so reranking
+            # first would let a graph-adjacent but lower-scoring chunk trip the
+            # "not enough evidence" banner on a perfectly good answer.
             insufficient = is_insufficient_evidence(evidence) if evidence else False
             ambiguous = detect_ambiguous_evidence(evidence)
+            evidence = rerank_by_graph_proximity(
+                evidence,
+                cited_symbol_ids=recent_cited_symbol_ids(history),
+                graph=self.dependencyGraph,
+            )
             context = RAGContext(
                 question=question,
                 conversationHistory=history,
