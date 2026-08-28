@@ -7,12 +7,24 @@ from typing import Any, Iterable, Sequence
 from .models import CodeChunk
 
 
-def _normalize_content(content: str) -> str:
+def normalize_chunk_content(content: str) -> str:
+    """The exact text `build_chunk_id` hashes, minus the symbol id.
+
+    Public because an embedding cache needs to key on content alone: a chunk id
+    is seeded on `sourceSymbolId`, so two symbols with byte-identical bodies get
+    different ids and would each pay for their own embedding call. Keying the
+    cache on this value instead is what lets the second one reuse the first's
+    vector.
+    """
     return "\n".join(line.rstrip() for line in content.strip().splitlines())
 
 
+# The private name the rest of this module already used.
+_normalize_content = normalize_chunk_content
+
+
 def build_chunk_id(source_symbol_id: str, content: str, *, chunk_type: str = "code") -> str:
-    normalized = _normalize_content(content)
+    normalized = normalize_chunk_content(content)
     seed = f"{source_symbol_id}|{chunk_type}|{normalized}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
     return f"chunk_{digest[:16]}"
@@ -28,16 +40,23 @@ def build_code_chunk(
     chunk_type: str = "code",
     chunk_id: str | None = None,
     metadata: dict[str, object] | None = None,
+    embedding_model_id: str = "",
 ) -> CodeChunk:
     """`embedding_engine` is either a raw `EmbeddingProvider` (`.embed(text)`)
     or a `provider_routing.FailoverExecutor` wrapping one (`.run(call)`,
     duck-typed via `hasattr` since this package must not depend on
     `provider_routing` - it sits below it in the dependency graph). When a
     `FailoverExecutor` is given, `embeddingModelId` is stamped from whichever
-    provider actually produced the vector (spec FR-009)."""
+    provider actually produced the vector (spec FR-009).
+
+    `embedding_model_id` names the provider behind an `embedding` passed in
+    directly - a vector reused from a cache or from a previous index. Without
+    it a reused vector would be stored with an empty model id and stop matching
+    `search`'s `embeddingModelId` filter, which is exactly how a cached chunk
+    would silently vanish from results."""
     normalized_content = content if content.endswith("\n") else content
-    embedding_model_id = ""
     if embedding is None:
+        embedding_model_id = ""
         if embedding_engine is None:
             raise ValueError("embedding_engine must be provided when embedding is omitted")
         if hasattr(embedding_engine, "run"):

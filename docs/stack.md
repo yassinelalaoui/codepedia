@@ -151,6 +151,69 @@ reasons) rather than a general-purpose one a library would be built for.
 `repository_metadata` file (`ALTER TABLE`-guarded the same way `chat_messages`
 and `chunks` gained their own new columns), not a new database.
 
+## Indexing concurrency (032)
+
+**`concurrent.futures.ThreadPoolExecutor` from the standard library, no new
+dependency.** The two expensive indexing stages — `SUMMARIZING` (one LLM call
+per symbol) and `EMBEDDING` (one call per chunk, dispatched per file) — are
+almost pure network wait, so they run their calls from a thread pool instead
+of one at a time. Threads rather than `asyncio` because every engine in
+`local_llm`/`embedding_engine` exposes a *synchronous* `generate`/`embed`, and
+the work being overlapped is a blocking socket read: converting the whole
+provider stack to async would be a large rewrite to reach a throughput that
+threads already reach, on a workload where a few dozen threads is the
+practical ceiling anyway (the real limit is the provider's requests-per-minute
+quota, not local scheduling). Pool sizes are per stage and configurable
+(`summaryConcurrency`, `embeddingConcurrency` in `config.json`), because the
+two stages talk to providers with very different limits.
+
+**Backoff is part of the concurrency, not a refinement of it.** Before 032,
+`FailoverExecutor` abandoned a provider on its first HTTP 429 and moved down
+the chain. Concurrent calls against one API key *produce* 429s, so shipping
+the pools without a wait-and-retry policy would have made indexing less
+reliable, not faster — the whole chain would burn through in seconds over a
+limit that only time clears. `BackoffPolicy` (exponential, capped, full
+jitter) therefore lands in the same change. Still no retry library: the policy
+is four numbers and one loop, and `tenacity`'s generality buys nothing against
+a chain this specific.
+
+**Reuse before recompute.** An `EmbeddingCache` (`reindex_pipeline`) is
+consulted before every embedding call and seeded from the previous successful
+index, so a file whose text has not changed costs nothing to re-embed. It is
+keyed on both the chunk id and the normalized content — the chunk id is seeded
+on `sourceSymbolId`, so it cannot see two identical bodies under different
+symbols — and always gated on `embeddingModelId`, since reusing a vector
+across models would mix dimensionalities into one index.
+
+### What it actually bought, measured
+
+`scripts/index_bench.py` over `src/provider_routing` (7 files, 32 symbols, 64
+chunks), both revisions indexing the same bytes, embeddings served by local
+Ollama `nomic-embed-text`:
+
+| Stage | before (61a40bf) | after, cold | after, re-index |
+|---|---|---|---|
+| `SUMMARIZING` | 91.7s | 84.4s | 151.6s |
+| `EMBEDDING` | 433.2s | 163.1s | 82.4s |
+| total | 534.3s | 254.5s | 242.0s |
+
+Embedding concurrency is the win: **2.7x** cold, and **5.3x** against the
+baseline once the cache is warm (32 of the 64 chunks reused — the `code` ones;
+`summary` chunks miss, because a full run regenerates the LLM summary they
+embed).
+
+**Summarization concurrency bought essentially nothing (1.09x), and that is
+not a tuning problem.** Groq's free tier caps *tokens per minute* — 8 000 TPM
+on this key, against 1 000 requests per day — and summarization prompts carry
+source code. A token-per-minute ceiling is a throughput ceiling: no amount of
+concurrency lifts it, so the extra in-flight calls become 429s and convert
+straight back into backoff (88 waits in the run above, 150 in the next). On a
+TPM-capped key `summaryConcurrency: 1` is the honest setting; the pool only
+pays once that budget rises, or once the stage points at a provider billed per
+request. Being able to say that about one stage without touching the other is
+why the pool sizes are per stage and configurable rather than one shared
+number.
+
 ## Documentation rendering
 
 **Jinja2** (page templates) + **Python-Markdown** (Markdown → HTML, with the

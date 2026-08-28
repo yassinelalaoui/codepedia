@@ -46,6 +46,16 @@ FULL_LOCAL_CHAT_CHAIN: tuple[str, ...] = (f"local:{DEFAULT_LLM_MODEL}",)
 
 STAGES = ("embeddings", "summary", "chat")
 
+# How many symbols/files each indexing stage has in flight at once. Both
+# stages are almost pure network wait, so the useful ceiling is the provider's
+# rate limit on one API key rather than local CPU - which is why the two
+# numbers differ. Summarization talks to Groq, whose free tier limits requests
+# per minute tightly, and every 429 it earns is paid back as backoff
+# (`provider_routing.BackoffPolicy`). Embeddings talk to OpenAI, which is far
+# more permissive per key, so it can run wider.
+DEFAULT_SUMMARY_CONCURRENCY = 4
+DEFAULT_EMBEDDING_CONCURRENCY = 8
+
 
 @dataclass(frozen=True, slots=True)
 class CLIConfiguration:
@@ -58,6 +68,8 @@ class CLIConfiguration:
     embeddingChain: tuple[str, ...] = DEFAULT_EMBEDDING_CHAIN
     summaryChain: tuple[str, ...] = DEFAULT_SUMMARY_CHAIN
     chatChain: tuple[str, ...] = DEFAULT_CHAT_CHAIN
+    summaryConcurrency: int = DEFAULT_SUMMARY_CONCURRENCY
+    embeddingConcurrency: int = DEFAULT_EMBEDDING_CONCURRENCY
     disclosureAcknowledgedSignature: str = ""
 
     def to_dict(self) -> dict[str, object]:
@@ -105,10 +117,17 @@ def load_config() -> CLIConfiguration:
         embeddingChain=tuple(data["embeddingChain"]) if "embeddingChain" in data else defaults.embeddingChain,
         summaryChain=tuple(data["summaryChain"]) if "summaryChain" in data else defaults.summaryChain,
         chatChain=tuple(data["chatChain"]) if "chatChain" in data else defaults.chatChain,
+        summaryConcurrency=data.get("summaryConcurrency", defaults.summaryConcurrency),
+        embeddingConcurrency=data.get("embeddingConcurrency", defaults.embeddingConcurrency),
         disclosureAcknowledgedSignature=data.get(
             "disclosureAcknowledgedSignature", defaults.disclosureAcknowledgedSignature
         ),
     )
+
+
+def _validate_concurrency(field: str, value: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValueError(f"{field} must be an integer of at least 1")
 
 
 def _validate_chain(stage: str, entries: tuple[str, ...]) -> None:
@@ -130,6 +149,8 @@ def save_config(config: CLIConfiguration) -> None:
     _validate_chain("embedding", config.embeddingChain)
     _validate_chain("summary", config.summaryChain)
     _validate_chain("chat", config.chatChain)
+    _validate_concurrency("summaryConcurrency", config.summaryConcurrency)
+    _validate_concurrency("embeddingConcurrency", config.embeddingConcurrency)
     normalized = CLIConfiguration(
         llmModel=config.llmModel,
         llmEndpointUrl=normalize_llm_endpoint_url(config.llmEndpointUrl),
@@ -140,6 +161,8 @@ def save_config(config: CLIConfiguration) -> None:
         embeddingChain=tuple(config.embeddingChain),
         summaryChain=tuple(config.summaryChain),
         chatChain=tuple(config.chatChain),
+        summaryConcurrency=int(config.summaryConcurrency),
+        embeddingConcurrency=int(config.embeddingConcurrency),
         disclosureAcknowledgedSignature=config.disclosureAcknowledgedSignature,
     )
     path = paths.config_path()

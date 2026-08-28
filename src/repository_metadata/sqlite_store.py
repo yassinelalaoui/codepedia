@@ -144,9 +144,23 @@ SCHEMA_STATEMENTS = (
 )
 
 
+# Every call into this store opens its own connection and replays
+# `ensure_schema` (DDL, so it takes the write lock). Once summarization runs
+# from a thread pool, several of those overlap on the same file, and sqlite's
+# 5s default is thin for a burst of writers. Raising the busy timeout makes a
+# contending writer wait its turn instead of raising "database is locked".
+#
+# WAL is deliberately not enabled with it: WAL leaves `-wal`/`-shm` files
+# beside the database, and `cli/index_command.py` renames the whole state
+# directory into place on Windows - a path `_replace_with_retry` already
+# exists to work around, and that extra open files would only make worse.
+_BUSY_TIMEOUT_MS = 30000
+
+
 def connect(db_path: str | Path) -> sqlite3.Connection:
     connection = sqlite3.connect(str(db_path))
     connection.row_factory = sqlite3.Row
+    connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
     ensure_schema(connection)
     return connection
 

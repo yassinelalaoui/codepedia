@@ -7,8 +7,23 @@ from __future__ import annotations
 import pytest
 
 from local_llm.errors import MissingApiKeyError, RateLimitedError, RemoteServiceUnavailableError
-from provider_routing import FailoverExecutor, FailoverExhaustedError, PathFailoverLog, ProviderRef, list_failover_events
+from provider_routing import (
+    BackoffPolicy,
+    FailoverExecutor,
+    FailoverExhaustedError,
+    PathFailoverLog,
+    ProviderRef,
+    list_failover_events,
+)
 from repository_metadata.sqlite_store import connect
+
+# What this file asserts is the *logging* of a switch, not how long the
+# executor is willing to wait before making one. A rate limit is now waited
+# out first (`BackoffPolicy`), so without spending that budget instantly here
+# the parametrized rate-limited case below would sleep for real seconds while
+# proving nothing it does not already prove. The switch it does assert still
+# happens - the waits are exhausted first, exactly as in production.
+_NO_WAITING = BackoffPolicy(initialDelaySeconds=0.0, maxWaits=1)
 
 
 class _WorkingEngine:
@@ -49,6 +64,7 @@ def test_two_provider_chain_fails_over_and_logs_exactly_one_switch(tmp_path, exc
         "chat",
         ((ProviderRef.parse("groq:m1"), broken), (ProviderRef.parse("local:m2"), working)),
         failover_log=failover_log,
+        backoff=_NO_WAITING,
     )
 
     result = executor.run(lambda engine: engine.run())

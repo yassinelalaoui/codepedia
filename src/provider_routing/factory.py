@@ -7,7 +7,7 @@ from embedding_engine.openai_provider import create_openai_embedding_provider
 from local_llm import create_groq_llm_engine, create_local_llm_engine
 
 from .chain import ProviderChain, ProviderRef
-from .router import FailoverExecutor, FailoverLogWriter
+from .router import BackoffNotifier, BackoffPolicy, FailoverExecutor, FailoverLogWriter
 
 if TYPE_CHECKING:  # pragma: no cover - import-cycle avoidance only
     from cli.config import CLIConfiguration
@@ -61,10 +61,19 @@ def _entries_for_stage(stage: str, config: "CLIConfiguration") -> Sequence[str]:
 
 
 def build_stage_executor(
-    stage: str, config: "CLIConfiguration", *, failover_log: Optional[FailoverLogWriter] = None
+    stage: str,
+    config: "CLIConfiguration",
+    *,
+    failover_log: Optional[FailoverLogWriter] = None,
+    backoff: Optional[BackoffPolicy] = None,
+    on_backoff: Optional[BackoffNotifier] = None,
 ) -> FailoverExecutor:
     """Build the fully-resolved `FailoverExecutor` for one stage, straight
     from `CLIConfiguration` - the one call site every CLI/API entrypoint
-    uses to go from configuration to a ready-to-use engine chain."""
+    uses to go from configuration to a ready-to-use engine chain.
+
+    `backoff`/`on_backoff` are passed straight through: omitting them keeps
+    `FailoverExecutor`'s own default policy, which every caller outside the
+    indexing command wants."""
     resolved = build_chain_from_strings(stage, _entries_for_stage(stage, config), config)
-    return FailoverExecutor(stage, resolved, failover_log=failover_log)
+    return FailoverExecutor(stage, resolved, failover_log=failover_log, backoff=backoff, on_backoff=on_backoff)

@@ -173,6 +173,20 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _existing_index_id_for_repository(connection: sqlite3.Connection, repository_root: str) -> str | None:
+    """The id this file already stores for `repository_root`, if any.
+
+    One metadata file only ever holds one repository's index, so an existing
+    row for that repository *is* this index - whatever path it was created
+    under.
+    """
+    row = connection.execute(
+        "SELECT id FROM indexes WHERE repository_root = ? ORDER BY created_at LIMIT 1",
+        (repository_root,),
+    ).fetchone()
+    return row["id"] if row is not None else None
+
+
 def ensure_index_record(
     connection: sqlite3.Connection,
     *,
@@ -180,9 +194,23 @@ def ensure_index_record(
     metadata_path: str | Path,
     index_id: str | None = None,
 ) -> IndexRecord:
+    """Find this repository's index in `connection`, or start one.
+
+    `stable_index_id` derives an id from the repository root *and* the
+    metadata file's path. That second half makes the id change when the file
+    moves - and `cli/index_command.py` always builds into a
+    `<state>.staging-<pid>` directory and renames it into place on success.
+    Deriving the id unconditionally therefore orphaned every index the moment
+    it was published: the chunks stayed in the file under the staging-derived
+    id, while opening the same file at its final path minted a second, empty
+    record and reported zero chunks. Looking the repository up first is what
+    makes an index survive the rename that publishes it.
+    """
+    resolved_root = str(Path(repository_root).expanduser().resolve())
+    resolved_id = index_id or _existing_index_id_for_repository(connection, resolved_root)
     record = IndexRecord(
-        id=index_id or stable_index_id(repository_root, metadata_path),
-        repositoryRoot=str(Path(repository_root).expanduser().resolve()),
+        id=resolved_id or stable_index_id(repository_root, metadata_path),
+        repositoryRoot=resolved_root,
         metadataPath=str(Path(metadata_path).expanduser()),
     )
     with connection:

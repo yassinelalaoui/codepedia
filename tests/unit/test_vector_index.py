@@ -103,3 +103,67 @@ def test_vector_index_add_remove_and_reindex_round_trip(tmp_path):
     )
     assert len(replaced) == 1
     assert index.search("updated helper", k=1)[0].sourceFilePath.endswith("src/beta.py")
+
+
+def test_an_index_survives_the_directory_rename_that_publishes_it(tmp_path):
+    """`codepedia index` builds into `<state>.staging-<pid>` and renames it
+    into place on success.
+
+    The index id is derived from the repository root *and* the metadata file's
+    path, so that rename used to change it: the chunks stayed in the file under
+    the staging-derived id while opening the same file at its final path minted
+    a second, empty record. Every indexing run silently published an index that
+    reported zero chunks, so chat retrieval found nothing.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    staging_dir = tmp_path / "state.staging-1234"
+    staging_dir.mkdir()
+
+    index = VectorIndex(root, staging_dir / "vector-metadata.sqlite")
+    index.addChunk(
+        build_code_chunk(
+            "def alpha():\n    return 1",
+            source_symbol_id="symbol-alpha",
+            source_file_path="alpha.py",
+            embedding_engine=FakeEmbeddingEngine(),
+        )
+    )
+    assert len(index) == 1
+    index.close()
+
+    final_dir = tmp_path / "state"
+    staging_dir.replace(final_dir)
+
+    republished = VectorIndex(root, final_dir / "vector-metadata.sqlite")
+    try:
+        assert len(republished) == 1, "the published index must still see the chunks it stored"
+    finally:
+        republished.close()
+
+
+def test_two_repositories_in_one_metadata_file_keep_separate_indexes(tmp_path):
+    """Adoption is per repository root, so it must not merge two of them."""
+    metadata_path = tmp_path / "shared.sqlite"
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    engine = FakeEmbeddingEngine()
+
+    first = VectorIndex(first_root, metadata_path)
+    first.addChunk(
+        build_code_chunk("a = 1", source_symbol_id="s1", source_file_path="a.py", embedding_engine=engine)
+    )
+    second = VectorIndex(second_root, metadata_path)
+    second.addChunk(
+        build_code_chunk("b = 2", source_symbol_id="s2", source_file_path="b.py", embedding_engine=engine)
+    )
+
+    try:
+        assert len(first) == 1
+        assert len(second) == 1
+        assert first.record.id != second.record.id
+    finally:
+        first.close()
+        second.close()

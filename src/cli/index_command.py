@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -13,6 +15,7 @@ from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator, SectionNarrator, open_doc_manifest_store
 from parser_engine import SourceFile, extract_symbols
 from provider_routing import FailoverExecutor, PathFailoverLog, build_stage_executor
+from reindex_pipeline import EmbeddingCache
 from reindex_pipeline.embeddings import update_embeddings
 from repo_scanner.scanner import scan_repository
 from repo_watcher import RepositoryWatcher
@@ -90,11 +93,60 @@ class IndexRunResult:
 
 
 def _echo_summary_progress(completed: int, total: int, symbol: Symbol) -> None:
+    """`CodeSummaryPipeline` already serializes this call under its own lock,
+    so no lock is needed here - see `SummaryProgressCallback`."""
     typer.echo(f"  [{completed}/{total}] {symbol.kind} {symbol.name}")
 
 
 def _echo_embedding_progress(completed: int, total: int, relative_path: str) -> None:
     typer.echo(f"  [{completed}/{total}] {relative_path}")
+
+
+def _echo_backoff(*, stage: str, provider: str, delay_seconds: float, wait_number: int, max_waits: int) -> None:
+    """Print a rate-limit wait as it happens.
+
+    A wait is deliberately absent from `engine_failover_log`, which records
+    provider *switches* (constitution 2.3) - waiting on the same provider is
+    the opposite of switching. It still has to be visible, or a run that slows
+    down under a rate limit looks like a run that has simply hung.
+    """
+    typer.echo(
+        f"  rate limited by {provider} ({stage}); waiting {delay_seconds:.1f}s "
+        f"before retry {wait_number}/{max_waits}"
+    )
+
+
+class _stage:
+    """Announce a stage, then report what it cost.
+
+    Per-stage timings are what make an indexing regression - or an improvement
+    - attributable to one stage instead of visible only in the total.
+
+    Deliberately a class rather than a `@contextmanager` generator:
+    `contextlib`'s generator wrapper assigns `exc.__traceback__` when an
+    exception passes through it, and this codebase's engine errors are frozen
+    dataclasses (`FailoverExhaustedError`, `EmbeddingError`, `LocalLLMError`).
+    Assigning any attribute on a directly-raised one raises
+    `FrozenInstanceError`, which would replace a real "every provider is
+    unavailable" message with a meaningless one. A plain `__exit__` touches
+    nothing on the exception.
+    """
+
+    def __init__(self, stage: "Stage") -> None:
+        self._stage = stage
+        self._started = 0.0
+
+    def __enter__(self) -> "_stage":
+        typer.echo(self._stage.value)
+        self._started = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool:
+        elapsed = time.perf_counter() - self._started
+        # Timed even on failure: how far a failed run got, and how long it took
+        # to get there, is exactly what makes it diagnosable.
+        typer.echo(f"  {self._stage.value} finished in {elapsed:.1f}s")
+        return False
 
 
 def validate_repo_path(repo_path: Path) -> Path:
@@ -118,8 +170,13 @@ def _build_stage_executors(
     open) rather than one long-lived connection, so nothing here can block a
     later rename/replace of that file on Windows."""
     failover_log = PathFailoverLog(metadata_db_path, connect_metadata_db)
-    embeddings_executor = build_stage_executor("embeddings", config, failover_log=failover_log)
-    summary_executor = build_stage_executor("summary", config, failover_log=failover_log)
+    # The two indexing stages announce their rate-limit waits; chat does not,
+    # because `FailoverExecutor.stream` - the only path chat uses - carries no
+    # backoff and would never call it.
+    embeddings_executor = build_stage_executor(
+        "embeddings", config, failover_log=failover_log, on_backoff=_echo_backoff
+    )
+    summary_executor = build_stage_executor("summary", config, failover_log=failover_log, on_backoff=_echo_backoff)
     chat_executor = build_stage_executor("chat", config, failover_log=failover_log)
     return embeddings_executor, summary_executor, chat_executor
 
@@ -148,7 +205,14 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     check_ai_dependencies(embeddings=embeddings_executor, summary=summary_executor, chat=chat_executor)
 
     try:
-        _run_pipeline(root, staging_dir, embedding_engine=embeddings_executor, llm_engine=summary_executor)
+        _run_pipeline(
+            root,
+            staging_dir,
+            embedding_engine=embeddings_executor,
+            llm_engine=summary_executor,
+            config=config,
+            previous_state_dir=final_state_dir,
+        )
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
@@ -182,12 +246,26 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     )
 
 
-def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: Any, llm_engine: Any) -> None:
+def _run_pipeline(
+    root: Path,
+    state_dir: Path,
+    *,
+    embedding_engine: Any,
+    llm_engine: Any,
+    config: CLIConfiguration,
+    previous_state_dir: Path | None = None,
+) -> None:
+    """`previous_state_dir` is the state this run will replace on success.
+
+    It is read, never written: its vectors warm this run's embedding cache.
+    Without it the cache would be useless on a full `index`, which always
+    builds into an empty staging directory.
+    """
     graph_id = stable_repository_id(root)
     metadata_store = RepositoryMetadataStore(paths.metadata_db_path(state_dir))
 
-    typer.echo(Stage.SCANNING.value)
-    scan_result = scan_repository(root)
+    with _stage(Stage.SCANNING):
+        scan_result = scan_repository(root)
 
     # Ensure the repository row exists even when no source files were found
     # (spec.md's "no recognizable source files" edge case) - store_inventory
@@ -195,23 +273,23 @@ def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: Any, llm_eng
     languages = tuple(sorted({entry.language for entry in scan_result.entries}))
     metadata_store.ensure_repository(root, detected_languages=languages)
 
-    typer.echo(Stage.PARSING.value)
-    inventories = []
-    for entry in scan_result.entries:
-        absolute_path = root / entry.relative_path
-        source_file = SourceFile(path=absolute_path, language=entry.language)
-        inventory = extract_symbols(source_file)
-        metadata_store.store_inventory(
-            repository_root=root,
-            source_file=source_file,
-            inventory=inventory,
-            content_hash=compute_content_hash(absolute_path),
-        )
-        inventories.append(inventory)
+    with _stage(Stage.PARSING):
+        inventories = []
+        for entry in scan_result.entries:
+            absolute_path = root / entry.relative_path
+            source_file = SourceFile(path=absolute_path, language=entry.language)
+            inventory = extract_symbols(source_file)
+            metadata_store.store_inventory(
+                repository_root=root,
+                source_file=source_file,
+                inventory=inventory,
+                content_hash=compute_content_hash(absolute_path),
+            )
+            inventories.append(inventory)
 
-    typer.echo(Stage.BUILDING_GRAPH.value)
-    graph = DependencyGraph.build_from_inventories(inventories, id=graph_id, sourceFile=str(root))
-    graph.save(paths.graph_db_path(state_dir))
+    with _stage(Stage.BUILDING_GRAPH):
+        graph = DependencyGraph.build_from_inventories(inventories, id=graph_id, sourceFile=str(root))
+        graph.save(paths.graph_db_path(state_dir))
 
     manifest_store = open_doc_manifest_store(paths.doc_manifest_db_path(state_dir))
     doc_generator = DocGenerator(
@@ -227,32 +305,115 @@ def _run_pipeline(root: Path, state_dir: Path, *, embedding_engine: Any, llm_eng
         sectionNarrator=SectionNarrator(llm_engine, cache=manifest_store),
     )
 
-    typer.echo(Stage.GENERATING_DOCS_STRUCTURE.value)
-    doc_generator.generateRepositoryDocumentation(root, incremental=False)
+    with _stage(Stage.GENERATING_DOCS_STRUCTURE):
+        doc_generator.generateRepositoryDocumentation(root, incremental=False)
 
-    typer.echo(Stage.SUMMARIZING.value)
-    summary_pipeline = CodeSummaryPipeline(metadataStore=metadata_store, dependencyGraph=graph, llmEngine=llm_engine)
-    summary_pipeline.summarizeRepository(root, incremental=False, on_progress=_echo_summary_progress)
+    with _stage(Stage.SUMMARIZING):
+        summary_pipeline = CodeSummaryPipeline(
+            metadataStore=metadata_store,
+            dependencyGraph=graph,
+            llmEngine=llm_engine,
+            maxWorkers=config.summaryConcurrency,
+        )
+        summary_pipeline.summarizeRepository(root, incremental=False, on_progress=_echo_summary_progress)
 
-    typer.echo(Stage.GENERATING_DOCS_CONTENT.value)
-    doc_generator.generateRepositoryDocumentation(root, incremental=False)
+    with _stage(Stage.GENERATING_DOCS_CONTENT):
+        doc_generator.generateRepositoryDocumentation(root, incremental=False)
 
-    typer.echo(Stage.EMBEDDING.value)
-    vector_index = VectorIndex(
-        root,
-        paths.vector_metadata_db_path(state_dir),
-        embedding_engine=embedding_engine,
-    )
-    try:
-        total_files = len(scan_result.entries)
-        for completed, entry in enumerate(scan_result.entries, start=1):
-            update_embeddings(
-                repository_root=root,
-                relative_path=entry.relative_path,
+    with _stage(Stage.EMBEDDING):
+        vector_index = VectorIndex(
+            root,
+            paths.vector_metadata_db_path(state_dir),
+            embedding_engine=embedding_engine,
+        )
+        try:
+            cache = _warm_embedding_cache(root, previous_state_dir)
+            _embed_files_concurrently(
+                root,
+                [entry.relative_path for entry in scan_result.entries],
                 metadata_store=metadata_store,
                 vector_index=vector_index,
                 embedding_engine=embedding_engine,
+                embedding_cache=cache,
+                max_workers=config.embeddingConcurrency,
             )
-            _echo_embedding_progress(completed, total_files, entry.relative_path)
+            if cache.hits:
+                typer.echo(f"  reused {cache.hits} embedding(s) from cache, computed {cache.misses}")
+        finally:
+            vector_index.close()
+
+
+def _warm_embedding_cache(root: Path, previous_state_dir: Path | None) -> EmbeddingCache:
+    """Preload the vectors the previous successful index already paid for.
+
+    Opened and closed immediately: this is the state directory the run is
+    about to replace, and leaving a connection on it would block that replace
+    on Windows.
+    """
+    cache = EmbeddingCache()
+    if previous_state_dir is None:
+        return cache
+    previous_db = paths.vector_metadata_db_path(previous_state_dir)
+    if not previous_db.exists():
+        return cache
+    try:
+        previous_index = VectorIndex(root, previous_db)
+    except Exception:  # noqa: BLE001 - a stale prior index must never fail a fresh run
+        return cache
+    try:
+        cache.seed_from_entries(previous_index.entries)
     finally:
-        vector_index.close()
+        previous_index.close()
+    return cache
+
+
+def _embed_files_concurrently(
+    root: Path,
+    relative_paths: list[str],
+    *,
+    metadata_store: RepositoryMetadataStore,
+    vector_index: VectorIndex,
+    embedding_engine: Any,
+    embedding_cache: EmbeddingCache,
+    max_workers: int,
+) -> None:
+    """Embed every file in parallel; each file is an independent unit of work.
+
+    `update_embeddings` reads one file's symbols and replaces exactly that
+    file's chunks, so two files never contend for the same rows.
+    `VectorIndex` serializes the writes behind its own reentrant lock and
+    holds its connection with `check_same_thread=False`, so nothing there
+    needs to change for this.
+    """
+    total = len(relative_paths)
+    if not total:
+        return
+    progress_lock = threading.Lock()
+    completed = 0
+
+    def embed_one(relative_path: str) -> None:
+        nonlocal completed
+        update_embeddings(
+            repository_root=root,
+            relative_path=relative_path,
+            metadata_store=metadata_store,
+            vector_index=vector_index,
+            embedding_engine=embedding_engine,
+            embedding_cache=embedding_cache,
+        )
+        # Counter and echo under one lock, or two workers interleave into a
+        # "[7/9]" printed before "[6/9]".
+        with progress_lock:
+            completed += 1
+            _echo_embedding_progress(completed, total, relative_path)
+
+    executor = ThreadPoolExecutor(max_workers=min(max_workers, total), thread_name_prefix="codepedia-embed")
+    try:
+        futures: list[Future[None]] = [executor.submit(embed_one, path) for path in relative_paths]
+        for future in futures:
+            # The first failure propagates and aborts the run, exactly as it
+            # did when this was a plain loop; the staging directory is then
+            # discarded whole by run_index.
+            future.result()
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)

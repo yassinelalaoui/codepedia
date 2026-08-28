@@ -7,6 +7,8 @@ from repository_metadata import ClassSymbol, FunctionSymbol, ModuleSymbol, Repos
 from repository_metadata.models import SourceFileBundle
 from vector_index import CodeChunk, VectorIndex, build_code_chunk
 
+from .embedding_cache import EmbeddingCache, expected_embedding_model_id
+
 
 def update_embeddings(
     *,
@@ -15,7 +17,15 @@ def update_embeddings(
     metadata_store: RepositoryMetadataStore,
     vector_index: VectorIndex,
     embedding_engine: Any,
+    embedding_cache: EmbeddingCache | None = None,
 ) -> tuple[CodeChunk, ...]:
+    """Re-embed one file and replace its chunks in the index.
+
+    `embedding_cache`, when given, is consulted before every embedding call
+    and fed after every real one, so an unchanged fragment costs nothing the
+    second time it is seen - whether that is a second run of the same
+    repository or a byte-identical body under another symbol.
+    """
     absolute_path = repository_root / relative_path
     # RepositoryMetadataStore keys by the absolute path SourceFile.path was stored
     # with (see pipeline.py's _reparse_and_store) — must match here to find the
@@ -24,16 +34,20 @@ def update_embeddings(
     # layout.
     bundle = metadata_store.load_source_file(repository_root=repository_root, path=absolute_path)
     source_text = absolute_path.read_text(encoding="utf-8", errors="replace")
+    model_id = expected_embedding_model_id(embedding_engine) if embedding_cache is not None else ""
     built: list[CodeChunk] = []
     for symbol in _in_scope_symbols(bundle):
         symbol_text = _symbol_source_text(bundle, symbol, source_text)
         if symbol_text:
             built.append(
-                build_code_chunk(
+                _build_chunk_reusing_cache(
                     symbol_text,
                     source_symbol_id=symbol.id,
-                    source_file_path=relative_path,
+                    relative_path=relative_path,
                     embedding_engine=embedding_engine,
+                    embedding_cache=embedding_cache,
+                    model_id=model_id,
+                    chunk_type="code",
                 )
             )
         # A second, separately searchable chunk carrying what the symbol is *for*
@@ -42,17 +56,64 @@ def update_embeddings(
         summary_text = _symbol_summary_text(symbol)
         if summary_text:
             built.append(
-                build_code_chunk(
+                _build_chunk_reusing_cache(
                     summary_text,
                     source_symbol_id=symbol.id,
-                    source_file_path=relative_path,
+                    relative_path=relative_path,
                     embedding_engine=embedding_engine,
+                    embedding_cache=embedding_cache,
+                    model_id=model_id,
                     chunk_type="summary",
                 )
             )
     chunks = tuple(built)
     vector_index.reindexFile(relative_path, chunks)
     return chunks
+
+
+def _build_chunk_reusing_cache(
+    fragment: str,
+    *,
+    source_symbol_id: str,
+    relative_path: str,
+    embedding_engine: Any,
+    embedding_cache: EmbeddingCache | None,
+    model_id: str,
+    chunk_type: str,
+) -> CodeChunk:
+    """Build one chunk, paying for an embedding only when the cache cannot serve it."""
+    if embedding_cache is not None:
+        cached = embedding_cache.get(
+            source_symbol_id=source_symbol_id, content=fragment, chunk_type=chunk_type, model_id=model_id
+        )
+        if cached is not None:
+            return build_code_chunk(
+                fragment,
+                source_symbol_id=source_symbol_id,
+                source_file_path=relative_path,
+                embedding=cached,
+                chunk_type=chunk_type,
+                # Carried over explicitly: a reused vector still has to be
+                # stored under the model that produced it, or `search`'s
+                # embeddingModelId filter would drop it.
+                embedding_model_id=model_id,
+            )
+    chunk = build_code_chunk(
+        fragment,
+        source_symbol_id=source_symbol_id,
+        source_file_path=relative_path,
+        embedding_engine=embedding_engine,
+        chunk_type=chunk_type,
+    )
+    if embedding_cache is not None:
+        embedding_cache.put(
+            source_symbol_id=source_symbol_id,
+            content=fragment,
+            chunk_type=chunk_type,
+            model_id=chunk.embeddingModelId,
+            vector=chunk.embedding,
+        )
+    return chunk
 
 
 def remove_embeddings(*, relative_path: str, vector_index: VectorIndex) -> tuple[str, ...]:

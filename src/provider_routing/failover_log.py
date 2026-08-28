@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Optional, Union
@@ -13,7 +14,16 @@ def _utc_now() -> str:
 
 
 def _stable_event_id(*, stage: str, attempted_provider: str, timestamp: str) -> str:
-    seed = f"{stage}|{attempted_provider}|{timestamp}"
+    """A unique id for one logged switch.
+
+    The stage/provider/timestamp triple alone is not unique once indexing
+    calls providers from a thread pool: two workers hitting the same limit can
+    land on the same clock tick (`datetime.now()`'s resolution is coarser than
+    a thread scheduling quantum on Windows), and the duplicate would fail this
+    table's primary key and lose a real event. A random suffix keeps the id
+    collision-free; nothing reads it back by reconstructing the seed.
+    """
+    seed = f"{stage}|{attempted_provider}|{timestamp}|{uuid.uuid4().hex}"
     return f"failover_{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:16]}"
 
 

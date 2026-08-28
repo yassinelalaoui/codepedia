@@ -67,7 +67,12 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         # still gets its sections, just under their directory-derived names.
         sectionNarrator=SectionNarrator(summary_executor, cache=manifest_store),
     )
-    summary_pipeline = CodeSummaryPipeline(metadataStore=metadata_store, dependencyGraph=graph, llmEngine=summary_executor)
+    summary_pipeline = CodeSummaryPipeline(
+        metadataStore=metadata_store,
+        dependencyGraph=graph,
+        llmEngine=summary_executor,
+        maxWorkers=config.summaryConcurrency,
+    )
 
     reindex_pipeline = IncrementalReindexPipeline(
         repositoryRoot=root,

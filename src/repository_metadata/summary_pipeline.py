@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
@@ -20,10 +22,23 @@ from .summary_context import (
 from .summary_prompts import build_class_summary_prompt, build_function_summary_prompt, build_module_summary_prompt
 
 
-# Called as (completed_count, total_count, symbol) right before each symbol's
-# LLM summarization call starts, so a caller (e.g. the CLI) can print
-# progress during what's otherwise a long, silent, one-call-per-symbol loop.
+# Called as (completed_count, total_count, symbol) once each symbol's LLM
+# summarization call has *finished*, so a caller (e.g. the CLI) can print
+# progress during what's otherwise a long, silent, one-call-per-symbol pass.
+#
+# It used to fire just before each call started, which only had a defined
+# order while the pass was sequential. Symbols are now summarized from a
+# thread pool, where "about to start" arrives in whatever order the pool
+# schedules; "finished" is the one event that still counts monotonically.
+# The pipeline serializes these calls, so a callback never needs its own lock.
 SummaryProgressCallback = Callable[[int, int, Symbol], None]
+
+# Symbols are summarized concurrently because each one is a single blocking
+# remote call - the pass is almost entirely network wait, not computation.
+# Four is deliberately modest: the ceiling here is the provider's rate limit
+# on one API key, not local CPU, and `provider_routing`'s backoff turns any
+# excess straight back into waiting.
+DEFAULT_SUMMARY_WORKERS = 4
 
 
 class SummaryPipelineError(RuntimeError):
@@ -41,15 +56,26 @@ class CodeSummaryPipeline:
         metadataStore: RepositoryMetadataStore,
         dependencyGraph: DependencyGraph,
         llmEngine: Any,
+        maxWorkers: int = DEFAULT_SUMMARY_WORKERS,
     ) -> None:
         """`llmEngine` is a `provider_routing.FailoverExecutor` wrapping the
         summary stage's configured provider chain (research.md's "deferred
         implementation" of constitution 2.1/2.3) - this package must not
         depend on `provider_routing` directly (it sits below it in the
-        dependency graph), so it's accepted duck-typed via `Any`."""
+        dependency graph), so it's accepted duck-typed via `Any`.
+
+        Both collaborators are safe to share across `maxWorkers` threads
+        without any change of their own: `RepositoryMetadataStore` opens a
+        connection per call, and `_summarize_symbol` reads the provider from
+        the `FailoverResult` it was handed rather than from the executor's
+        `providerUsed` attribute, which concurrent calls do overwrite.
+        """
+        if maxWorkers < 1:
+            raise ValueError("maxWorkers must be at least 1")
         self.metadataStore = metadataStore
         self.dependencyGraph = dependencyGraph
         self.llmEngine = llmEngine
+        self.maxWorkers = maxWorkers
 
     def isReady(self) -> bool:
         return self.llmEngine.isAvailable()
@@ -142,24 +168,56 @@ class CodeSummaryPipeline:
                 pending.append((bundle, symbol))
 
         total = len(pending)
-        results: list[SummaryResult] = []
+        if not pending:
+            return []
+
+        # Read every distinct source file up front rather than lazily inside
+        # the pool: it is cheap local I/O, and hoisting it out is what keeps
+        # the shared cache from needing a lock of its own.
         source_text_by_file_id: dict[str, str] = {}
-        for index, (bundle, symbol) in enumerate(pending, start=1):
-            source_text = source_text_by_file_id.get(bundle.file.id)
-            if source_text is None:
-                source_text = self._read_source_text(repository_root, bundle.file.path)
-                source_text_by_file_id[bundle.file.id] = source_text
-            if on_progress is not None:
-                on_progress(index, total, symbol)
+        for bundle, _ in pending:
+            if bundle.file.id not in source_text_by_file_id:
+                source_text_by_file_id[bundle.file.id] = self._read_source_text(repository_root, bundle.file.path)
+
+        progress_lock = threading.Lock()
+        completed = 0
+
+        def summarize_one(bundle: SourceFileBundle, symbol: Symbol) -> SummaryResult:
+            nonlocal completed
             result = self._summarize_symbol(
                 repository_root,
                 bundle,
                 symbol,
-                source_text=source_text,
+                source_text=source_text_by_file_id[bundle.file.id],
                 incremental=incremental,
             )
-            results.append(result)
-        return results
+            if on_progress is not None:
+                # Counter and callback under one lock, so the reported count is
+                # both gap-free and printed in the order it was counted -
+                # otherwise two workers can interleave into "[7/9]" then
+                # "[6/9]" on the same line of output.
+                with progress_lock:
+                    completed += 1
+                    on_progress(completed, total, symbol)
+            return result
+
+        workers = min(self.maxWorkers, total)
+        executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="codepedia-summary")
+        try:
+            futures: list[Future[SummaryResult]] = [
+                executor.submit(summarize_one, bundle, symbol) for bundle, symbol in pending
+            ]
+            results: list[SummaryResult] = []
+            for future in futures:
+                # Collected in submission order, so `results` stays ordered
+                # exactly as the sequential pass returned it. The first failure
+                # propagates, as before; calls already in flight when it does
+                # may still complete and persist their summary, which is
+                # harmless - a summary is idempotent per symbol.
+                results.append(future.result())
+            return results
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
     def _summarizable_symbols(self, bundle: SourceFileBundle) -> list[Symbol]:
         symbols: list[Symbol] = [bundle.module]

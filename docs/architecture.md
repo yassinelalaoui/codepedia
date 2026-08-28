@@ -136,6 +136,38 @@ Two more flows read that converged state without changing it: **browsing/searchi
 the wiki** and **asking the chat a question** — see
 `docs/diagrams/sequence-diagrams/03-chat-rag.md` and `04-wiki-browsing.md`.
 
+### Where the pipeline fans out
+
+The full-indexing flow is linear in its *stages* but not inside two of them.
+`CodeSummaryPipeline` dispatches its symbols, and the CLI's embedding stage
+dispatches its files, to a `ThreadPoolExecutor` — both stages are one blocking
+remote call per unit of work, so overlapping them is the difference between a
+pass measured in tens of minutes and one measured in minutes. Stage *order* is
+unchanged: each pool is fully drained before the next stage begins, so nothing
+downstream ever observes a half-finished stage.
+
+Three invariants are what let those pools exist without changing any
+component's contract, and they are worth keeping true:
+
+- **`vector_index` serializes its own writes.** One reentrant lock guards
+  every public mutation and its connection is opened with
+  `check_same_thread=False`. It was already so for the watcher's timer thread.
+- **`repository_metadata`, `doc_generator` and `dependency_graph` connect per
+  call** and hold nothing open between them, so concurrent callers contend
+  only inside SQLite — which is why `repository_metadata`'s connections raise
+  the busy timeout rather than share a connection.
+- **`FailoverExecutor` results are read from the returned value**, never from
+  its mutable `providerUsed`/`attempts` attributes, everywhere inside an
+  indexing loop. Those attributes race under concurrency; the returned
+  `FailoverResult` does not. `chat/session.py` is the one place that reads the
+  attribute, and it runs nowhere near these loops.
+
+A rate limit met by those pools is waited out on the same provider before the
+chain advances (`provider_routing.BackoffPolicy`). Constitution 2.3's
+requirement is unaffected: `engine_failover_log` still records exactly one row
+per real provider switch, and a wait — which is the opposite of a switch —
+stays out of that table and is surfaced on the console instead.
+
 ## Storage architecture
 
 **One SQLite file per owning component**, not one shared database:
@@ -154,6 +186,11 @@ the wiki** and **asking the chat a question** — see
 - `dependency_graph` — the persisted graph snapshot (nodes/edges).
 - `vector_index` — embedded chunks + their vectors, each chunk's row also
   carrying `embedding_model_id` (029) — which provider/model produced it.
+  That column is what makes a vector reusable: `index` reads the *previous*
+  run's vector store before re-embedding and reuses any vector whose content
+  and model both still match (032), so an unchanged file costs no API calls
+  on a re-index. It is read and closed immediately, never written — the
+  directory holding it is about to be replaced.
 - `doc_generator` — the page manifest (what was generated, its content hash, its
   links) used to compute incremental regeneration impact.
 
