@@ -423,6 +423,30 @@ def delete_chunks_for_file(connection: sqlite3.Connection, *, index_id: str, sou
     return chunk_ids
 
 
+def count_vectors_by_dimensionality(connection: sqlite3.Connection, *, index_id: str) -> dict[int, int]:
+    """Row count per dimensionality, so each matrix is allocated once at size."""
+    rows = connection.execute(
+        "SELECT dimensionality, COUNT(*) AS total FROM chunks WHERE index_id = ? GROUP BY dimensionality",
+        (index_id,),
+    ).fetchall()
+    return {int(row["dimensionality"]): int(row["total"]) for row in rows}
+
+
+def iter_vector_rows(connection: sqlite3.Connection, *, index_id: str):
+    """Stream `(chunk_id, dimensionality, json_payload)` without materializing vectors.
+
+    Deliberately not `load_entries`: that builds a full `VectorEntry` per row,
+    each holding a tuple of Python floats at 24 bytes apiece. Streaming the raw
+    payload keeps the peak cost one decoded row rather than the whole index.
+    """
+    cursor = connection.execute(
+        "SELECT id, dimensionality, embedding FROM chunks WHERE index_id = ? ORDER BY id",
+        (index_id,),
+    )
+    for row in cursor:
+        yield row["id"], int(row["dimensionality"]), row["embedding"]
+
+
 def load_lifecycle_state(connection: sqlite3.Connection, *, source_file_path: str | Path | None = None) -> dict[str, str]:
     if source_file_path is None:
         rows = connection.execute("SELECT chunk_id, lifecycle_state FROM chunk_lifecycle").fetchall()

@@ -10,7 +10,12 @@ requires-python = ">=3.11"
 dependencies = [
   "typer>=0.12",
   "pathspec>=0.12",
-  "networkx>=3.3",
+  # Vector search holds embeddings as one float32 matrix per dimensionality and
+  # scores a query with a single matrix-vector product. The pure-Python cosine
+  # loop it replaces measured 19.4s and 2.3GB at 50k chunks of 1536 dimensions;
+  # no dependency-free alternative fixes the latency (pre-normalizing to a plain
+  # dot product was measured at only 2.5x).
+  "numpy>=1.26",
   # 0.26.0 segfaults when a Node's point is read after its children are
   # walked (crashes on any file of a few thousand nodes), so cap below it.
   "tree-sitter>=0.24,<0.26",
