@@ -37,6 +37,10 @@ __pycache__/
 venv/
 .deps/
 .pytest_cache/
+# The default temp dir is not writable on every machine, so the suite is run
+# with --basetemp pointed here; without this the run leaves ~1000 files behind
+# that the scanner would then index.
+.pytest_tmp/
 .mypy_cache/
 .coverage
 htmlcov/

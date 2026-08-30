@@ -18,6 +18,12 @@ COMMON_LANGUAGE_MAP = {
     ".kts": "Kotlin",
     ".go": "Go",
     ".rs": "Rust",
+    # Prose, not code, but a repository's documentation is part of what a wiki
+    # is meant to explain. `parser_engine` gives it a heading-based inventory
+    # rather than a symbol one; everything downstream (pages, anchors, chunks,
+    # summaries) treats it like any other source file.
+    ".md": "Markdown",
+    ".markdown": "Markdown",
 }
 
 

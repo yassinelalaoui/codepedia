@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast as pyast
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -15,6 +15,7 @@ from .symbols import ClassSymbol, FunctionSymbol, ModuleSymbol, Parameter, Symbo
 
 PYTHON_LANG = "python"
 BRACE_LANGUAGES = {"javascript", "typescript", "java", "go", "rust"}
+MARKDOWN_LANGUAGES = {"markdown"}
 
 
 @dataclass(slots=True)
@@ -31,6 +32,8 @@ class SymbolExtractor:
             if inventory is not None:
                 return inventory
             return _extract_brace_inventory(source_file=source_file, text=text, language=language)
+        if language in MARKDOWN_LANGUAGES:
+            return _extract_markdown_inventory(source_file=source_file, text=text)
         return _extract_generic_inventory(source_file=source_file, text=text)
 
     def extract_many(self, source_files: Iterable[SourceFile]) -> list[FileSymbolInventory]:
@@ -701,6 +704,266 @@ def _extract_brace_inventory(*, source_file: SourceFile, text: str, language: st
         callRelations=tuple(calls),
         inheritanceRelations=tuple(inheritance),
     )
+
+
+# --- Markdown -------------------------------------------------------------
+#
+# Documentation is prose, not symbols, so it is mapped onto the existing symbol
+# types rather than growing a fourth one: `SymbolKind` is a closed Literal with
+# one SQL table per variant and a dispatch on `kind` in
+# `repository_metadata.sqlite_store`, and a new kind would ripple through all of
+# it plus the whole classes/functions path in `doc_generator`. The mapping is
+# file -> module, `##` -> class, `###`..`######` -> function owned by the `##`
+# above it, which gives headings page anchors, search-index entries, chunks and
+# summaries with no new plumbing at all.
+
+# Up to three leading spaces, per CommonMark. Requiring at most three is also
+# what keeps a four-space-indented code block from being read as a heading.
+_MD_ATX_PATTERN = re.compile(r"^ {0,3}(#{1,6})(\s+.*)?$")
+# A fence is three or more backticks or tildes; the closing fence must use the
+# same character and be at least as long.
+_MD_FENCE_PATTERN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# A setext underline turns the paragraph line above it into a heading.
+_MD_SETEXT_PATTERN = re.compile(r"^ {0,3}(=+|-+)\s*$")
+_MD_FRONT_MATTER_DELIMITER = re.compile(r"^---\s*$")
+_MD_SLUG_STRIP_PATTERN = re.compile(r"[^a-z0-9]+")
+
+
+@dataclass(slots=True)
+class _MarkdownHeading:
+    level: int
+    title: str
+    line: int
+    body_end: int = 0
+    section_end: int = 0
+
+
+def _markdown_symbol_id(prefix: str, source_path: str, slug: str, ordinal: int) -> str:
+    """A heading id that survives an edit anywhere else in the file.
+
+    Deliberately not `_stable_id`, which seeds on `lineStart`/`lineEnd`: in
+    prose a single inserted paragraph shifts every heading below it, so a
+    line-derived id would change every anchor, every `search-index.json` entry
+    and every stored chat citation on an ordinary documentation edit. Slug plus
+    ordinal identifies a heading by what it *is*, and the ordinal keeps two
+    identically-named headings in one file apart.
+    """
+    seed = f"{source_path}|{prefix}|{slug}|{ordinal}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}_{digest}"
+
+
+def _markdown_slug(title: str) -> str:
+    slug = _MD_SLUG_STRIP_PATTERN.sub("-", title.strip().lower()).strip("-")
+    return slug or "section"
+
+
+def _markdown_content_start(lines: list[str]) -> int:
+    """Index of the first content line, skipping YAML front matter.
+
+    Front matter is metadata rather than prose, and its closing `---` would
+    otherwise read as a setext underline turning the `title:` line into a
+    heading.
+    """
+    if not lines or not _MD_FRONT_MATTER_DELIMITER.match(lines[0]):
+        return 0
+    for index in range(1, len(lines)):
+        if _MD_FRONT_MATTER_DELIMITER.match(lines[index]):
+            return index + 1
+    return 0
+
+
+def _markdown_headings(lines: list[str]) -> list[_MarkdownHeading]:
+    """Every ATX and setext heading, ignoring anything inside a code fence.
+
+    The fence check is the one real correctness trap here: a shell sample is
+    full of `# comment` lines that are not headings at all.
+    """
+    headings: list[_MarkdownHeading] = []
+    fence_marker = ""
+    start_index = _markdown_content_start(lines)
+
+    for index in range(start_index, len(lines)):
+        line = lines[index]
+        fence_match = _MD_FENCE_PATTERN.match(line)
+        if fence_match:
+            marker = fence_match.group(1)
+            if not fence_marker:
+                fence_marker = marker
+            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
+                fence_marker = ""
+            continue
+        if fence_marker:
+            continue
+
+        atx_match = _MD_ATX_PATTERN.match(line)
+        if atx_match:
+            title = (atx_match.group(2) or "").strip().rstrip("#").strip()
+            headings.append(
+                _MarkdownHeading(level=len(atx_match.group(1)), title=title, line=index + 1)
+            )
+            continue
+
+        # Setext: the underline only counts when the line above is ordinary
+        # paragraph text, which excludes a `---` thematic break after a blank
+        # line and a `---` directly under a heading.
+        setext_match = _MD_SETEXT_PATTERN.match(line)
+        if setext_match and index > start_index:
+            previous = lines[index - 1].strip()
+            if previous and not _MD_ATX_PATTERN.match(lines[index - 1]) and not _MD_FENCE_PATTERN.match(lines[index - 1]):
+                if not (headings and headings[-1].line == index):
+                    headings.append(
+                        _MarkdownHeading(
+                            level=1 if setext_match.group(1)[0] == "=" else 2,
+                            title=previous,
+                            line=index,
+                        )
+                    )
+    return headings
+
+
+def _resolve_markdown_spans(headings: list[_MarkdownHeading], total_lines: int) -> None:
+    """Fill in each heading's own prose range and its full section range.
+
+    `section_end` runs to the next heading of the same or higher level, so a
+    `##` span covers its `###` subsections - that is what `_symbol_source_text`
+    slices for chunking and summarization. `body_end` stops at the next heading
+    of any level, so the prose shown on the page is the section's own text and
+    not a copy of everything nested under it.
+    """
+    for position, heading in enumerate(headings):
+        following = headings[position + 1 :]
+        next_heading = following[0] if following else None
+        next_peer = next((other for other in following if other.level <= heading.level), None)
+
+        body_end = next_heading.line - 1 if next_heading is not None else total_lines
+        section_end = next_peer.line - 1 if next_peer is not None else total_lines
+        heading.body_end = max(heading.line, body_end)
+        heading.section_end = max(heading.line, section_end)
+
+
+def _markdown_body(lines: list[str], heading: _MarkdownHeading) -> str:
+    return "\n".join(lines[heading.line : heading.body_end]).strip()
+
+
+def _extract_markdown_inventory(*, source_file: SourceFile, text: str) -> FileSymbolInventory:
+    source_path = str(source_file.path)
+    lines = text.splitlines()
+    total_lines = max(1, len(lines))
+    headings = _markdown_headings(lines)
+    _resolve_markdown_spans(headings, total_lines)
+
+    ordinals: dict[str, int] = {}
+
+    def next_ordinal(slug: str) -> int:
+        ordinal = ordinals.get(slug, 0)
+        ordinals[slug] = ordinal + 1
+        return ordinal
+
+    # The module's prose is everything before the first `##`, which is where a
+    # README states what the project is. The document's own `#` title stays in
+    # it deliberately: it often carries more than the filename does
+    # ("Feature Specification: ..." against "spec"), and using it as
+    # `module.name` instead would move the page's output path
+    # (`links.page_slug`) every time a title is edited, orphaning the previous
+    # file since page *ids* are keyed on the stable `sourceFileId`.
+    content_start = _markdown_content_start(lines)
+    # Stops at the first heading that becomes a symbol of its own - any level
+    # at or below `##`, which includes an orphan `###` in a document that never
+    # uses `##`. The `#` title itself is not a boundary; it is part of the intro.
+    intro_end = next((heading.line - 1 for heading in headings if heading.level >= 2), total_lines)
+    module = ModuleSymbol(
+        id=_markdown_symbol_id("module", source_path, Path(source_path).name, 0),
+        name=Path(source_path).stem,
+        lineStart=1,
+        lineEnd=total_lines,
+        docstring="\n".join(lines[content_start:intro_end]).strip(),
+        generatedSummary="",
+        filePath=source_path,
+        imports=(),
+    )
+
+    classes: list[ClassSymbol] = []
+    functions: list[FunctionSymbol] = []
+    inside_section = False
+
+    for heading in headings:
+        if heading.level <= 1:
+            # The document title is already the page's own H1; it never becomes
+            # a section of itself.
+            continue
+        slug = _markdown_slug(heading.title)
+        body = _markdown_body(lines, heading)
+        if heading.level == 2:
+            classes.append(
+                ClassSymbol(
+                    id=_markdown_symbol_id("class", source_path, slug, next_ordinal(slug)),
+                    name=heading.title or "Section",
+                    lineStart=heading.line,
+                    lineEnd=heading.section_end,
+                    docstring=body,
+                    generatedSummary="",
+                    parentClass=None,
+                    methods=(),
+                    nestedSymbols=(),
+                )
+            )
+            inside_section = True
+            continue
+
+        # `owner` carries the literal string "class" or "module" everywhere else
+        # in this module, never the parent's name - matched here so
+        # `doc_generator._documented_functions` keeps subsections out of the
+        # flat list exactly as it does for real methods.
+        functions.append(
+            FunctionSymbol(
+                id=_markdown_symbol_id("function", source_path, slug, next_ordinal(slug)),
+                name=heading.title or "Section",
+                lineStart=heading.line,
+                lineEnd=heading.section_end,
+                docstring=body,
+                generatedSummary="",
+                parameters=(),
+                returnType=None,
+                nestedSymbols=(),
+                owner="class" if inside_section else "module",
+                decorators=(),
+            )
+        )
+
+    # ClassSymbol is frozen and its subsections only exist once the whole
+    # document has been walked, so they are attached in a second pass.
+    classes = [
+        replace(class_symbol, methods=tuple(methods))
+        for class_symbol, methods in zip(classes, _markdown_method_groups(classes, functions))
+    ]
+
+    return FileSymbolInventory(
+        sourceFile=source_path,
+        module=module,
+        classes=tuple(classes),
+        functions=tuple(functions),
+        imports=(),
+        callRelations=(),
+        inheritanceRelations=(),
+    )
+
+
+def _markdown_method_groups(
+    classes: list[ClassSymbol], functions: list[FunctionSymbol]
+) -> list[list[FunctionSymbol]]:
+    """Subsections belonging to each `##`, matched by line range."""
+    groups: list[list[FunctionSymbol]] = []
+    for class_symbol in classes:
+        groups.append(
+            [
+                function
+                for function in functions
+                if function.owner == "class"
+                and class_symbol.lineStart < function.lineStart <= class_symbol.lineEnd
+            ]
+        )
+    return groups
 
 
 def _extract_generic_inventory(*, source_file: SourceFile, text: str) -> FileSymbolInventory:

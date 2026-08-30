@@ -7,6 +7,8 @@ from typing import Callable, Literal
 from dependency_graph import DependencyGraph
 from repository_metadata.models import FunctionSymbol, RepositoryBundle
 
+from .prose import is_prose_file
+
 MAX_CALL_DEPTH = 6
 
 _CLI_DECORATOR_PATTERN = re.compile(r"\.(command|callback)\(")
@@ -75,6 +77,12 @@ def identify_entry_points(bundle: RepositoryBundle, graph: DependencyGraph) -> t
 
     candidates: list[EntryPoint] = []
     for file_bundle in bundle.files:
+        # A documentation heading is stored as a FunctionSymbol so it can reuse
+        # the wiki pipeline, but it is prose: nothing calls it, so the
+        # "uncalled public function" rule below would make every `###` in every
+        # README an entry point with its own sequence-diagram page.
+        if is_prose_file(file_bundle.module.filePath):
+            continue
         module_key = file_bundle.module.sourceFileId
         module_name = file_bundle.module.name
         for function in file_bundle.functions:

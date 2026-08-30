@@ -1,5 +1,19 @@
+{# `is_prose` switches the labels for a documentation file (.md), whose symbols
+   are headings rather than code. The structure is deliberately shared with the
+   code path rather than split into a second template: anchors, section links,
+   related links and entry-point links are all identical, and only the words
+   around them differ. #}
+{# A documentation file usually opens with its own `#` title, which is more
+   informative than the filename ("Feature Specification: ..." against "spec").
+   Emitting both would put two H1s on the page, so the document's own title
+   wins when it has one. `module.name` still drives the sidebar and the output
+   path, which is what keeps the page's filename stable when a title is
+   reworded - `links.page_slug` is built from it, and a moved path would orphan
+   the previously written file since page *ids* key on `sourceFileId`. #}
+{% if not (is_prose and module.docstring.lstrip().startswith('# ')) %}
 # {{ module.name | mdesc }}
 
+{% endif %}
 {% if module.docstring %}{{ module.docstring }}
 
 {% endif %}
@@ -13,14 +27,20 @@
 {{ module.generatedSummary }}
 {: .ai-generated }
 {% else %}
-_Summary pending — this module has not been summarized yet._
+_Summary pending — this {{ 'document' if is_prose else 'module' }} has not been summarized yet._
 {% endif %}
 
 {% if diagram_link %}
 [View dependency diagram]({{ diagram_link.relativePath }}){: .diagram-link }
 {% endif %}
 
-## Classes
+{# For prose, an empty block is the ordinary case rather than a meaningful
+   absence: a document whose `###` headings all sit under a `##` has no
+   top-level subsections, and a .md file has no imports, so "Subsections" and
+   "Related documents" would be permanently empty. A code module keeps the
+   headings unconditionally - "no classes" is information there. #}
+{% if classes or not is_prose %}
+## {{ 'Sections' if is_prose else 'Classes' }}
 
 {% if classes %}
 {% for class, methods in classes %}
@@ -36,12 +56,16 @@ _Summary pending — this module has not been summarized yet._
 {{ class.generatedSummary }}
 {: .ai-generated }
 {% else %}
-_Summary pending — this class has not been summarized yet._
+_Summary pending — this {{ 'section' if is_prose else 'class' }} has not been summarized yet._
 {% endif %}
 
 {% if methods %}
 {% for method in methods %}
+{% if is_prose %}
+#### {{ method.name | mdesc }} {: #{{ method.id }} }
+{% else %}
 #### {{ class.name | mdesc }}.{{ method.name | mdesc }}({{ method.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if method.returnType %} -> {{ method.returnType | mdesc }}{% endif %} {: #{{ method.id }} }
+{% endif %}
 
 {% if method.docstring %}{{ method.docstring }}
 
@@ -50,7 +74,7 @@ _Summary pending — this class has not been summarized yet._
 {{ method.generatedSummary }}
 {: .ai-generated }
 {% else %}
-_Summary pending — this method has not been summarized yet._
+_Summary pending — this {{ 'subsection' if is_prose else 'method' }} has not been summarized yet._
 {% endif %}
 
 {% if entry_point_links.get(method.id) %}
@@ -63,12 +87,18 @@ _Summary pending — this method has not been summarized yet._
 {% else %}
 _No classes in this module._
 {% endif %}
+{% endif %}
 
-## Functions
+{% if functions or not is_prose %}
+## {{ 'Subsections' if is_prose else 'Functions' }}
 
 {% if functions %}
 {% for function in functions %}
+{% if is_prose %}
+### {{ function.name | mdesc }} {: #{{ function.id }} }
+{% else %}
 ### {{ function.name | mdesc }}({{ function.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if function.returnType %} -> {{ function.returnType | mdesc }}{% endif %} {: #{{ function.id }} }
+{% endif %}
 
 {% if function.docstring %}{{ function.docstring }}
 
@@ -77,7 +107,7 @@ _No classes in this module._
 {{ function.generatedSummary }}
 {: .ai-generated }
 {% else %}
-_Summary pending — this function has not been summarized yet._
+_Summary pending — this {{ 'subsection' if is_prose else 'function' }} has not been summarized yet._
 {% endif %}
 
 {% if entry_point_links.get(function.id) %}
@@ -88,8 +118,10 @@ _Summary pending — this function has not been summarized yet._
 {% else %}
 _No functions in this module._
 {% endif %}
+{% endif %}
 
-## Related modules
+{% if related_links or not is_prose %}
+## Related {{ 'documents' if is_prose else 'modules' }}
 
 {% if related_links %}
 {% for link in related_links %}
@@ -97,4 +129,5 @@ _No functions in this module._
 {% endfor %}
 {% else %}
 _No related modules detected._
+{% endif %}
 {% endif %}

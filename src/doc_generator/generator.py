@@ -26,6 +26,7 @@ from .mermaid_diagram import (
     build_use_case_diagram_mermaid_source,
 )
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
+from .prose import is_prose_file
 from .search_index import SearchIndexDocument, build_search_index
 from .section_narrator import SectionNarrator, apply_section_narrations
 from .sections import Section, SectionSelection, build_sections
@@ -258,6 +259,7 @@ class DocGenerator:
 
         content = render_markdown_template(
             "module.md.jinja",
+            is_prose=is_prose_file(moduleSymbol.filePath),
             module=moduleSymbol,
             classes=classes,
             functions=functions,

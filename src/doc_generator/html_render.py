@@ -8,6 +8,7 @@ from typing import Any, Sequence
 import markdown as markdown_lib
 
 from .cross_references import SymbolLookup, SymbolReferenceExtension
+from .html_sanitizer import SanitizeRawHtmlExtension
 from .links import DIAGRAMS_INDEX_OUTPUT_HTML, HOME_OUTPUT_HTML, relative_output_link
 from .markdown_render import render_html_template
 from .writer import (
@@ -110,7 +111,10 @@ def render_page_html(
     # new one each call also keeps the `toc` extension's used-id set scoped to
     # one page, so a heading repeated on the next page never inherits a `_1`
     # dedup suffix from this one.
-    extensions: list[Any] = list(_MARKDOWN_EXTENSIONS)
+    # Always registered, whatever else this page enables: the Markdown reaching
+    # here carries docstrings from the documented repository and LLM-written
+    # summaries, and `layout.html.jinja` inserts the result with `| safe`.
+    extensions: list[Any] = [*_MARKDOWN_EXTENSIONS, SanitizeRawHtmlExtension()]
     if symbol_lookup is not None:
         # Appended last so it registers after the built-ins; it only rewrites
         # inline <code> elements, leaving fenced blocks (Mermaid included)

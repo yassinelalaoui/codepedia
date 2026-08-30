@@ -276,15 +276,18 @@ def test_append_time_does_not_grow_with_session_length(tmp_path):
     assert late_median < early_median * 5 + 0.05
 
 
-def test_ask_stream_answers_from_the_readme_when_no_code_evidence_matches(tmp_path):
-    """The README is always attached as baseline context (unlike retrieved
-    evidence, it isn't subject to retrieval scoring), so a broad
-    project-level question can still be answered - and cited - even when
-    the vector index has nothing relevant (or is empty)."""
+def test_ask_stream_answers_from_an_unparsed_readme_when_no_code_evidence_matches(tmp_path):
+    """A README no parser handles is still attached as baseline context.
+
+    `.rst`/`.txt`/extensionless READMEs never reach the index, so for those
+    repositories this remains the only way the README informs an answer, and
+    it is unaffected by retrieval scoring. A `README.md` takes the other route
+    now - see the test below."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    (repo_root / "README.md").write_text(
-        "# Widget Factory\n\nThis project builds widgets from raw materials.", encoding="utf-8"
+    (repo_root / "README.rst").write_text(
+        "Widget Factory\n==============\n\nThis project builds widgets from raw materials.",
+        encoding="utf-8",
     )
 
     engine = FakeEmbeddingEngine()
@@ -300,8 +303,34 @@ def test_ask_stream_answers_from_the_readme_when_no_code_evidence_matches(tmp_pa
     assert llm.calls, "the LLM should have been invoked using the README as context"
     # Citation is carried as structured data (citedFilePaths), not duplicated
     # as a plain-text "Sources:" footer inside the answer content.
-    assert "README.md" in message.citedFilePaths
+    assert "README.rst" in message.citedFilePaths
     assert message.content == "This project builds widgets from raw materials."
+
+
+def test_a_markdown_readme_is_not_also_pasted_into_the_prompt(tmp_path):
+    """`README.md` reaches answers through the index, not through this path.
+
+    It is parsed and chunked like any other source file, so retrieval returns
+    the sections that bear on the question. Attaching the whole file here as
+    well would put the same text in the prompt twice and pay for it twice in
+    the token budget. With an empty index there is therefore nothing to answer
+    from, which is what this asserts."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "README.md").write_text(
+        "# Widget Factory\n\nThis project builds widgets from raw materials.", encoding="utf-8"
+    )
+
+    engine = FakeEmbeddingEngine()
+    index = VectorIndex(repo_root, tmp_path / "meta.sqlite", embedding_engine=engine)
+    llm = FakeLLMEngine("unused")
+    session = ChatSession(id="session-1", vectorIndex=index, embeddingEngine=engine, llmEngine=_wrap_chat(llm))
+
+    _fragments, message = asyncio.run(_collect_stream(session, "what does this project do?"))
+    index.close()
+
+    assert "does not contain enough indexed evidence" in message.content
+    assert not llm.calls
 
 
 def test_ask_stream_still_returns_canned_message_when_no_evidence_and_no_readme(tmp_path):
