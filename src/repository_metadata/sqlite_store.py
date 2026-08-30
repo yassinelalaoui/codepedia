@@ -135,6 +135,18 @@ SCHEMA_STATEMENTS = (
         reason TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS summary_ledger (
+        context_hash TEXT PRIMARY KEY,
+        source_file_id TEXT NOT NULL,
+        symbol_kind TEXT NOT NULL,
+        symbol_name TEXT NOT NULL,
+        generated_summary TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        generated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_summary_ledger_symbol ON summary_ledger(source_file_id, symbol_kind, symbol_name, generated_at)",
     "CREATE INDEX IF NOT EXISTS idx_source_files_repository_path ON source_files(repository_id, path)",
     "CREATE INDEX IF NOT EXISTS idx_symbols_source_file ON symbols(source_file_id)",
     "CREATE INDEX IF NOT EXISTS idx_dependency_edges_source_file ON dependency_edges(source_file_id)",
@@ -170,6 +182,26 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
     _ensure_chat_messages_generated_by_column(connection)
+    _ensure_repositories_commit_sha_column(connection)
+    _ensure_symbols_summary_provenance_columns(connection)
+
+
+def _ensure_symbols_summary_provenance_columns(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(symbols)").fetchall()}
+    with connection:
+        if "summary_context_hash" not in columns:
+            connection.execute("ALTER TABLE symbols ADD COLUMN summary_context_hash TEXT NOT NULL DEFAULT ''")
+        if "summary_is_stale" not in columns:
+            connection.execute("ALTER TABLE symbols ADD COLUMN summary_is_stale INTEGER NOT NULL DEFAULT 0")
+
+
+def _ensure_repositories_commit_sha_column(connection: sqlite3.Connection) -> None:
+    # Same introspection-guarded shape as the migration below; a database
+    # written before provenance existed simply reports "" for every repository.
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(repositories)").fetchall()}
+    if "commit_sha" not in columns:
+        with connection:
+            connection.execute("ALTER TABLE repositories ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''")
 
 
 def _ensure_chat_messages_generated_by_column(connection: sqlite3.Connection) -> None:
@@ -205,29 +237,43 @@ def upsert_repository(
     root_path: str | Path,
     detected_languages: Iterable[str],
     last_indexed_at: str,
+    commit_sha: str | None = None,
 ) -> Repository:
+    """`commit_sha=None` means "leave whatever is stored alone".
+
+    This runs once per stored file, but HEAD is only read once per indexing run
+    (`RepositoryMetadataStore.ensure_repository`), so every later call in the
+    run must not blank the column it did not look up.
+    """
     repository_id = stable_repository_id(root_path)
+    stored_commit_sha = commit_sha
+    if stored_commit_sha is None:
+        row = connection.execute("SELECT commit_sha FROM repositories WHERE id = ?", (repository_id,)).fetchone()
+        stored_commit_sha = row["commit_sha"] if row is not None else ""
     repository = Repository(
         id=repository_id,
         rootPath=str(Path(root_path).expanduser().resolve()),
         detectedLanguages=tuple(sorted({language for language in detected_languages})),
         lastIndexedAt=last_indexed_at,
+        commitSha=stored_commit_sha,
     )
     with connection:
         connection.execute(
             """
-            INSERT INTO repositories (id, root_path, detected_languages, last_indexed_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO repositories (id, root_path, detected_languages, last_indexed_at, commit_sha)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 root_path = excluded.root_path,
                 detected_languages = excluded.detected_languages,
-                last_indexed_at = excluded.last_indexed_at
+                last_indexed_at = excluded.last_indexed_at,
+                commit_sha = excluded.commit_sha
             """,
             (
                 repository.id,
                 repository.rootPath,
                 json.dumps(repository.detectedLanguages),
                 repository.lastIndexedAt,
+                repository.commitSha,
             ),
         )
         connection.execute(
@@ -465,7 +511,10 @@ def _insert_dependency_edge(connection: sqlite3.Connection, repository_id: str, 
 
 
 def load_repository(connection: sqlite3.Connection, *, repository_id: str) -> Repository:
-    row = connection.execute("SELECT id, root_path, detected_languages, last_indexed_at FROM repositories WHERE id = ?", (repository_id,)).fetchone()
+    row = connection.execute(
+        "SELECT id, root_path, detected_languages, last_indexed_at, commit_sha FROM repositories WHERE id = ?",
+        (repository_id,),
+    ).fetchone()
     if row is None:
         raise KeyError(repository_id)
     return Repository(
@@ -473,6 +522,7 @@ def load_repository(connection: sqlite3.Connection, *, repository_id: str) -> Re
         rootPath=row["root_path"],
         detectedLanguages=tuple(json.loads(row["detected_languages"])),
         lastIndexedAt=row["last_indexed_at"],
+        commitSha=row["commit_sha"],
     )
 
 
@@ -505,7 +555,9 @@ def load_source_file_by_path(connection: sqlite3.Connection, *, repository_id: s
 
 def _load_symbols(connection: sqlite3.Connection, *, source_file_id: str) -> list[Symbol]:
     rows = connection.execute(
-        "SELECT id, kind, name, line_start, line_end, docstring, generated_summary, metadata FROM symbols WHERE source_file_id = ? ORDER BY line_start, line_end, name",
+        "SELECT id, kind, name, line_start, line_end, docstring, generated_summary, metadata, "
+        "summary_context_hash, summary_is_stale FROM symbols WHERE source_file_id = ? "
+        "ORDER BY line_start, line_end, name",
         (source_file_id,),
     ).fetchall()
     symbols: list[Symbol] = []
@@ -524,6 +576,8 @@ def _load_symbols(connection: sqlite3.Connection, *, source_file_id: str) -> lis
                     docstring=row["docstring"],
                     generatedSummary=row["generated_summary"],
                     metadata=metadata,
+                    summaryContextHash=row["summary_context_hash"],
+                    summaryIsStale=bool(row["summary_is_stale"]),
                     filePath=module_row["file_path"] if module_row else "",
                     imports=tuple(json.loads(module_row["imports"])) if module_row else (),
                 )
@@ -541,6 +595,8 @@ def _load_symbols(connection: sqlite3.Connection, *, source_file_id: str) -> lis
                     docstring=row["docstring"],
                     generatedSummary=row["generated_summary"],
                     metadata=metadata,
+                    summaryContextHash=row["summary_context_hash"],
+                    summaryIsStale=bool(row["summary_is_stale"]),
                     parentClass=class_row["parent_class"] if class_row else None,
                     methods=tuple(json.loads(class_row["methods"])) if class_row else (),
                     nestedSymbols=tuple(json.loads(class_row["nested_symbols"])) if class_row else (),
@@ -562,6 +618,8 @@ def _load_symbols(connection: sqlite3.Connection, *, source_file_id: str) -> lis
                     docstring=row["docstring"],
                     generatedSummary=row["generated_summary"],
                     metadata=metadata,
+                    summaryContextHash=row["summary_context_hash"],
+                    summaryIsStale=bool(row["summary_is_stale"]),
                     parameters=parameters,
                     returnType=function_row["return_type"] if function_row else None,
                     nestedSymbols=tuple(json.loads(function_row["nested_symbols"])) if function_row else (),
@@ -610,29 +668,6 @@ def load_source_file_bundle(connection: sqlite3.Connection, *, source_file_id: s
 
 
 def load_symbol(connection: sqlite3.Connection, *, symbol_id: str) -> Symbol:
-    row = connection.execute("SELECT source_file_id FROM symbols WHERE id = ?", (symbol_id,)).fetchone()
-    if row is None:
-        raise KeyError(symbol_id)
-    source_file_id = row["source_file_id"]
-    for symbol in _load_symbols(connection, source_file_id=source_file_id):
-        if symbol.id == symbol_id:
-            return symbol
-    raise KeyError(symbol_id)
-
-
-def load_symbols_for_source_file(connection: sqlite3.Connection, *, source_file_id: str) -> tuple[Symbol, ...]:
-    return tuple(_load_symbols(connection, source_file_id=source_file_id))
-
-
-def update_symbol_generated_summary(connection: sqlite3.Connection, *, symbol_id: str, generated_summary: str) -> None:
-    with connection:
-        connection.execute(
-            "UPDATE symbols SET generated_summary = ? WHERE id = ?",
-            (generated_summary, symbol_id),
-        )
-
-
-def load_symbol(connection: sqlite3.Connection, *, symbol_id: str) -> Symbol:
     row = connection.execute(
         "SELECT source_file_id FROM symbols WHERE id = ?",
         (symbol_id,),
@@ -657,6 +692,97 @@ def update_symbol_generated_summary(connection: sqlite3.Connection, *, symbol_id
             "UPDATE symbols SET generated_summary = ? WHERE id = ?",
             (generated_summary, symbol_id),
         )
+
+
+def update_symbol_summary_provenance(
+    connection: sqlite3.Connection,
+    *,
+    symbol_id: str,
+    generated_summary: str,
+    context_hash: str,
+    is_stale: bool,
+) -> None:
+    """Write a summary together with the material it was generated from."""
+    with connection:
+        connection.execute(
+            "UPDATE symbols SET generated_summary = ?, summary_context_hash = ?, summary_is_stale = ? WHERE id = ?",
+            (generated_summary, context_hash, 1 if is_stale else 0, symbol_id),
+        )
+
+
+def save_summary_to_ledger(
+    connection: sqlite3.Connection,
+    *,
+    context_hash: str,
+    source_file_id: str,
+    symbol_kind: str,
+    symbol_name: str,
+    generated_summary: str,
+    model_name: str,
+    generated_at: str,
+) -> None:
+    """Record what a model said about one exact version of one symbol.
+
+    Keyed by `context_hash` - the hash of the material the model was shown -
+    rather than by symbol id, and deliberately carrying no foreign key to
+    `symbols`. Both choices exist for the same reason: re-parsing a file
+    deletes and re-inserts every symbol in it, so anything keyed on symbol
+    identity (or cascading from it) would be destroyed by an edit to an
+    unrelated part of the same file. Content is what the summary actually
+    describes, and content is what survives.
+    """
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO summary_ledger
+                (context_hash, source_file_id, symbol_kind, symbol_name, generated_summary, model_name, generated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(context_hash) DO UPDATE SET
+                source_file_id = excluded.source_file_id,
+                symbol_kind = excluded.symbol_kind,
+                symbol_name = excluded.symbol_name,
+                generated_summary = excluded.generated_summary,
+                model_name = excluded.model_name,
+                generated_at = excluded.generated_at
+            """,
+            (context_hash, source_file_id, symbol_kind, symbol_name, generated_summary, model_name, generated_at),
+        )
+
+
+def load_summary_by_context_hash(connection: sqlite3.Connection, *, context_hash: str) -> str:
+    """A summary already generated for exactly this content, or "".
+
+    A hit means the model would be shown material it has already summarized, so
+    the call can be skipped outright.
+    """
+    if not context_hash:
+        return ""
+    row = connection.execute(
+        "SELECT generated_summary FROM summary_ledger WHERE context_hash = ?",
+        (context_hash,),
+    ).fetchone()
+    return row["generated_summary"] if row is not None else ""
+
+
+def load_latest_summary_for_symbol(
+    connection: sqlite3.Connection, *, source_file_id: str, symbol_kind: str, symbol_name: str
+) -> tuple[str, str]:
+    """The most recent summary written for this symbol, whatever version it described.
+
+    Returns `(generated_summary, context_hash)`, or `("", "")`. Matched on
+    file/kind/name rather than symbol id because ids embed line numbers and so
+    change when anything above the symbol moves - the name does not. Used only
+    to carry a *stale* summary forward when the current version has none.
+    """
+    row = connection.execute(
+        """
+        SELECT generated_summary, context_hash FROM summary_ledger
+        WHERE source_file_id = ? AND symbol_kind = ? AND symbol_name = ?
+        ORDER BY generated_at DESC LIMIT 1
+        """,
+        (source_file_id, symbol_kind, symbol_name),
+    ).fetchone()
+    return (row["generated_summary"], row["context_hash"]) if row is not None else ("", "")
 
 
 def load_repository_bundle(connection: sqlite3.Connection, *, repository_id: str) -> RepositoryBundle:

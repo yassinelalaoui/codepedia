@@ -165,7 +165,7 @@ class DocGenerator:
             use_case_diagram_link=use_case_diagram_link,
             class_diagram_source=classDiagramSource,
         )
-        html = render_page_html(
+        html = self._render_page(
             title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
@@ -268,7 +268,7 @@ class DocGenerator:
             section_link=section_link,
             entry_point_links=entry_point_links,
         )
-        html = render_page_html(
+        html = self._render_page(
             title=moduleSymbol.name,
             content_markdown=content,
             output_path_html=module_html,
@@ -346,7 +346,7 @@ class DocGenerator:
             neighbor_links=neighbor_links,
             section_diagram_source=section_diagram_source,
         )
-        html = render_page_html(
+        html = self._render_page(
             title=section.title,
             content_markdown=content,
             output_path_html=section_html,
@@ -428,7 +428,7 @@ class DocGenerator:
             neighbor_links=[link for link in page_links if link is not owner_link],
             mermaid_source=mermaid_source.sourceText,
         )
-        html = render_page_html(
+        html = self._render_page(
             title=title, content_markdown=content, output_path_html=diagram_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
@@ -472,7 +472,7 @@ class DocGenerator:
             "class_diagram.md.jinja",
             class_diagram_source=class_diagram_source,
         )
-        html = render_page_html(
+        html = self._render_page(
             title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
@@ -505,7 +505,7 @@ class DocGenerator:
             "use_case_diagram.md.jinja",
             use_case_diagram_source=use_case_diagram_source,
         )
-        html = render_page_html(
+        html = self._render_page(
             title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
@@ -552,7 +552,7 @@ class DocGenerator:
                 selection=selection,
                 sequence_diagram_source=sequence_diagram_source,
             )
-            html = render_page_html(
+            html = self._render_page(
             title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
@@ -646,7 +646,7 @@ class DocGenerator:
             sequence_diagram_links=sequence_diagram_links,
             dependency_diagram_links=dependency_diagram_links,
         )
-        html = render_page_html(
+        html = self._render_page(
             title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
         )
 
@@ -863,6 +863,28 @@ class DocGenerator:
                 self.sectionNarrator.repositoryId = self.repositoryId
             self._sections = apply_section_narrations(selection, self.sectionNarrator)
         return self._sections
+
+    def _render_page(self, **kwargs) -> str:
+        """`render_page_html` with this run's provenance filled in.
+
+        Every page kind goes through here so the commit a page describes is
+        stamped once rather than at each of the eight call sites - and so a page
+        kind added later inherits it without anyone remembering to.
+        """
+        kwargs.setdefault("commit_sha", self._commit_sha())
+        return render_page_html(**kwargs)
+
+    def _commit_sha(self) -> str:
+        """HEAD as recorded when the repository was indexed, not as it is now.
+
+        Read from the stored `Repository` rather than from `.git` directly: the
+        wiki describes the commit it was *built from*, so a checkout that moved
+        after indexing must not make already-generated pages claim the new one.
+        """
+        try:
+            return self._ensure_bundle().repository.commitSha
+        except Exception:  # noqa: BLE001 - provenance is decoration, never a reason to fail a build
+            return ""
 
     def _ensure_bundle(self) -> RepositoryBundle:
         if self._bundle is None:

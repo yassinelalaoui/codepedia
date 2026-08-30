@@ -130,6 +130,17 @@ def test_reparse_and_store_reports_none_for_invalid_syntax(tmp_path):
 
 
 class _RaisingSummaryPipeline:
+    """A summary chain with nothing reachable behind it.
+
+    `restoreSummariesFromLedger` deliberately still succeeds: it calls no
+    provider, and the point of the ledger is that an unreachable model leaves a
+    file documented by what is already known instead of blank. Only
+    `summarizeRepository` fails here.
+    """
+
+    def restoreSummariesFromLedger(self, *args, **kwargs):
+        return (0, 0)
+
     def summarizeRepository(self, *args, **kwargs):
         raise LocalLLMUnavailableError("local model is unavailable for this test")
 

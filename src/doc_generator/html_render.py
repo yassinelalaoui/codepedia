@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Sequence
 
 import markdown as markdown_lib
+from repository_metadata.git_provenance import short_commit_sha
 
 from .cross_references import SymbolLookup, SymbolReferenceExtension
 from .html_sanitizer import SanitizeRawHtmlExtension
@@ -105,6 +106,7 @@ def render_page_html(
     active_section_key: str = "",
     symbol_lookup: SymbolLookup | None = None,
     current_file_path: str = "",
+    commit_sha: str = "",
 ) -> str:
     # A fresh Markdown instance per page, rather than the module-level
     # convenience function, is what makes `toc_tokens` reachable. Building a
@@ -185,4 +187,9 @@ def render_page_html(
         page_toc=page_toc,
         is_diagrams_page=output_path_html == DIAGRAMS_INDEX_OUTPUT_HTML,
         generated_at=datetime.now(timezone.utc).isoformat(),
+        # Empty whenever the commit is unknown (not a git checkout, unborn
+        # branch); the template then omits the provenance entirely rather than
+        # printing a blank one.
+        commit_sha=commit_sha,
+        commit_sha_short=short_commit_sha(commit_sha),
     )

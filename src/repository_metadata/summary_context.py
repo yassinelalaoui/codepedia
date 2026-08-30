@@ -109,15 +109,23 @@ def build_summary_context(
     focus = source_file_bundle.file.path if isinstance(symbol, ModuleSymbol) else symbol.id
     callers = _collect_direct_callers(focus, symbol, dependency_graph)
     metadata = _symbol_metadata(symbol)
-    metadata["repositoryRoot"] = str(Path(repository_root))
     metadata["sourceFileLanguage"] = source_file_bundle.file.language
-    metadata["sourceFileLastModified"] = source_file_bundle.file.lastModified
+    # `repositoryRoot` and `sourceFileLastModified` used to be added here and
+    # reached the model through the prompt's "Metadata:" block. Both are gone:
+    # neither tells a model anything about what a symbol does, and both are
+    # volatile in a way that broke everything downstream. `lastModified` is set
+    # to `datetime.now()` on every store, so the context hash changed on every
+    # single re-parse - which is why `contextHash` could never be used as a
+    # cache key. `repositoryRoot` is an absolute path, and `index_command`
+    # builds inside a `.staging-<pid>` directory before renaming it into place,
+    # so it differed between the run that wrote a summary and the run that
+    # tried to reuse it.
     return SummaryContext(
         symbolId=symbol.id,
         symbolKind=symbol.kind,
         symbolName=symbol.name,
         sourceFileId=source_file_bundle.file.id,
-        sourceFilePath=source_file_bundle.file.path,
+        sourceFilePath=_relative_source_path(source_file_bundle.file.path, repository_root),
         sourceText=symbol_source_text or source_text,
         imports=tuple(imports),
         directCallers=tuple(callers),
@@ -127,8 +135,48 @@ def build_summary_context(
 
 
 def context_hash(context: SummaryContext) -> str:
-    payload = repr(context.to_dict()).encode("utf-8")
+    """Identify the *material* a summary was generated from.
+
+    Hashes a curated payload rather than the whole dataclass, because two of its
+    fields identify the symbol rather than describe it, and both move for
+    reasons a summary should not care about:
+
+    * `symbolId` embeds the symbol's line range, so inserting a line anywhere
+      above it changes the id while the symbol itself is untouched;
+    * `sourceFileId` embeds the absolute repository path, which differs between
+      an `index` run (built inside `.staging-<pid>`) and the published state
+      directory it is renamed into.
+
+    Including either would mean a symbol never matched its own previous entry in
+    the ledger. What remains is exactly what the model is shown, so an identical
+    hash really does mean an identical prompt.
+    """
+    payload = repr(
+        (
+            context.symbolKind,
+            context.symbolName,
+            context.sourceFilePath,
+            context.docstring,
+            context.sourceText,
+            context.imports,
+            context.directCallers,
+            sorted(context.metadata.items(), key=lambda item: item[0]),
+        )
+    ).encode("utf-8")
     return sha256(payload).hexdigest()
+
+
+def _relative_source_path(file_path: str, repository_root: str | Path) -> str:
+    """The file's path as a reader would write it, and as it stays across runs.
+
+    An absolute path in the prompt is noise, and it also changes when the same
+    repository is indexed from a staging directory, which would stop a summary
+    from ever being reused.
+    """
+    try:
+        return Path(file_path).resolve().relative_to(Path(repository_root).resolve()).as_posix()
+    except (OSError, ValueError):
+        return Path(file_path).as_posix()
 
 
 def _collect_import_texts(module: ModuleSymbol) -> list[str]:

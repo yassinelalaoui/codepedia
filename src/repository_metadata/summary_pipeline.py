@@ -152,6 +152,106 @@ class CodeSummaryPipeline:
             repository_root, repository_bundle.files, impacted=impacted, incremental=True, on_progress=on_progress
         )
 
+    def restoreSummariesFromLedger(
+        self, repository_root: str | Path, paths: Iterable[str | Path] = ()
+    ) -> tuple[int, int]:
+        """Refill wiped summaries from the ledger, without calling any model.
+
+        Re-parsing a file deletes and re-inserts its symbols, which blanks every
+        summary in it - including summaries of symbols that did not change. This
+        puts back what is already known, and it needs no provider at all, so it
+        also runs when the summary chain is unreachable. That is the difference
+        between an edited file's documentation degrading to the parts that
+        actually changed, and the whole file going blank.
+
+        Two levels of recall, in order:
+
+        1. an exact content match, restored as **fresh** - the material is
+           identical, so the summary still describes it;
+        2. otherwise the symbol's previous summary, restored as **stale** - it
+           describes an earlier version, which the page then says out loud
+           rather than presenting as current.
+
+        Returns `(restored_fresh, restored_stale)`.
+        """
+        fresh = 0
+        stale = 0
+        for file_bundle in self._bundles_to_restore(repository_root, paths):
+            source_text: str | None = None
+            for symbol in self._summarizable_symbols(file_bundle):
+                if symbol.generatedSummary:
+                    continue
+                if source_text is None:
+                    try:
+                        source_text = self._read_source_text(repository_root, file_bundle.file.path)
+                    except OSError:
+                        break
+                restored, restored_hash, is_stale = self._recall_summary(
+                    repository_root, file_bundle, symbol, source_text
+                )
+                if not restored:
+                    continue
+                self.metadataStore.record_symbol_summary(
+                    symbol_id=symbol.id,
+                    generated_summary=restored,
+                    context_hash=restored_hash,
+                    is_stale=is_stale,
+                )
+                stale += 1 if is_stale else 0
+                fresh += 0 if is_stale else 1
+        return fresh, stale
+
+    def _bundles_to_restore(
+        self, repository_root: str | Path, paths: Iterable[str | Path]
+    ) -> list[SourceFileBundle]:
+        """Only the files asked for, loaded one by one.
+
+        The watcher calls this on every save with a single changed path, so
+        loading the whole repository bundle to then filter it down would make an
+        incremental run pay a repository-wide cost - exactly what the
+        incremental path exists to avoid. Falling back to the full bundle when
+        no path is given keeps the whole-repository call available for a full
+        `index` run.
+        """
+        requested = list(paths)
+        if not requested:
+            return list(self.metadataStore.load_repository(repository_root).files)
+        bundles: list[SourceFileBundle] = []
+        for path in requested:
+            try:
+                bundles.append(self.metadataStore.load_source_file(repository_root=repository_root, path=path))
+            except KeyError:
+                # Deleted between the reparse and here, or never stored.
+                continue
+        return bundles
+
+    def _recall_summary(
+        self,
+        repository_root: str | Path,
+        bundle: SourceFileBundle,
+        symbol: Symbol,
+        source_text: str,
+    ) -> tuple[str, str, bool]:
+        """`(summary, context_hash, is_stale)` for `symbol`, or `("", "", False)`."""
+        summary_context = build_summary_context(
+            repository_root=repository_root,
+            source_file_bundle=bundle,
+            symbol=symbol,
+            dependency_graph=self.dependencyGraph,
+            source_text=source_text,
+            symbol_source_text=self._symbol_source_text(bundle, symbol, source_text),
+        )
+        current_hash = context_hash(summary_context)
+        exact = self.metadataStore.recall_summary(context_hash=current_hash)
+        if exact:
+            return exact, current_hash, False
+        previous, previous_hash = self.metadataStore.recall_previous_summary(
+            source_file_id=bundle.file.id, symbol_kind=symbol.kind, symbol_name=symbol.name
+        )
+        if previous:
+            return previous, previous_hash, True
+        return "", "", False
+
     def _ensure_ready(self) -> None:
         if not self.llmEngine.isAvailable():
             raise LocalLLMUnavailableError(
@@ -264,6 +364,33 @@ class CodeSummaryPipeline:
             source_text=source_text,
             symbol_source_text=symbol_source_text,
         )
+        current_context_hash = context_hash(summary_context)
+
+        # The ledger is consulted before the model is. Re-parsing a file wipes
+        # the summaries of *every* symbol in it, including symbols that were not
+        # touched, so without this an edit to one function re-bought a summary
+        # for every other function in the file, forever. The ledger is keyed on
+        # content, so a symbol whose material is unchanged is served from it -
+        # and that holds even when the symbol's id changed because lines moved
+        # above it.
+        remembered = self.metadataStore.recall_summary(context_hash=current_context_hash)
+        if remembered:
+            self.metadataStore.record_symbol_summary(
+                symbol_id=symbol.id,
+                generated_summary=remembered,
+                context_hash=current_context_hash,
+                is_stale=False,
+            )
+            return SummaryResult(
+                symbolId=symbol.id,
+                generatedSummary=remembered,
+                modelName="",
+                contextHash=current_context_hash,
+                sourceFileId=bundle.file.id,
+                symbolKind=symbol.kind,
+                symbolName=symbol.name,
+            )
+
         prompt = self._build_prompt(summary_context)
         failover_result = self.llmEngine.run(lambda engine: engine.generate(prompt))
         generated_summary = failover_result.value.strip()
@@ -273,12 +400,26 @@ class CodeSummaryPipeline:
             symbolId=symbol.id,
             generatedSummary=generated_summary,
             modelName=str(failover_result.providerUsed),
-            contextHash=context_hash(summary_context),
+            contextHash=current_context_hash,
             sourceFileId=bundle.file.id,
             symbolKind=symbol.kind,
             symbolName=symbol.name,
         )
-        self.metadataStore.update_symbol_generated_summary(symbol.id, generated_summary)
+        self.metadataStore.remember_summary(
+            context_hash=current_context_hash,
+            source_file_id=bundle.file.id,
+            symbol_kind=symbol.kind,
+            symbol_name=symbol.name,
+            generated_summary=generated_summary,
+            model_name=result.modelName,
+            generated_at=result.generatedAt,
+        )
+        self.metadataStore.record_symbol_summary(
+            symbol_id=symbol.id,
+            generated_summary=generated_summary,
+            context_hash=current_context_hash,
+            is_stale=False,
+        )
         return result
 
     def _build_prompt(self, context: SummaryContext):

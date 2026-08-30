@@ -17,6 +17,11 @@ class Repository:
     rootPath: str
     detectedLanguages: tuple[str, ...] = ()
     lastIndexedAt: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # HEAD at the moment the repository was indexed, so a page can say which
+    # commit it describes rather than only when it was built. "" whenever the
+    # commit is unknowable (not a git checkout, unborn branch, unreadable
+    # `.git`), which every consumer must treat as "just don't show it".
+    commitSha: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -46,6 +51,15 @@ class Symbol:
     docstring: str = ""
     generatedSummary: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Provenance for `generatedSummary`: the `context_hash` of the material the
+    # model was actually shown. Recorded so freshness becomes a checkable fact
+    # rather than an assumption.
+    summaryContextHash: str = ""
+    # True when `generatedSummary` describes an *earlier* version of this
+    # symbol - carried forward from the ledger because the current version has
+    # no summary yet (typically no provider was reachable). A stale summary is
+    # better than a blank page, but only if the page says which it is.
+    summaryIsStale: bool = False
 
     def __post_init__(self) -> None:
         if self.lineStart < 1 or self.lineEnd < 1:

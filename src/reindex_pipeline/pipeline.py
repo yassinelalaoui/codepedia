@@ -13,6 +13,7 @@ from vector_index import VectorIndex
 
 from . import graph_sync
 from .classification import classify_path, confirm_change
+from .embedding_cache import EmbeddingCache
 from .embeddings import remove_embeddings, update_embeddings
 from .models import PathClassification, ReindexOutcome
 
@@ -98,6 +99,13 @@ class IncrementalReindexPipeline:
         regenerated_symbol_ids: tuple[str, ...] = ()
         summary_failure: str | None = None
         if reprocessed:
+            # Before anything is asked of a model. Re-parsing wiped the
+            # summaries of every symbol in each touched file, and most of those
+            # symbols did not change - the ledger puts them straight back, at no
+            # cost and with no provider. It runs outside the try so that an
+            # unreachable summary chain still leaves the file documented by what
+            # was already known, rather than blank.
+            self.summaryPipeline.restoreSummariesFromLedger(self.repositoryRoot, absolute_reprocessed)
             try:
                 results = self.summaryPipeline.summarizeRepository(
                     self.repositoryRoot,
@@ -108,6 +116,15 @@ class IncrementalReindexPipeline:
             except LocalLLMUnavailableError as exc:
                 summary_failure = str(exc)
 
+        # Seeded from the chunks already in the index, so a symbol whose body
+        # did not change is served from what was embedded last time instead of
+        # being paid for again. This matters more here than on a full `index`
+        # run: the watcher re-embeds a whole file on every save, and a file's
+        # unchanged symbols are the overwhelming majority of it. The cache's
+        # content key also makes the reuse survive a symbol id that shifted
+        # because lines moved above it.
+        embedding_cache = EmbeddingCache()
+        embedding_cache.seed_from_entries(self.vectorIndex.entries)
         for relative_path in reprocessed:
             update_embeddings(
                 repository_root=self.repositoryRoot,
@@ -115,6 +132,7 @@ class IncrementalReindexPipeline:
                 metadata_store=self.metadataStore,
                 vector_index=self.vectorIndex,
                 embedding_engine=self.embeddingEngine,
+                embedding_cache=embedding_cache,
             )
         for relative_path in to_remove:
             remove_embeddings(relative_path=relative_path, vector_index=self.vectorIndex)

@@ -3,6 +3,9 @@
 - Repository root: `{{ repository.rootPath }}`
 - Detected languages: {{ repository.detectedLanguages | join(', ') if repository.detectedLanguages else '_unknown_' }}
 - Last indexed: {{ repository.lastIndexedAt }}
+{% if repository.commitSha %}
+- Commit: `{{ repository.commitSha[:7] }}`
+{% endif %}
 {: .repo-meta }
 
 ## Architecture overview

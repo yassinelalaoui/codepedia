@@ -9,6 +9,7 @@ from typing import Iterable
 from parser_engine import FileSymbolInventory, SourceFile
 
 from .fingerprints import compute_content_hash, file_has_changed
+from .git_provenance import read_commit_sha
 from .models import DependencyEdge, Repository, RepositoryBundle, SourceFile as StoredSourceFile, SourceFileBundle
 from .models import Symbol
 from .sqlite_store import (
@@ -18,9 +19,13 @@ from .sqlite_store import (
     load_repository,
     load_repository_bundle,
     load_source_file,
+    load_latest_summary_for_symbol,
     load_source_file_bundle,
+    load_summary_by_context_hash,
     load_symbols_for_source_file,
     repository_root_exists,
+    save_summary_to_ledger,
+    update_symbol_summary_provenance,
     stable_repository_id,
     stable_source_file_id,
     upsert_repository,
@@ -37,12 +42,16 @@ class RepositoryMetadataStore:
         return connect(self.db_path)
 
     def ensure_repository(self, root_path: str | Path, *, detected_languages: Iterable[str] = ()) -> Repository:
+        # The one place HEAD is read: this runs once at the start of an indexing
+        # run, while `store_inventory` below runs per file and leaves the stored
+        # value alone by passing no `commit_sha` at all.
         with closing(connect(self.db_path)) as connection:
             return upsert_repository(
                 connection,
                 root_path=root_path,
                 detected_languages=tuple(detected_languages),
                 last_indexed_at=datetime.now(timezone.utc).isoformat(),
+                commit_sha=read_commit_sha(root_path),
             )
 
     def store_inventory(
@@ -131,6 +140,59 @@ class RepositoryMetadataStore:
     def update_symbol_generated_summary(self, symbol_id: str, generated_summary: str) -> None:
         with closing(connect(self.db_path)) as connection:
             update_symbol_generated_summary(connection, symbol_id=symbol_id, generated_summary=generated_summary)
+
+    def record_symbol_summary(
+        self, *, symbol_id: str, generated_summary: str, context_hash: str, is_stale: bool = False
+    ) -> None:
+        """Store a summary along with the content hash it was generated from."""
+        with closing(connect(self.db_path)) as connection:
+            update_symbol_summary_provenance(
+                connection,
+                symbol_id=symbol_id,
+                generated_summary=generated_summary,
+                context_hash=context_hash,
+                is_stale=is_stale,
+            )
+
+    def remember_summary(
+        self,
+        *,
+        context_hash: str,
+        source_file_id: str,
+        symbol_kind: str,
+        symbol_name: str,
+        generated_summary: str,
+        model_name: str,
+        generated_at: str,
+    ) -> None:
+        with closing(connect(self.db_path)) as connection:
+            save_summary_to_ledger(
+                connection,
+                context_hash=context_hash,
+                source_file_id=source_file_id,
+                symbol_kind=symbol_kind,
+                symbol_name=symbol_name,
+                generated_summary=generated_summary,
+                model_name=model_name,
+                generated_at=generated_at,
+            )
+
+    def recall_summary(self, *, context_hash: str) -> str:
+        """A summary already generated for exactly this content, or ""."""
+        with closing(connect(self.db_path)) as connection:
+            return load_summary_by_context_hash(connection, context_hash=context_hash)
+
+    def recall_previous_summary(
+        self, *, source_file_id: str, symbol_kind: str, symbol_name: str
+    ) -> tuple[str, str]:
+        """The last summary written for this symbol, as `(summary, context_hash)`."""
+        with closing(connect(self.db_path)) as connection:
+            return load_latest_summary_for_symbol(
+                connection,
+                source_file_id=source_file_id,
+                symbol_kind=symbol_kind,
+                symbol_name=symbol_name,
+            )
 
     def update_symbol_generated_summaries(self, summaries: Iterable[tuple[str, str]]) -> None:
         with closing(connect(self.db_path)) as connection:

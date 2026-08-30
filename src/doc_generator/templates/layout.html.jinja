@@ -57,7 +57,7 @@
 {{ content_html | safe }}
     </div>
     <footer class="site-footer">
-      <p>Generated locally by doc_generator on {{ generated_at }}.</p>
+      <p>Generated locally by doc_generator on {{ generated_at }}{% if commit_sha %} · Commit <code class="commit-sha" title="{{ commit_sha }}">{{ commit_sha_short }}</code>{% endif %}.</p>
     </footer>
   </main>
 

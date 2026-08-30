@@ -26,6 +26,12 @@
 {% if module.generatedSummary %}
 {{ module.generatedSummary }}
 {: .ai-generated }
+
+{% if module.summaryIsStale %}
+_This summary describes an earlier version of the code and has not been regenerated yet._
+{: .summary-stale }
+
+{% endif %}
 {% else %}
 _Summary pending — this {{ 'document' if is_prose else 'module' }} has not been summarized yet._
 {% endif %}
@@ -55,6 +61,12 @@ _Summary pending — this {{ 'document' if is_prose else 'module' }} has not bee
 {% if class.generatedSummary %}
 {{ class.generatedSummary }}
 {: .ai-generated }
+
+{% if class.summaryIsStale %}
+_This summary describes an earlier version of the code and has not been regenerated yet._
+{: .summary-stale }
+
+{% endif %}
 {% else %}
 _Summary pending — this {{ 'section' if is_prose else 'class' }} has not been summarized yet._
 {% endif %}
@@ -73,6 +85,12 @@ _Summary pending — this {{ 'section' if is_prose else 'class' }} has not been 
 {% if method.generatedSummary %}
 {{ method.generatedSummary }}
 {: .ai-generated }
+
+{% if method.summaryIsStale %}
+_This summary describes an earlier version of the code and has not been regenerated yet._
+{: .summary-stale }
+
+{% endif %}
 {% else %}
 _Summary pending — this {{ 'subsection' if is_prose else 'method' }} has not been summarized yet._
 {% endif %}
@@ -106,6 +124,12 @@ _No classes in this module._
 {% if function.generatedSummary %}
 {{ function.generatedSummary }}
 {: .ai-generated }
+
+{% if function.summaryIsStale %}
+_This summary describes an earlier version of the code and has not been regenerated yet._
+{: .summary-stale }
+
+{% endif %}
 {% else %}
 _Summary pending — this {{ 'subsection' if is_prose else 'function' }} has not been summarized yet._
 {% endif %}

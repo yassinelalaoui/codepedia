@@ -332,6 +332,30 @@ ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
   color: var(--generated-ink);
 }
 
+/* A summary carried forward from the freshness ledger: it describes an earlier
+   version of the symbol. Deliberately attached under the .ai-generated block it
+   qualifies, sharing its left edge, so it reads as a caveat on that summary
+   rather than as a separate note about the page. */
+.summary-stale {
+  margin-top: 0;
+  padding: 7px 16px 8px 40px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--generated-border);
+  border-top: none;
+  border-left: 3px solid var(--generated-ink);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+/* HEAD the wiki was generated from, in the page footer. */
+.site-footer .commit-sha {
+  font-family: var(--font-mono);
+  background: none;
+  padding: 0;
+  color: var(--ink-faint);
+}
+
 /* Inline symbol/file references resolved by doc_generator's treeprocessor.
    Distinct from plain inline code, and from prose links, so a reader can tell
    at a glance which mentions are navigable. */
