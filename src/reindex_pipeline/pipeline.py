@@ -131,7 +131,7 @@ class IncrementalReindexPipeline:
         # content key also makes the reuse survive a symbol id that shifted
         # because lines moved above it.
         embedding_cache = EmbeddingCache()
-        embedding_cache.seed_from_entries(self.vectorIndex.entries)
+        embedding_cache.seed_from_index(self.vectorIndex)
         for relative_path in reprocessed:
             update_embeddings(
                 repository_root=self.repositoryRoot,

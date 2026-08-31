@@ -189,32 +189,36 @@ class CodeSummaryPipeline:
 
         Returns `(restored_fresh, restored_stale)`.
         """
-        fresh = 0
-        stale = 0
-        for file_bundle in self._bundles_to_restore(repository_root, paths):
-            source_text: str | None = None
-            for symbol in self._summarizable_symbols(file_bundle):
-                if symbol.generatedSummary:
-                    continue
-                if source_text is None:
-                    try:
-                        source_text = self._read_source_text(repository_root, file_bundle.file.path)
-                    except OSError:
-                        break
-                restored, restored_hash, is_stale = self._recall_summary(
-                    repository_root, file_bundle, symbol, source_text
-                )
-                if not restored:
-                    continue
-                self.metadataStore.record_symbol_summary(
-                    symbol_id=symbol.id,
-                    generated_summary=restored,
-                    context_hash=restored_hash,
-                    is_stale=is_stale,
-                )
-                stale += 1 if is_stale else 0
-                fresh += 0 if is_stale else 1
-        return fresh, stale
+        # One connection for the whole restore. The watcher runs this on every
+        # save, and it writes once per restored symbol - the single defect that
+        # made 300 ledger writes cost 4.10s instead of 0.02s.
+        with self.metadataStore.session():
+            fresh = 0
+            stale = 0
+            for file_bundle in self._bundles_to_restore(repository_root, paths):
+                source_text: str | None = None
+                for symbol in self._summarizable_symbols(file_bundle):
+                    if symbol.generatedSummary:
+                        continue
+                    if source_text is None:
+                        try:
+                            source_text = self._read_source_text(repository_root, file_bundle.file.path)
+                        except OSError:
+                            break
+                    restored, restored_hash, is_stale = self._recall_summary(
+                        repository_root, file_bundle, symbol, source_text
+                    )
+                    if not restored:
+                        continue
+                    self.metadataStore.record_symbol_summary(
+                        symbol_id=symbol.id,
+                        generated_summary=restored,
+                        context_hash=restored_hash,
+                        is_stale=is_stale,
+                    )
+                    stale += 1 if is_stale else 0
+                    fresh += 0 if is_stale else 1
+            return fresh, stale
 
     def _bundles_to_restore(
         self, repository_root: str | Path, paths: Iterable[str | Path]
@@ -325,23 +329,26 @@ class CodeSummaryPipeline:
                     on_progress(completed, total, symbol)
             return result
 
-        workers = min(self.maxWorkers, total)
-        executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="codepedia-summary")
-        try:
-            futures: list[Future[SummaryResult]] = [
-                executor.submit(summarize_one, bundle, symbol) for bundle, symbol in pending
-            ]
-            results: list[SummaryResult] = []
-            for future in futures:
-                # Collected in submission order, so `results` stays ordered
-                # exactly as the sequential pass returned it. The first failure
-                # propagates, as before; calls already in flight when it does
-                # may still complete and persist their summary, which is
-                # harmless - a summary is idempotent per symbol.
-                results.append(future.result())
-            return results
-        finally:
-            executor.shutdown(wait=True, cancel_futures=True)
+        # Three ledger calls per symbol summarized go through this one
+        # connection; the pool's workers share it under the store's lock.
+        with self.metadataStore.session():
+            workers = min(self.maxWorkers, total)
+            executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="codepedia-summary")
+            try:
+                futures: list[Future[SummaryResult]] = [
+                    executor.submit(summarize_one, bundle, symbol) for bundle, symbol in pending
+                ]
+                results: list[SummaryResult] = []
+                for future in futures:
+                    # Collected in submission order, so `results` stays ordered
+                    # exactly as the sequential pass returned it. The first failure
+                    # propagates, as before; calls already in flight when it does
+                    # may still complete and persist their summary, which is
+                    # harmless - a summary is idempotent per symbol.
+                    results.append(future.result())
+                return results
+            finally:
+                executor.shutdown(wait=True, cancel_futures=True)
 
     def _summarizable_symbols(self, bundle: SourceFileBundle) -> list[Symbol]:
         symbols: list[Symbol] = [bundle.module]

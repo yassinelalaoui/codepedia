@@ -56,6 +56,17 @@ class CodeChunk:
 @dataclass(frozen=True, slots=True)
 class VectorEntry:
     chunkId: str
+    # May be empty. `VectorIndex` loads its entries without vectors, because
+    # `VectorMatrix` already holds every one of them as a float32 row and a
+    # second copy as Python floats costs 24 bytes per value - the difference
+    # between the ~307 MB pyproject.toml claims at 50k chunks of 1536
+    # dimensions and the ~2.3 GB the two representations together actually
+    # occupied. `dimensionality` is stored either way, so an entry still knows
+    # its own length; scoring reads the vector from the matrix.
+    #
+    # Callers that build an entry from a chunk (`from_chunk`, `rank_entries`)
+    # still carry the vector, which is what keeps `search.score_entry` usable
+    # for ad-hoc chunks that were never indexed.
     vector: Vector
     dimensionality: int
     sourceFilePath: str
@@ -68,8 +79,12 @@ class VectorEntry:
     def __post_init__(self) -> None:
         object.__setattr__(self, "vector", _coerce_vector(self.vector))
         object.__setattr__(self, "sourceFilePath", _normalize_path(self.sourceFilePath) if self.sourceFilePath else "")
-        if self.dimensionality != len(self.vector):
+        if self.vector and self.dimensionality != len(self.vector):
             raise ValueError("dimensionality must match vector length")
+
+    @property
+    def hasVector(self) -> bool:
+        return bool(self.vector)
 
     @classmethod
     def from_chunk(cls, chunk: CodeChunk) -> "VectorEntry":

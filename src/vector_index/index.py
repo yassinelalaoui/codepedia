@@ -9,7 +9,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from .chunking import build_code_chunk
 from .models import CodeChunk, IndexRecord, SearchQuery, SearchResult, VectorEntry
 from .matrix import VectorMatrix
-from .search import _matches_filters, rank_entries, reciprocal_rank_fusion, score_entry
+from .search import _matches_filters, reciprocal_rank_fusion
 from . import storage
 
 
@@ -68,7 +68,7 @@ class VectorIndex:
         if not auto_load:
             return
         with self._lock:
-            loaded = storage.load_entries(self._connection, index_id=self._record.id)
+            loaded = storage.load_entries(self._connection, index_id=self._record.id, with_vectors=False)
             self._entries = {entry.chunkId: entry for entry in loaded}
             self._invalidate_matrix()
             self._rebuild_file_index()
@@ -82,24 +82,39 @@ class VectorIndex:
     def _persist_record(self) -> None:
         with self._lock:
             storage.touch_index(self._connection, self._record.id)
-            self._record = storage.load_index_record(self._connection, self._record.id)
+            self._reload_record()
 
-    def _store_entry(self, chunk: CodeChunk, *, source_file_path: str | Path | None = None) -> VectorEntry:
+    def _reload_record(self) -> None:
+        """Re-read the row without writing it - for a caller whose transaction
+        already touched `last_indexed_at`."""
+        self._record = storage.load_index_record(self._connection, self._record.id)
+
+    def _remember(self, entry: VectorEntry) -> None:
+        self._entries[entry.chunkId] = entry
+        self._file_to_chunks.setdefault(entry.sourceFilePath, set()).add(entry.chunkId)
+
+    def _forget(self, chunk_id: str) -> None:
+        entry = self._entries.pop(chunk_id, None)
+        if entry is None:
+            return
+        bucket = self._file_to_chunks.get(entry.sourceFilePath)
+        if bucket is not None:
+            bucket.discard(chunk_id)
+            if not bucket:
+                self._file_to_chunks.pop(entry.sourceFilePath, None)
+
+    def addChunk(self, chunk: CodeChunk, *, sourceFilePath: str | Path | None = None) -> VectorEntry:
         with self._lock:
             entry = storage.upsert_chunk(
                 self._connection,
                 index_id=self._record.id,
                 chunk=chunk,
-                source_file_path=source_file_path,
+                source_file_path=sourceFilePath,
             )
-            self._entries[entry.chunkId] = entry
+            self._remember(entry)
             self._invalidate_matrix()
-            self._file_to_chunks.setdefault(entry.sourceFilePath, set()).add(entry.chunkId)
             self._persist_record()
             return entry
-
-    def addChunk(self, chunk: CodeChunk, *, sourceFilePath: str | Path | None = None) -> VectorEntry:
-        return self._store_entry(chunk, source_file_path=sourceFilePath)
 
     def addChunks(
         self,
@@ -107,38 +122,56 @@ class VectorIndex:
         *,
         sourceFilePath: str | Path | None = None,
     ) -> tuple[VectorEntry, ...]:
-        stored = tuple(self._store_entry(chunk, source_file_path=sourceFilePath) for chunk in chunks)
-        self._persist_record()
-        return stored
+        with self._lock:
+            stored = storage.upsert_chunks(
+                self._connection,
+                index_id=self._record.id,
+                chunks=chunks,
+                source_file_path=sourceFilePath,
+            )
+            for entry in stored:
+                self._remember(entry)
+            self._invalidate_matrix()
+            self._persist_record()
+            return stored
 
     def removeChunksForFile(self, path: str | Path) -> tuple[str, ...]:
         normalized = storage.normalize_path(path)
         with self._lock:
             removed_ids = storage.delete_chunks_for_file(self._connection, index_id=self._record.id, source_file_path=normalized)
             for chunk_id in removed_ids:
-                entry = self._entries.pop(chunk_id, None)
-                if entry is not None:
-                    bucket = self._file_to_chunks.get(entry.sourceFilePath)
-                    if bucket is not None:
-                        bucket.discard(chunk_id)
-                        if not bucket:
-                            self._file_to_chunks.pop(entry.sourceFilePath, None)
+                self._forget(chunk_id)
             self._invalidate_matrix()
             self._persist_record()
             return removed_ids
 
     def reindexFile(self, path: str | Path, chunks: Iterable[CodeChunk]) -> tuple[VectorEntry, ...]:
+        """Replace one file's chunks - the write path, and one commit.
+
+        The delete, every insert and the `last_indexed_at` touch share a single
+        transaction (`storage.replace_chunks_for_file`). This used to be a
+        `removeChunksForFile` commit followed by two commits per chunk, on the
+        path the watcher takes for every save.
+        """
         normalized = storage.normalize_path(path)
-        self.removeChunksForFile(normalized)
-        stored = tuple(
-            self._store_entry(
-                chunk if chunk.sourceFilePath == normalized else replace(chunk, sourceFilePath=normalized),
-                source_file_path=normalized,
-            )
+        rebased = tuple(
+            chunk if chunk.sourceFilePath == normalized else replace(chunk, sourceFilePath=normalized)
             for chunk in chunks
         )
-        self._persist_record()
-        return stored
+        with self._lock:
+            removed_ids, stored = storage.replace_chunks_for_file(
+                self._connection,
+                index_id=self._record.id,
+                source_file_path=normalized,
+                chunks=rebased,
+            )
+            for chunk_id in removed_ids:
+                self._forget(chunk_id)
+            for entry in stored:
+                self._remember(entry)
+            self._invalidate_matrix()
+            self._reload_record()
+            return stored
 
     def search(
         self,
@@ -199,7 +232,8 @@ class VectorIndex:
         every single answer. Fusion changes the order, never the score.
         """
         depth = max(search_query.k * self.HYBRID_OVERSAMPLE, search_query.k)
-        vector_results = self._rank_by_matrix(query_vector, depth, filters)
+        scores = self._matrix_scores(query_vector)
+        vector_results = self._rank_from_scores(scores, depth, filters)
         vector_ranking = [result.chunkId for result in vector_results]
         scored: dict[str, SearchResult] = {result.chunkId: result for result in vector_results}
 
@@ -209,11 +243,14 @@ class VectorIndex:
                 lexical_ranking.append(chunk_id)
                 continue
             entry = self._entries.get(chunk_id)
-            if entry is None:
+            if entry is None or not _matches_filters(entry, filters or {}):
                 continue
-            # A lexical-only hit still needs a real similarity, and must clear
-            # the same filter and dimensionality gates the vector side applied.
-            score = score_entry(query_vector, entry, filters=filters)
+            # A lexical-only hit still needs a real similarity, and it comes
+            # from the same matrix pass as the vector side rather than from a
+            # per-entry cosine. Absent from `scores` means the entry is of
+            # another dimensionality, which the matrix excludes structurally -
+            # the same rejection the old `score_entry` gate made explicitly.
+            score = scores.get(chunk_id)
             if score is None:
                 continue
             scored[chunk_id] = SearchResult(
@@ -231,30 +268,41 @@ class VectorIndex:
         fused = reciprocal_rank_fusion([vector_ranking, lexical_ranking])
         return [scored[chunk_id] for chunk_id in fused[: search_query.k] if chunk_id in scored]
 
-    def _rank_by_matrix(
-        self, query_vector: Sequence[float], depth: int, filters: Mapping[str, object]
+    def _matrix_scores(self, query_vector: Sequence[float]) -> dict[str, float]:
+        """Cosine score for every entry of the query's dimensionality, by id.
+
+        One dot product, replacing a per-entry Python cosine loop that measured
+        19.4 s at 50k chunks of 1536 dimensions. `VectorMatrix.score` already
+        returns *every* row of the matching dimensionality rather than a head,
+        so both halves of the hybrid search read their scores from this one
+        pass - which is what lets the entries themselves stop carrying a second
+        copy of every vector.
+
+        An entry of another dimensionality is simply absent from the result:
+        the matrix groups by length, so the exclusion is structural rather than
+        a guard inside a loop.
+        """
+        scored_rows = self._ensure_matrix().score(query_vector)
+        if len(scored_rows) == 0:
+            return {}
+        return {chunk_id: float(score) for chunk_id, score in zip(scored_rows.chunkIds, scored_rows.scores)}
+
+    def _rank_from_scores(
+        self, scores: Mapping[str, float], depth: int, filters: Mapping[str, object]
     ) -> list[SearchResult]:
-        """Score every entry of the query's dimensionality with one dot product.
+        """Best `depth` results from an already-scored pass.
 
-        Replaces a per-entry Python cosine loop that measured 19.4 s at 50k
-        chunks of 1536 dimensions. Ordering matches `rank_entries` exactly,
-        including the chunk-id tie-break, because both paths remain reachable -
-        `rank_entries` still serves callers passing ad-hoc chunks.
-
-        Filters and their gates stay in Python, applied to the scored rows; the
+        Ordering matches `search.rank_entries` exactly, including the chunk-id
+        tie-break, because that path remains reachable for callers passing
+        ad-hoc chunks. Filters stay in Python, applied to the scored rows; the
         cosine, not the filtering, was the cost.
         """
-        matrix = self._ensure_matrix()
-        scored_rows = matrix.score(query_vector)
-        if len(scored_rows) == 0:
-            return []
-
         candidates: list[tuple[float, VectorEntry]] = []
-        for chunk_id, score in zip(scored_rows.chunkIds, scored_rows.scores):
+        for chunk_id, score in scores.items():
             entry = self._entries.get(chunk_id)
             if entry is None or not _matches_filters(entry, filters or {}):
                 continue
-            candidates.append((float(score), entry))
+            candidates.append((score, entry))
 
         candidates.sort(key=lambda item: (-item[0], item[1].chunkId))
         return [
@@ -354,10 +402,21 @@ class VectorIndex:
 
     def refresh(self) -> None:
         with self._lock:
-            loaded = storage.load_entries(self._connection, index_id=self._record.id)
+            loaded = storage.load_entries(self._connection, index_id=self._record.id, with_vectors=False)
             self._entries = {entry.chunkId: entry for entry in loaded}
             self._invalidate_matrix()
             self._rebuild_file_index()
+
+    def iter_cache_seed_rows(self):
+        """Stream this index's chunks for `EmbeddingCache`, one decoded row at a time.
+
+        The cache used to be seeded from `self.entries`, which is why those
+        entries had to carry their vectors. Reading them straight from SQLite
+        instead keeps the peak cost one row - and it is a whole prior index
+        that gets read here, on every `index` run.
+        """
+        with self._lock:
+            yield from storage.iter_cache_seed_rows(self._connection, index_id=self._record.id)
 
     def chunks_for_file(self, path: str | Path) -> tuple[VectorEntry, ...]:
         normalized = storage.normalize_path(path)

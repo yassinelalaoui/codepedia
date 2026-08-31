@@ -6,6 +6,8 @@ from contextlib import closing
 from pathlib import Path
 from typing import Iterable
 
+from sqlite_support import apply_write_pragmas
+
 from .models import DependencyEdge, DependencyNode, GraphPersistenceRecord
 
 
@@ -190,6 +192,7 @@ def save_snapshot_to_path(
     # connection object happens to be garbage-collected. `closing()` ensures
     # it's actually closed once this function returns.
     with closing(sqlite3.connect(str(db_path))) as connection:
+        apply_write_pragmas(connection)
         with connection:
             return save_snapshot(
                 connection,
@@ -204,4 +207,5 @@ def save_snapshot_to_path(
 
 def load_snapshot_from_path(db_path: str | Path, *, graph_id: str) -> tuple[dict[str, object], list[DependencyNode], list[DependencyEdge]]:
     with closing(sqlite3.connect(str(db_path))) as connection:
+        apply_write_pragmas(connection)
         return load_snapshot(connection, graph_id=graph_id)

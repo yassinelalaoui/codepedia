@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
+
 from vector_index import CodeChunk, SearchQuery, VectorIndex, build_code_chunk, build_code_chunks, rank_entries
+from vector_index import storage
 from vector_index.search import encode_text
 
 
@@ -167,3 +170,120 @@ def test_two_repositories_in_one_metadata_file_keep_separate_indexes(tmp_path):
     finally:
         first.close()
         second.close()
+
+
+# ---------------------------------------------------------------------------
+# The write path, counted in commits rather than seconds.
+#
+# P1 - one transaction per chunk - survived three separate analyses of this
+# repository because nothing here ever looked at the write path, and the one
+# performance test that exists compares wall-clock seconds, which says nothing
+# about why a run is slow. A commit is an fsync; counting commits is the
+# measurement that fails when the defect comes back, on any machine and under
+# any disk.
+# ---------------------------------------------------------------------------
+
+
+class CommitCounter:
+    """Counts the COMMITs a connection actually issues.
+
+    Via `set_trace_callback`, because `with connection:` commits below the
+    Python API - subclassing `Connection.commit` sees nothing. The callback
+    receives the statements sqlite really prepares, implicit `BEGIN`/`COMMIT`
+    included, so this counts fsyncs rather than intentions and needs no seam in
+    production code: every function in `storage` is handed its connection.
+    """
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self.count = 0
+        connection.set_trace_callback(self._seen)
+
+    def _seen(self, statement: str) -> None:
+        if statement.strip().upper().startswith("COMMIT"):
+            self.count += 1
+
+    def reset(self) -> None:
+        self.count = 0
+
+
+def _counting_index(tmp_path, name: str = "vectors.sqlite"):
+    connection = storage.connect(tmp_path / name)
+    record = storage.ensure_index_record(
+        connection, repository_root=tmp_path, metadata_path=tmp_path / name
+    )
+    return connection, record.id, CommitCounter(connection)
+
+
+def _chunks(count: int, *, source_file_path: str = "src/app.py"):
+    return [
+        CodeChunk(
+            id=f"chunk-{index}",
+            content=f"def f{index}(): return {index}",
+            embedding=(float(index), 1.0, 0.5),
+            sourceSymbolId=f"symbol-{index}",
+            sourceFilePath=source_file_path,
+            embeddingModelId="test:model",
+        )
+        for index in range(count)
+    ]
+
+
+def test_re_embedding_a_file_costs_exactly_one_commit(tmp_path):
+    connection, index_id, commits = _counting_index(tmp_path)
+    try:
+        storage.replace_chunks_for_file(
+            connection, index_id=index_id, source_file_path="src/app.py", chunks=_chunks(50)
+        )
+        assert commits.count == 1
+    finally:
+        connection.close()
+
+
+def test_the_write_path_does_not_commit_once_per_chunk(tmp_path):
+    """The regression guard: the cost of writing a file must not scale with it."""
+    connection, index_id, commits = _counting_index(tmp_path)
+    try:
+        storage.replace_chunks_for_file(
+            connection, index_id=index_id, source_file_path="a.py", chunks=_chunks(5, source_file_path="a.py")
+        )
+        few = commits.count
+        storage.replace_chunks_for_file(
+            connection, index_id=index_id, source_file_path="b.py", chunks=_chunks(200, source_file_path="b.py")
+        )
+        many = commits.count - few
+
+        assert few == many == 1, "forty times the chunks must still be one fsync"
+    finally:
+        connection.close()
+
+
+def test_a_batch_of_chunks_is_one_commit(tmp_path):
+    connection, index_id, commits = _counting_index(tmp_path)
+    try:
+        storage.upsert_chunks(connection, index_id=index_id, chunks=_chunks(30))
+        assert commits.count == 1
+    finally:
+        connection.close()
+
+
+def test_an_index_entry_carries_no_second_copy_of_its_vector(tmp_path):
+    """9.4: `VectorMatrix` holds the vectors, so the entries must not.
+
+    Two representations of every embedding is what made the memory figure in
+    `pyproject.toml` untrue - the matrix was allocated *on top of* the Python
+    floats rather than instead of them.
+    """
+    engine = FakeEmbeddingEngine()
+    index = VectorIndex(tmp_path / "repo", tmp_path / "vectors.sqlite", embedding_engine=engine)
+    try:
+        index.addChunk(
+            build_code_chunk("a = 1", source_symbol_id="s1", source_file_path="a.py", embedding_engine=engine)
+        )
+        index.refresh()
+
+        entry = index.entries[0]
+        assert entry.vector == (), "a loaded entry must not hold its own vector"
+        assert entry.dimensionality > 0, "it still knows its own length"
+        assert index.search("a = 1", k=1), "and search still scores it, from the matrix"
+    finally:
+        index.close()

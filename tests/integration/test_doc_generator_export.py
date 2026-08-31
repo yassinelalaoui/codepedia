@@ -69,3 +69,52 @@ def test_output_root_cannot_overlap_analyzed_source(tmp_path):
 
     with pytest.raises(ValueError):
         generator.generateRepositoryDocumentation(root, incremental=False)
+
+
+# ---------------------------------------------------------------------------
+# The write path, counted in connections rather than seconds.
+#
+# The manifest store carried the same defect as the vector index and the
+# metadata store: a connection opened, the schema replayed, one row written,
+# committed and closed - once per page of the wiki. Counting connections is
+# what makes it stay fixed.
+# ---------------------------------------------------------------------------
+
+
+def _count_manifest_connections(monkeypatch) -> list[object]:
+    import doc_generator.manifest_store as manifest_module
+
+    opened: list[object] = []
+    real_connect = manifest_module._connect
+
+    def counting_connect(db_path, **kwargs):
+        opened.append(db_path)
+        return real_connect(db_path, **kwargs)
+
+    monkeypatch.setattr(manifest_module, "_connect", counting_connect)
+    return opened
+
+
+def test_generating_the_wiki_opens_one_manifest_connection(tmp_path, monkeypatch):
+    root, store, graph = build_indexed_repo(tmp_path)
+    generator = _build_generator(tmp_path, root, store, graph, root / "docs")
+    opened = _count_manifest_connections(monkeypatch)
+
+    documentation = generator.generateRepositoryDocumentation(root, incremental=False)
+
+    assert len(documentation.pages) > 3, "the run really did write several pages"
+    assert len(opened) == 1, (
+        f"one connection for the pass, not one per page: {len(opened)} opened "
+        f"for {len(documentation.pages)} pages"
+    )
+
+
+def test_outside_a_session_a_manifest_call_still_opens_its_own_connection(tmp_path, monkeypatch):
+    """The fallback stays intact: no caller is required to open a session."""
+    manifest_store = open_doc_manifest_store(tmp_path / "solo.sqlite")
+    opened = _count_manifest_connections(monkeypatch)
+
+    manifest_store.load_entry("nothing")
+    manifest_store.load_entry("nothing either")
+
+    assert len(opened) == 2

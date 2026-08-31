@@ -673,6 +673,31 @@ class DocGenerator:
         changedSymbolIds: Iterable[str] = (),
         changedDependencyEdgeIds: Iterable[EdgeId] = (),
     ) -> DocumentationSet:
+        """Generate the wiki, under one manifest connection for the whole pass.
+
+        `_writer.write_page` saves a manifest row per page, and the narrator
+        reads and writes its cache per section. Each of those used to open the
+        database, replay its schema, commit and close - once per page of the
+        wiki.
+        """
+        with self.manifestStore.session():
+            return self._generate_repository_documentation(
+                repositoryRoot,
+                incremental=incremental,
+                changedPaths=changedPaths,
+                changedSymbolIds=changedSymbolIds,
+                changedDependencyEdgeIds=changedDependencyEdgeIds,
+            )
+
+    def _generate_repository_documentation(
+        self,
+        repositoryRoot: str | Path,
+        *,
+        incremental: bool,
+        changedPaths: Iterable[str | Path],
+        changedSymbolIds: Iterable[str],
+        changedDependencyEdgeIds: Iterable[EdgeId],
+    ) -> DocumentationSet:
         self.repositoryRoot = repositoryRoot
         self.repositoryId = stable_repository_id(repositoryRoot)
         self._writer.repositoryId = self.repositoryId

@@ -8,6 +8,8 @@ from typing import Any, Iterable
 from parser_engine import ClassSymbol as ExtractedClassSymbol
 from parser_engine import FileSymbolInventory, FunctionSymbol as ExtractedFunctionSymbol, ModuleSymbol as ExtractedModuleSymbol, SourceFile
 
+from sqlite_support import apply_write_pragmas
+
 from .fingerprints import compute_content_hash
 from .models import (
     ClassSymbol,
@@ -162,17 +164,28 @@ SCHEMA_STATEMENTS = (
 # 5s default is thin for a burst of writers. Raising the busy timeout makes a
 # contending writer wait its turn instead of raising "database is locked".
 #
-# WAL is deliberately not enabled with it: WAL leaves `-wal`/`-shm` files
-# beside the database, and `cli/index_command.py` renames the whole state
-# directory into place on Windows - a path `_replace_with_retry` already
-# exists to work around, and that extra open files would only make worse.
+# WAL *is* enabled now, by `apply_write_pragmas` below, and the busy timeout
+# still matters under it: WAL lets readers and one writer run concurrently, but
+# two writers still serialize. What used to rule WAL out was that it leaves
+# `-wal`/`-shm` files beside the database while `cli/index_command.py` renames
+# the whole state directory into place on Windows. `_checkpoint_state_dir`
+# there is the answer to that: the run checkpoints and closes every database
+# before the rename, so no side file survives it.
 _BUSY_TIMEOUT_MS = 30000
 
 
-def connect(db_path: str | Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(str(db_path))
+def connect(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open the metadata database, schema ensured.
+
+    `check_same_thread=False` is for `RepositoryMetadataStore.session`, which
+    hands one connection to a whole summarization pass: the pool's workers all
+    write through it, serialized by the store's own lock. Same trade the vector
+    index already makes for the same reason (`vector_index/storage.connect`).
+    """
+    connection = sqlite3.connect(str(db_path), check_same_thread=check_same_thread)
     connection.row_factory = sqlite3.Row
     connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+    apply_write_pragmas(connection)
     ensure_schema(connection)
     return connection
 

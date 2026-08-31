@@ -232,3 +232,77 @@ def test_prose_does_not_hash_metadata_it_is_never_shown(tmp_path: Path):
     assert context_hash(_context(".md", anything="a")) == context_hash(_context(".md", anything="b"))
     # Code prompts do render the block, so there the two must stay distinct.
     assert context_hash(_context(".py", anything="a")) != context_hash(_context(".py", anything="b"))
+
+
+# ---------------------------------------------------------------------------
+# The write path, counted in connections rather than seconds.
+#
+# Every method of `RepositoryMetadataStore` used to open its own connection and
+# close it again - and `connect` replays `ensure_schema` each time, six DDL
+# statements plus three introspection-guarded migrations, before the fsync at
+# close. The ledger added three of those per symbol summarized and one per
+# symbol restored, in the loop the watcher runs on every save: 300 writes
+# measured 4.10s that way against 0.02s sharing one connection.
+# ---------------------------------------------------------------------------
+
+
+def _count_connections(monkeypatch) -> list[object]:
+    """Record every connection the store opens, without changing what it does."""
+    import repository_metadata.store as store_module
+
+    opened: list[object] = []
+    real_connect = store_module.connect
+
+    def counting_connect(db_path, **kwargs):
+        opened.append(db_path)
+        return real_connect(db_path, **kwargs)
+
+    monkeypatch.setattr(store_module, "connect", counting_connect)
+    return opened
+
+
+def test_restoring_a_file_opens_one_connection_not_one_per_symbol(harness: Harness, monkeypatch):
+    harness.rewrite(ONLY_ALPHA_CHANGED)
+    opened = _count_connections(monkeypatch)
+
+    fresh, stale = harness.pipeline.restoreSummariesFromLedger(harness.root, [harness.path])
+
+    assert fresh + stale >= 3, "the restore really did write for several symbols"
+    assert len(opened) == 1, "one connection for the pass, not one per ledger call"
+
+
+def test_a_summary_pass_opens_one_connection_for_every_symbol_it_writes(harness: Harness, monkeypatch):
+    harness.rewrite(ONLY_ALPHA_CHANGED)
+    opened = _count_connections(monkeypatch)
+
+    harness.pipeline.summarizeRepository(
+        harness.root, incremental=True, changed_paths=[str(harness.path)]
+    )
+
+    # `load_repository` runs before the pass opens its session, so one call
+    # outside it is expected; the pass itself must add exactly one more.
+    assert len(opened) == 2, f"expected one pre-pass call plus one session, got {len(opened)}"
+
+
+def test_outside_a_session_a_call_still_opens_its_own_connection(harness: Harness, monkeypatch):
+    """The fallback has to stay intact: no caller is required to open a session."""
+    opened = _count_connections(monkeypatch)
+
+    harness.store.recall_summary(context_hash="nothing")
+    harness.store.recall_summary(context_hash="nothing either")
+
+    assert len(opened) == 2
+
+
+def test_a_session_is_reentrant(harness: Harness, monkeypatch):
+    """The incremental pipeline nests them - restore, then summarize."""
+    opened = _count_connections(monkeypatch)
+
+    with harness.store.session():
+        with harness.store.session():
+            harness.store.recall_summary(context_hash="nothing")
+        # Still usable after the inner one exits: the connection belongs to the
+        # outermost session, and closing it early would break the caller.
+        harness.store.recall_summary(context_hash="nothing either")
+
+    assert len(opened) == 1

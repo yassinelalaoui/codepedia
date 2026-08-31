@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -22,6 +23,7 @@ from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, Symbol, compute_content_hash
 from repository_metadata.sqlite_store import connect as connect_metadata_db
 from repository_metadata.sqlite_store import stable_repository_id
+from sqlite_support import checkpoint_and_close
 from vector_index import VectorIndex
 
 from . import paths
@@ -45,6 +47,34 @@ def _rmtree_with_retry(path: Path) -> None:
             if delay is None:
                 raise
             time.sleep(delay)
+
+
+def _checkpoint_state_dir(state_dir: Path) -> None:
+    """Fold every `-wal` in `state_dir` back into its database before the rename.
+
+    The databases run in WAL (`sqlite_support.apply_write_pragmas`), which is
+    what makes a commit stop costing an fsync - but WAL keeps a `-wal` and a
+    `-shm` file beside each database, and this directory is about to be renamed
+    into place on Windows. That rename is the reason WAL was refused here
+    before (`repository_metadata/sqlite_store.py`).
+
+    Measured, this is belt and braces as the pipeline stands: every store closes
+    its connection per call and `vector_index.close()` runs in a `finally`, so
+    sqlite has already deleted both side files by the time control reaches here
+    - the accompanying test passes with this function stubbed out. It stays
+    because the guarantee the rename needs should be asserted at the rename
+    rather than inferred from the closing habits of four separate stores: the
+    first long-lived connection anyone adds to the run would otherwise turn a
+    working publish into an intermittent Windows failure.
+
+    Anything unreadable is skipped - a database this run never created is not a
+    reason to fail a run that otherwise succeeded.
+    """
+    for db_path in sorted(state_dir.rglob("*.sqlite")):
+        try:
+            checkpoint_and_close(sqlite3.connect(str(db_path)))
+        except sqlite3.Error:
+            continue
 
 
 def _replace_with_retry(source: Path, target: Path) -> None:
@@ -217,6 +247,8 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
 
+    _checkpoint_state_dir(staging_dir)
+
     if final_state_dir.exists():
         _rmtree_with_retry(final_state_dir)
     _replace_with_retry(staging_dir, final_state_dir)
@@ -361,7 +393,7 @@ def _warm_embedding_cache(root: Path, previous_state_dir: Path | None) -> Embedd
     except Exception:  # noqa: BLE001 - a stale prior index must never fail a fresh run
         return cache
     try:
-        cache.seed_from_entries(previous_index.entries)
+        cache.seed_from_index(previous_index)
     finally:
         previous_index.close()
     return cache

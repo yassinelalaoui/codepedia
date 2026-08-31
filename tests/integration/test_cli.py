@@ -255,6 +255,38 @@ def test_run_index_populates_repository_state(tmp_path, cli_home, fake_engines):
     result.vectorIndex.close()
 
 
+def test_no_write_ahead_log_file_survives_the_publishing_rename(tmp_path, cli_home, fake_engines):
+    """WAL is what makes a commit stop costing an fsync - and it is only
+    acceptable here because nothing it leaves behind outlives the run.
+
+    Every database opens in WAL (`sqlite_support.apply_write_pragmas`), which
+    keeps a `-wal` and a `-shm` file beside it. `run_index` builds into a
+    staging directory and renames it into place, a move Windows already needed
+    `_replace_with_retry` for; a side file still held open would make that
+    worse.
+
+    This asserts the invariant, not one mechanism for it. Today two things
+    deliver it - every store closes its connection per call, which is enough on
+    its own, and `_checkpoint_state_dir` then truncates before the rename. The
+    test is what turns "nobody currently holds a connection open" from an
+    accident of four stores' habits into something that fails loudly the day it
+    stops being true.
+    """
+    root = _copy_fixture_repo(tmp_path)
+    result = run_index(root, config=_local_config())
+    result.vectorIndex.close()  # opened on the published directory, after the rename
+
+    state_dir = _repo_state_dirs(cli_home)[0]
+    leftovers = sorted(
+        path.name
+        for path in state_dir.rglob("*")
+        if path.name.endswith("-wal") or path.name.endswith("-shm")
+    )
+
+    assert leftovers == [], f"WAL side files survived the rename: {leftovers}"
+    assert (state_dir / "repository-metadata.sqlite").exists(), "and the databases are still there"
+
+
 def test_run_index_rerun_replaces_prior_state_and_never_uses_watcher(tmp_path, cli_home, fake_engines, monkeypatch):
     root = _copy_fixture_repo(tmp_path)
 

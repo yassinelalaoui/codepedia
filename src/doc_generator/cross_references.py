@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import Iterator
 from xml.etree.ElementTree import Element
 
 from markdown.extensions import Extension
@@ -53,21 +54,46 @@ class SymbolLookup:
     byName: dict[str, tuple[SearchIndexEntry, ...]]
     byFilePath: dict[str, SearchIndexEntry]
     bySymbolId: dict[str, SearchIndexEntry]
+    #: Every segment-aligned tail of every module path, so a mention written
+    #: ``src/pkg/mod.py`` against a stored absolute path resolves without a
+    #: scan. Built with the rest of the lookup; see ``_resolve_path``.
+    byPathSuffix: dict[str, tuple[SearchIndexEntry, ...]]
+
+
+def _path_suffixes(normalized_path: str) -> Iterator[str]:
+    """``a/b/c.py`` -> ``b/c.py``, ``c.py`` - the tails a summary might write.
+
+    Segment-aligned on purpose, and the whole path is left out: an exact match
+    is looked up directly, and only a *proper* tail belongs here.
+    """
+    segments = normalized_path.split("/")
+    for index in range(1, len(segments)):
+        yield "/".join(segments[index:])
 
 
 def build_symbol_lookup(search_index: SearchIndexDocument) -> SymbolLookup:
     by_name: dict[str, list[SearchIndexEntry]] = {}
     by_file_path: dict[str, SearchIndexEntry] = {}
     by_symbol_id: dict[str, SearchIndexEntry] = {}
+    by_path_suffix: dict[str, list[SearchIndexEntry]] = {}
     for entry in search_index.entries:
         by_name.setdefault(entry.name, []).append(entry)
         by_symbol_id.setdefault(entry.symbolId, entry)
         if entry.kind == "module":
-            by_file_path.setdefault(_normalize_path(entry.filePath), entry)
+            normalized = _normalize_path(entry.filePath)
+            if normalized in by_file_path:
+                # The same module path is only indexed once, exactly as
+                # `setdefault` did before - and its suffixes with it, so a
+                # duplicate cannot turn a unique tail into an ambiguous one.
+                continue
+            by_file_path[normalized] = entry
+            for suffix in _path_suffixes(normalized):
+                by_path_suffix.setdefault(suffix, []).append(entry)
     return SymbolLookup(
         byName={name: tuple(entries) for name, entries in by_name.items()},
         byFilePath=by_file_path,
         bySymbolId=by_symbol_id,
+        byPathSuffix={suffix: tuple(entries) for suffix, entries in by_path_suffix.items()},
     )
 
 
@@ -189,6 +215,11 @@ def _resolve_path(lookup: SymbolLookup, candidate: str) -> SearchIndexEntry | No
     Stored module paths can be absolute (they come from the scanner), while a
     summary naturally writes ``src/pkg/mod.py``, so a suffix match on whole path
     segments is accepted as well as an exact one.
+
+    The suffix side is a lookup rather than a scan of every stored path. This
+    runs once per unresolved backticked mention on every generated page, and a
+    mention that resolves to nothing - the common case, since most backticks
+    are not file paths - used to be the one that walked the whole index.
     """
     normalized = _normalize_path(candidate)
     if not normalized or ("/" not in normalized and "." not in normalized):
@@ -196,8 +227,7 @@ def _resolve_path(lookup: SymbolLookup, candidate: str) -> SearchIndexEntry | No
     exact = lookup.byFilePath.get(normalized)
     if exact is not None:
         return exact
-    suffix = f"/{normalized}"
-    matches = [entry for path, entry in lookup.byFilePath.items() if path.endswith(suffix)]
+    matches = lookup.byPathSuffix.get(normalized, ())
     return matches[0] if len(matches) == 1 else None
 
 

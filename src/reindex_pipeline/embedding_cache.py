@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any, Iterable, Optional, Sequence
 
@@ -92,12 +93,11 @@ class EmbeddingCache:
             self._by_content[(chunk_type, normalize_chunk_content(content))] = entry
 
     def seed_from_entries(self, entries: Iterable[VectorEntry]) -> int:
-        """Warm the cache from an index that already exists.
+        """Warm the cache from entries that carry their vectors.
 
-        This is what makes the cache worth anything on a full `index` run:
-        that run builds into an empty staging directory, so without seeding
-        there is nothing to hit. Entries written before `embeddingModelId`
-        existed carry an empty id and are skipped rather than reused blindly.
+        Kept for callers holding entries in hand. An index loads its own
+        entries *without* vectors now (`VectorMatrix` holds the only copy), so
+        the indexing pipeline uses `seed_from_index` below instead.
         """
         seeded = 0
         for entry in entries:
@@ -109,6 +109,32 @@ class EmbeddingCache:
                 chunk_type=entry.chunkType,
                 model_id=entry.embeddingModelId,
                 vector=entry.vector,
+            )
+            seeded += 1
+        return seeded
+
+    def seed_from_index(self, index: Any) -> int:
+        """Warm the cache from an index that already exists.
+
+        This is what makes the cache worth anything on a full `index` run:
+        that run builds into an empty staging directory, so without seeding
+        there is nothing to hit. Chunks written before `embeddingModelId`
+        existed carry an empty id and are skipped rather than reused blindly.
+
+        Streamed straight from SQLite, one decoded vector at a time - a whole
+        prior index is read here, and materializing it as entries first is what
+        made the index hold two copies of every vector.
+        """
+        seeded = 0
+        for source_symbol_id, content, chunk_type, model_id, payload in index.iter_cache_seed_rows():
+            if not model_id or not content:
+                continue
+            self.put(
+                source_symbol_id=source_symbol_id,
+                content=content,
+                chunk_type=chunk_type,
+                model_id=model_id,
+                vector=json.loads(payload),
             )
             seeded += 1
         return seeded
