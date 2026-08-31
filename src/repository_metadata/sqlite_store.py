@@ -289,6 +289,20 @@ def upsert_repository(
     return repository
 
 
+def update_repository_commit_sha(connection: sqlite3.Connection, *, repository_id: str, commit_sha: str) -> None:
+    """Move the recorded HEAD without touching anything else about the row.
+
+    Deliberately not `upsert_repository(commit_sha=...)`: that call writes
+    `detected_languages` from its argument, so a caller who only knows the new
+    sha would blank the language list on its way past.
+    """
+    with connection:
+        connection.execute(
+            "UPDATE repositories SET commit_sha = ? WHERE id = ?",
+            (commit_sha, repository_id),
+        )
+
+
 def file_record_from_source(
     repository_id: str,
     source_file: SourceFile,

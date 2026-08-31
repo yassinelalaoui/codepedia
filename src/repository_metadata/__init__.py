@@ -12,11 +12,19 @@ from .models import (
     SourceFile,
     Symbol,
 )
-from .summary_context import ImpactedSymbolSet, SummaryContext, SummaryResult, SymbolSummaryJob
+from .summary_context import (
+    PROSE_FILE_SUFFIXES,
+    ImpactedSymbolSet,
+    SummaryContext,
+    SummaryResult,
+    SymbolSummaryJob,
+    is_prose_file,
+)
 from .summary_pipeline import CodeSummaryPipeline, LocalLLMUnavailableError, SummaryPipelineError
 from .store import RepositoryMetadataStore, open_repository_metadata_store
 
 __all__ = [
+    "PROSE_FILE_SUFFIXES",
     "ClassSymbol",
     "DependencyEdge",
     "DependencyGraph",
@@ -36,5 +44,6 @@ __all__ = [
     "Symbol",
     "compute_content_hash",
     "file_has_changed",
+    "is_prose_file",
     "open_repository_metadata_store",
 ]

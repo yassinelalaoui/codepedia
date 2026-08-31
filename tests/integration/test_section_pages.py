@@ -5,6 +5,7 @@ from pathlib import Path
 
 from doc_generator import DocGenerator, SectionNarrator, open_doc_manifest_store
 from parser_engine import SourceFile, extract_symbols
+from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata import compute_content_hash
 from repository_metadata.sqlite_store import stable_repository_id
 
@@ -189,6 +190,12 @@ def test_narrated_titles_do_not_move_a_module_or_change_a_page_path(tmp_path):
         def generate(self, prompt) -> str:
             return "Title: Sample Domain\nDescription: The sample repository's only area."
 
+    # Wrapped in the real executor rather than passed raw: the CLI hands the
+    # narrator a `FailoverExecutor`, which has no `generate` of its own, and a
+    # double shaped like the engine instead of the chain is what let a narrator
+    # that never once ran look tested.
+    engine = FailoverExecutor("summary", ((ProviderRef("local", "test-model"), _Engine()),))
+
     root, store, graph = build_indexed_repo(tmp_path)
     plain = _build_generator(tmp_path, root, store, graph).generateRepositoryDocumentation(root, incremental=False)
     plain_section = next(page for page in plain.pages if page.kind == "section")
@@ -200,7 +207,7 @@ def test_narrated_titles_do_not_move_a_module_or_change_a_page_path(tmp_path):
         narrated_store,
         narrated_graph,
         db_name="narrated.sqlite",
-        section_narrator=SectionNarrator(_Engine()),
+        section_narrator=SectionNarrator(engine),
     ).generateRepositoryDocumentation(narrated_root, incremental=False)
     narrated_section = next(page for page in narrated.pages if page.kind == "section")
 

@@ -18,6 +18,7 @@ from .summary_context import (
     build_summary_context,
     build_summary_job,
     context_hash,
+    is_prose_file,
 )
 from .summary_prompts import (
     build_class_summary_prompt,
@@ -25,10 +26,6 @@ from .summary_prompts import (
     build_module_summary_prompt,
     build_prose_summary_prompt,
 )
-
-# Kept local rather than imported from `doc_generator`, which sits above this
-# package in the dependency graph.
-PROSE_FILE_SUFFIXES = frozenset({".md", ".markdown"})
 
 
 # Called as (completed_count, total_count, symbol) once each symbol's LLM
@@ -453,7 +450,7 @@ class CodeSummaryPipeline:
     def _build_prompt(self, context: SummaryContext):
         # A .md file's symbols are headings, so the code-shaped prompt would ask
         # the model to read prose as an implementation.
-        if Path(context.sourceFilePath).suffix.lower() in PROSE_FILE_SUFFIXES:
+        if is_prose_file(context.sourceFilePath):
             return build_prose_summary_prompt(context)
         if context.symbolKind == "module":
             return build_module_summary_prompt(context)

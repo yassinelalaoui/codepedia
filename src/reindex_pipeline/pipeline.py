@@ -50,6 +50,13 @@ class IncrementalReindexPipeline:
         self._ignoreMatcher = load_ignore_matcher(self.repositoryRoot)
 
     def run(self, batch: ChangeBatch) -> ReindexOutcome:
+        # First, before any page is regenerated below. `serve` keeps this process
+        # alive across commits, and every page this pass writes stamps the
+        # repository's recorded HEAD in its footer - which, read only once at
+        # startup, was the commit the watcher was launched on rather than the one
+        # the pages actually describe.
+        self.metadataStore.refresh_commit_sha(self.repositoryRoot)
+
         to_remove: list[str] = []
         to_skip: list[str] = []
         candidates: list[str] = []

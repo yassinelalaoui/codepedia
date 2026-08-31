@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+import pytest
+
 from doc_generator.section_narrator import (
     SectionNarrator,
     apply_section_narrations,
@@ -21,18 +25,52 @@ def _section(key: str = "src/api", title: str = "api") -> Section:
     )
 
 
+class _ChainEngine:
+    """The engine a `FailoverExecutor` hands to the callable it is given."""
+
+    def __init__(self, executor):
+        self._executor = executor
+
+    def generate(self, prompt):
+        self._executor.calls.append(prompt)
+        if self._executor.raises is not None:
+            raise self._executor.raises
+        return self._executor.reply
+
+
 class _RecordingEngine:
-    def __init__(self, reply: str = "Title: Request Handling\nDescription: Accepts and routes inbound requests.", *, available: bool = True):
+    """Shaped like `provider_routing.FailoverExecutor`, deliberately.
+
+    The executor is what the CLI actually hands the narrator, and it exposes
+    `isAvailable`/`run`/`stream`/`result` - never the underlying engine's
+    `generate`. The double here used to expose `generate`, which is exactly how
+    a narrator that never once ran survived three audits: the `AttributeError`
+    only ever existed in production. This one has no `generate` attribute at
+    all, so the mistake cannot come back unnoticed.
+    """
+
+    def __init__(
+        self,
+        reply: str = "Title: Request Handling\nDescription: Accepts and routes inbound requests.",
+        *,
+        available: bool = True,
+        raises: Exception | None = None,
+    ):
         self.reply = reply
         self.available = available
+        self.raises = raises
         self.calls: list[object] = []
 
     def isAvailable(self) -> bool:
         return self.available
 
-    def generate(self, prompt):
-        self.calls.append(prompt)
-        return self.reply
+    def run(self, call):
+        return _FailoverResult(value=call(_ChainEngine(self)))
+
+
+@dataclass(frozen=True)
+class _FailoverResult:
+    value: str
 
 
 class _MemoryCache:
@@ -139,13 +177,13 @@ def test_an_unavailable_engine_leaves_the_deterministic_title_in_place():
 
 
 def test_a_failing_engine_degrades_the_page_not_the_run():
-    class _Failing(_RecordingEngine):
-        def generate(self, prompt):
-            raise RuntimeError("provider chain exhausted")
+    # Every provider error family - FailoverExhaustedError, LocalLLMError,
+    # RemoteLLMError - is a RuntimeError, which is the whole reason `narrate`
+    # can narrow its except without importing `provider_routing` (which sits
+    # above `doc_generator`, not below it).
+    engine = _RecordingEngine(raises=RuntimeError("provider chain exhausted"))
 
-    narrated = apply_section_narrations(
-        SectionSelection(sections=(_section(),)), SectionNarrator(_Failing())
-    )
+    narrated = apply_section_narrations(SectionSelection(sections=(_section(),)), SectionNarrator(engine))
 
     assert narrated.sections[0].title == "api"
     assert narrated.sections[0].isNarrated is False
@@ -155,3 +193,32 @@ def test_no_narrator_returns_the_selection_untouched():
     selection = SectionSelection(sections=(_section(),))
 
     assert apply_section_narrations(selection, None) is selection
+
+
+def test_the_narrator_calls_the_provider_chain_not_the_engine_directly():
+    """B1: the CLI passes a `FailoverExecutor`, which has no `generate`."""
+    engine = _RecordingEngine()
+
+    narration = SectionNarrator(engine, repositoryId="repo").narrate(_section())
+
+    assert narration is not None
+    assert narration.title == "Request Handling"
+    assert len(engine.calls) == 1
+
+
+def test_a_wiring_error_is_not_disguised_as_an_unavailable_provider():
+    """An engine missing the method we call is a bug, not an outage.
+
+    Swallowing it is what kept B1 invisible: the narrator reported "no model
+    answered" on every single run, and the wiki merely looked un-narrated.
+    """
+
+    class _EngineWithoutRun:
+        def isAvailable(self):
+            return True
+
+        def generate(self, prompt):  # never reached - `narrate` calls `run`
+            return "Title: Never Used"
+
+    with pytest.raises(AttributeError):
+        SectionNarrator(_EngineWithoutRun(), repositoryId="repo").narrate(_section())

@@ -11,6 +11,25 @@ from parser_engine import ClassSymbol, FunctionSymbol, ModuleSymbol, Symbol
 
 from .models import DependencyEdge, SourceFileBundle
 
+# Defined here rather than in `doc_generator.prose`, which used to hold a second
+# copy of it: `repository_metadata` is the lower of the two packages, so this is
+# the direction the dependency already runs. Two copies meant adding `.mdx` to
+# one of them would summarize a file as code and render it as prose, with
+# nothing anywhere reporting an error.
+PROSE_FILE_SUFFIXES = frozenset({".md", ".markdown"})
+
+
+def is_prose_file(file_path: str) -> bool:
+    """Whether this file is documentation rather than code.
+
+    `parser_engine` maps a Markdown heading onto the class/function symbol
+    types, which is what lets documentation reuse the whole pipeline unchanged.
+    The cost is that a heading is indistinguishable from a real symbol by type
+    alone, so the places where the difference matters ask here.
+    """
+    return Path(file_path).suffix.lower() in PROSE_FILE_SUFFIXES
+
+
 
 @dataclass(frozen=True, slots=True)
 class SymbolSummaryJob:
@@ -150,6 +169,16 @@ def context_hash(context: SummaryContext) -> str:
     Including either would mean a symbol never matched its own previous entry in
     the ledger. What remains is exactly what the model is shown, so an identical
     hash really does mean an identical prompt.
+
+    That last sentence is load-bearing in both directions, and it is where this
+    used to go wrong: the line range excluded above walked straight back in
+    through `metadata`, which carried `lineStart`/`lineEnd` until
+    `_symbol_metadata` stopped emitting them. Anything added to the prompt is
+    added to the ledger's key, so a field has to earn its place twice.
+
+    `metadata` is dropped entirely for prose, because the prose prompt has no
+    `Metadata:` block at all (`summary_prompts.build_prose_summary_prompt`) -
+    hashing what the model is never shown can only cost recall.
     """
     payload = repr(
         (
@@ -160,7 +189,7 @@ def context_hash(context: SummaryContext) -> str:
             context.sourceText,
             context.imports,
             context.directCallers,
-            sorted(context.metadata.items(), key=lambda item: item[0]),
+            () if is_prose_file(context.sourceFilePath) else sorted(context.metadata.items(), key=lambda item: item[0]),
         )
     ).encode("utf-8")
     return sha256(payload).hexdigest()
@@ -206,21 +235,32 @@ def _collect_direct_callers(focus: str, symbol: Symbol, dependency_graph: Depend
 
 
 def _symbol_metadata(symbol: Symbol) -> dict[str, Any]:
+    """What the prompt's `Metadata:` block says about a symbol.
+
+    Everything here describes the symbol; nothing here locates it. Two kinds of
+    field were deliberately dropped:
+
+    * `lineStart`/`lineEnd` - a line number teaches a model nothing about what a
+      symbol does, and putting it in the prompt put it in `context_hash` too, so
+      a comment added at the top of a file made the summary ledger miss for
+      every symbol below it and re-paid each one at the model.
+    * `methods`/`nestedSymbols` - these are symbol *ids*, and an id embeds the
+      symbol's line range, so they carry the same volatility one level down.
+      They are also unreadable as prompt material.
+
+    This is a derived dict; `symbol.metadata` as stored in the database is not
+    touched.
+    """
     metadata = dict(symbol.metadata)
     metadata["symbolKind"] = symbol.kind
     metadata["symbolName"] = symbol.name
-    metadata["lineStart"] = symbol.lineStart
-    metadata["lineEnd"] = symbol.lineEnd
     if isinstance(symbol, ModuleSymbol):
         metadata["filePath"] = symbol.filePath
         metadata["imports"] = [str(item.text) if hasattr(item, "text") else str(item) for item in symbol.imports]
     elif isinstance(symbol, ClassSymbol):
         metadata["parentClass"] = symbol.parentClass
-        metadata["methods"] = list(symbol.methods)
-        metadata["nestedSymbols"] = list(symbol.nestedSymbols)
     elif isinstance(symbol, FunctionSymbol):
         metadata["parameters"] = [param.to_dict() for param in symbol.parameters]
         metadata["returnType"] = symbol.returnType
-        metadata["nestedSymbols"] = list(symbol.nestedSymbols)
         metadata["owner"] = symbol.owner
     return metadata

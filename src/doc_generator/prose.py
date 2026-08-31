@@ -7,16 +7,15 @@ by type alone, so the few places where the difference actually matters - the
 words on a page, the prompt used to summarize it, and whether a symbol can be a
 callable entry point - ask here.
 
-Kept in its own module with no internal imports so both `generator` and
-`entry_point_diagram` can use it without a cycle.
+The rule itself lives in `repository_metadata`, the lower of the two packages
+that need it, and is re-exported here so `generator` and `entry_point_diagram`
+keep importing it from their own package without a cycle. It used to be defined
+twice, which meant adding `.mdx` to one copy would have summarized a file as
+code and rendered it as prose, with nothing anywhere reporting an error.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from repository_metadata.summary_context import PROSE_FILE_SUFFIXES, is_prose_file
 
-PROSE_FILE_SUFFIXES = frozenset({".md", ".markdown"})
-
-
-def is_prose_file(file_path: str) -> bool:
-    return Path(file_path).suffix.lower() in PROSE_FILE_SUFFIXES
+__all__ = ["PROSE_FILE_SUFFIXES", "is_prose_file"]

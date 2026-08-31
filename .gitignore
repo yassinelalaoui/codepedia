@@ -73,6 +73,14 @@ docs/pfa.pdf
 docs/*.pptx
 docs/*.docx
 
+### Brand assets & the standalone overview page (not project docs) ###
+# docs/brand/ (logo lockups, marks, icons, favicon, cover art) and the
+# single-file docs/overview.html are presentation material about the project
+# rather than documentation of it - kept local, not published to the repo.
+# Added 2026-08-31.
+docs/brand/
+docs/overview.html
+
 ### This project's local runtime state ###
 # Every component (repository_metadata, dependency_graph, vector_index,
 # doc_generator's page manifest) persists to its own caller-supplied SQLite file -

@@ -173,3 +173,72 @@ def test_run_reports_a_failed_path_and_continues_with_the_rest_of_the_batch(tmp_
 
     assert outcome.failedPaths == ("broken.py",)
     assert "alpha.py" in outcome.reprocessedPaths
+
+
+def _write_head(root: Path, sha: str) -> str:
+    git_dir = root / ".git"
+    git_dir.mkdir(exist_ok=True)
+    (git_dir / "HEAD").write_text(sha, encoding="utf-8")
+    return sha
+
+
+def test_each_pass_re_reads_head(tmp_path):
+    """N6: `serve` outlives the commit it started on.
+
+    HEAD used to be read once, by `ensure_repository` at the start of an
+    indexing run. That is right for `index`, and wrong for a watcher that keeps
+    regenerating pages for hours: every page written after a `git commit`
+    footed itself with the commit the process was launched on, which is a
+    provenance line that asserts something false.
+    """
+    root = _copy_fixture_repo(tmp_path)
+    first = _write_head(root, "a" * 40)
+    pipeline, _ = _build_minimal_pipeline(tmp_path, summary_pipeline=_RaisingSummaryPipeline(), root=root)
+    batch = ChangeBatch(changes=(FileChange(relative_path="alpha.py", change_type=ChangeType.CREATED),))
+
+    pipeline.run(batch)
+    assert pipeline.metadataStore.load_repository(root).repository.commitSha == first
+
+    second = _write_head(root, "b" * 40)
+    pipeline.run(batch)
+
+    assert pipeline.metadataStore.load_repository(root).repository.commitSha == second
+
+
+def test_an_unreadable_head_leaves_the_recorded_commit_alone(tmp_path):
+    """An empty read means "unknown", and unknown must not overwrite known.
+
+    `read_commit_sha` degrades to "" for everything uninteresting - not a
+    repository, an unborn branch, a directory it cannot read - so writing it
+    back would turn a transient condition into an erased provenance.
+    """
+    root = _copy_fixture_repo(tmp_path)
+    known = _write_head(root, "c" * 40)
+    pipeline, _ = _build_minimal_pipeline(tmp_path, summary_pipeline=_RaisingSummaryPipeline(), root=root)
+    batch = ChangeBatch(changes=(FileChange(relative_path="alpha.py", change_type=ChangeType.CREATED),))
+    pipeline.run(batch)
+
+    (root / ".git" / "HEAD").unlink()
+    pipeline.run(batch)
+
+    assert pipeline.metadataStore.load_repository(root).repository.commitSha == known
+
+
+def test_refreshing_the_commit_never_blanks_the_language_list(tmp_path):
+    """Why this is not `ensure_repository(commit_sha=...)`.
+
+    `upsert_repository` writes `detected_languages` from its argument, so a
+    caller that only knows the new sha would silently empty the column on its
+    way past.
+    """
+    root = _copy_fixture_repo(tmp_path)
+    _write_head(root, "d" * 40)
+    store = RepositoryMetadataStore(tmp_path / "languages.sqlite")
+    store.ensure_repository(root, detected_languages=("python", "markdown"))
+
+    store.refresh_commit_sha(root)
+
+    repository = store.load_repository_record(root)
+    assert repository.detectedLanguages == ("markdown", "python")
+    assert repository.commitSha == "d" * 40
+

@@ -681,6 +681,11 @@ class DocGenerator:
         bundle = self._ensure_bundle()
         _ensure_output_root_is_separate(self.outputRoot, repository_root=Path(repositoryRoot), bundle=bundle)
 
+        # Read before the narrator runs. `apply_section_narrations` saves each
+        # section's new title over the old one in the same cache row, so after
+        # `_ensure_sections` the previous names exist nowhere - and they are what
+        # tells us whether every already-written page's sidebar went stale.
+        previous_section_titles = self.manifestStore.list_section_titles(self.repositoryId)
         selection = self._ensure_sections()
 
         previous_entries = self.manifestStore.list_entries(self.repositoryId)
@@ -696,6 +701,7 @@ class DocGenerator:
                 changed_symbol_ids=changedSymbolIds,
                 changed_dependency_edge_ids=changedDependencyEdgeIds,
                 sections=selection.sections,
+                previous_section_titles=previous_section_titles,
             )
             target_page_ids = set(impact.impactedPageIds)
             if impact.requiresHomePageRegeneration:
@@ -875,11 +881,20 @@ class DocGenerator:
         return render_page_html(**kwargs)
 
     def _commit_sha(self) -> str:
-        """HEAD as recorded when the repository was indexed, not as it is now.
+        """HEAD as recorded for the pass these pages belong to.
 
         Read from the stored `Repository` rather than from `.git` directly: the
         wiki describes the commit it was *built from*, so a checkout that moved
-        after indexing must not make already-generated pages claim the new one.
+        after the pass must not make already-generated pages claim the new one.
+        Keeping the read here also means this class never touches the working
+        tree.
+
+        Under `serve` the recorded value is refreshed at the top of each
+        incremental pass (`RepositoryMetadataStore.refresh_commit_sha`), so a
+        watcher living across commits stamps the commit each page actually
+        describes rather than the one the process started on. The bundle is
+        re-loaded at the start of every `generateRepositoryDocumentation`, so
+        this picks that up with no cache to invalidate.
         """
         try:
             return self._ensure_bundle().repository.commitSha

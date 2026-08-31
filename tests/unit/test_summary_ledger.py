@@ -25,18 +25,23 @@ THREE_FUNCTIONS = (
     'def gamma():\n    """G."""\n    return 3\n'
 )
 ONLY_ALPHA_CHANGED = THREE_FUNCTIONS.replace("return 1", "return 999")
+# The most ordinary edit there is, and the one the ledger used to miss on:
+# every function below moves down a line while its bytes stay identical.
+SHIFTED_DOWN_ONE_LINE = "# a note added at the top of the file\n" + THREE_FUNCTIONS
 
 
 class CountingLLM:
     def __init__(self, available: bool = True) -> None:
         self.available = available
         self.calls = 0
+        self.prompts: list[str] = []
 
     def isAvailable(self) -> bool:
         return self.available
 
     def generate(self, prompt) -> str:
         self.calls += 1
+        self.prompts.append(prompt.to_prompt_text())
         return f"summary #{self.calls}"
 
 
@@ -169,3 +174,61 @@ def test_the_context_hash_ignores_the_store_timestamp(tmp_path: Path):
     after = {name: symbol.summaryContextHash for name, symbol in built.functions().items()}
     assert after == before
     assert all(not symbol.summaryIsStale for symbol in built.functions().values())
+
+
+def test_inserting_a_line_above_a_symbol_no_longer_expires_its_summary(harness: Harness):
+    """N4, inverted into a regression.
+
+    `context_hash` excludes `symbolId` precisely because it encodes a line
+    range - and then hashed `metadata`, which carried `lineStart`/`lineEnd`.
+    The volatility shut out of the front door came back through the window: one
+    comment at the top of a file re-bought every summary under it.
+    """
+    before = {name: symbol.summaryContextHash for name, symbol in harness.functions().items()}
+
+    harness.rewrite(SHIFTED_DOWN_ONE_LINE)
+    harness.llm.calls = 0
+    fresh, _stale = harness.pipeline.restoreSummariesFromLedger(harness.root, [harness.path])
+
+    functions = harness.functions()
+    assert {name: symbol.summaryContextHash for name, symbol in functions.items()} == before
+    assert harness.llm.calls == 0
+    assert fresh >= 3, "alpha, beta and gamma are byte-identical, only lower down the file"
+    assert all(not symbol.summaryIsStale for symbol in functions.values())
+
+
+def test_a_prompt_never_shows_the_model_a_line_number(harness: Harness):
+    """Nothing in the prompt may be volatile for reasons the summary ignores.
+
+    The `Metadata:` block is hashed exactly because it is shown, so this is the
+    same assertion as the test above read from the other end.
+    """
+    assert harness.llm.prompts, "the fixture summarizes the repository once"
+    for rendered in harness.llm.prompts:
+        assert "lineStart" not in rendered
+        assert "lineEnd" not in rendered
+        assert "nestedSymbols" not in rendered
+
+
+def test_prose_does_not_hash_metadata_it_is_never_shown(tmp_path: Path):
+    """A documentation prompt has no `Metadata:` block at all.
+
+    Hashing a block the prose prompt never renders can only lose ledger recall -
+    2 714 Markdown symbols on this repository were paying for it.
+    """
+    from repository_metadata.summary_context import SummaryContext, context_hash
+
+    def _context(suffix: str, **metadata):
+        return SummaryContext(
+            symbolId="sym",
+            symbolKind="class",
+            symbolName="Installation",
+            sourceFileId="file",
+            sourceFilePath=f"docs/guide{suffix}",
+            sourceText="Run the installer.",
+            metadata=metadata,
+        )
+
+    assert context_hash(_context(".md", anything="a")) == context_hash(_context(".md", anything="b"))
+    # Code prompts do render the block, so there the two must stay distinct.
+    assert context_hash(_context(".py", anything="a")) != context_hash(_context(".py", anything="b"))

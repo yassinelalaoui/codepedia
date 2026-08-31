@@ -137,6 +137,22 @@ class DocPageManifestStore:
             ).fetchone()
             return (row["title"], row["description"]) if row is not None else None
 
+    def list_section_titles(self, repository_id: str) -> dict[str, str]:
+        """Every section's currently stored title, keyed by section key.
+
+        Unlike `load_section_narration` this ignores `membership_hash`: the
+        caller is asking what the sidebar *says today*, not whether a cached
+        narration may be reused. The two questions diverge exactly when a
+        section's membership changed, which is one of the cases the navigation
+        has to notice.
+        """
+        with closing(_connect(self.db_path)) as connection:
+            rows = connection.execute(
+                "SELECT section_key, title FROM doc_section_narrations WHERE repository_id = ?",
+                (repository_id,),
+            ).fetchall()
+            return {row["section_key"]: row["title"] for row in rows}
+
     def save_section_narration(
         self, repository_id: str, section_key: str, membership_hash: str, *, title: str, description: str
     ) -> None:

@@ -141,12 +141,27 @@ class SectionNarrator:
         if not self.isReady():
             return None
 
+        prompt = build_section_narration_prompt(section)
         try:
-            text = self.llmEngine.generate(build_section_narration_prompt(section))
-        except Exception:
+            # Through `run`, never `generate`: the CLI hands over a
+            # `provider_routing.FailoverExecutor`, which exposes the chain
+            # (`isAvailable`, `run`, `stream`, `result`) and not the engine's own
+            # methods. `CodeSummaryPipeline` and `vector_index` call it the same
+            # way.
+            failover_result = self.llmEngine.run(lambda engine: engine.generate(prompt))
+        except RuntimeError:
             # Same posture as every other optional enrichment in the generator:
-            # a model that cannot answer degrades the page, never the run.
+            # a model that cannot answer degrades the page, never the run. Every
+            # provider failure lands here - `FailoverExhaustedError`,
+            # `LocalLLMError` and `RemoteLLMError` are all `RuntimeError`s, and
+            # `provider_routing` cannot be imported from this package anyway.
+            # Deliberately *not* `Exception`: an `AttributeError` here means the
+            # engine was called with a method it does not have, and that is a
+            # wiring bug that must be loud rather than masquerade as an
+            # unreachable provider.
             return None
+
+        text = failover_result.value
 
         narration = parse_section_narration(text or "", section=section)
         if narration is None:

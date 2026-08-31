@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from dependency_graph import DependencyGraph
 from repository_metadata.models import RepositoryBundle
@@ -22,8 +22,10 @@ def compute_regeneration_impact(
     changed_symbol_ids: Iterable[str] = (),
     changed_dependency_edge_ids: Iterable[EdgeId] = (),
     sections: Sequence[Section] = (),
+    previous_section_titles: Mapping[str, str] | None = None,
 ) -> RegenerationImpactSet:
     entries = list(previous_entries)
+    previous_section_titles = previous_section_titles or {}
     changed_path_strings = {_normalize(path) for path in changed_paths}
     changed_edges = list(changed_dependency_edge_ids)
 
@@ -142,21 +144,31 @@ def compute_regeneration_impact(
 
     previous_module_page_ids = {entry.pageId for entry in entries if entry.kind == "module"}
     previous_section_page_ids = {entry.pageId for entry in entries if entry.kind == "section"}
-    requires_home_regeneration = (
-        previous_module_page_ids != current_module_page_ids
-        or previous_section_page_ids != current_section_page_ids
-    )
 
-    # The sidebar renders the whole section/module tree into *every* page, so a
-    # page that is otherwise untouched still shows stale navigation once that
-    # tree changes shape. No per-page impact set can express that, hence a
-    # separate flag the generator answers by regenerating everything. It stays
-    # cheap because the tree only reshapes when files are added, removed or
-    # moved - never when their contents change, which is the ordinary case the
+    # The sidebar renders the whole section/module tree into *every* page, and
+    # the home page renders the same tree once more, so a page that is otherwise
+    # untouched still shows stale navigation once that tree changes. No per-page
+    # impact set can express that, hence a flag the generator answers by
+    # regenerating everything. Home and navigation go stale on exactly the same
+    # events, so this is one predicate feeding both - they used to be two
+    # literally identical expressions, which is how the title case below stayed
+    # missing from both at once.
+    #
+    # A section's *title* counts as a change to the tree even though no page id
+    # moves: the narrator rewrites titles between runs, and a renamed section
+    # would otherwise keep its old name in the sidebar of every page that did
+    # not happen to regenerate. It stays cheap because the tree only reshapes
+    # when files are added, removed or moved, or when a section is re-narrated -
+    # never when file contents change, which is the ordinary case the
     # incremental path exists to make fast.
-    requires_navigation_regeneration = (
+    current_section_titles = {section.key: section.title for section in sections}
+    requires_tree_regeneration = (
         previous_module_page_ids != current_module_page_ids
         or previous_section_page_ids != current_section_page_ids
+        # `.get(key, title)` reads a section with no stored title as unchanged:
+        # it is a section this run invented, so its page id is new and the set
+        # comparison above has already caught it.
+        or any(previous_section_titles.get(key, title) != title for key, title in current_section_titles.items())
     )
 
     # The diagrams-index page (024, research.md Decision 6) reflects four
@@ -181,9 +193,9 @@ def compute_regeneration_impact(
         changedDependencyEdgeIds=tuple(changed_edges),
         impactedPageIds=tuple(sorted(impacted_page_ids)),
         removedPageIds=tuple(sorted(removed_page_ids)),
-        requiresHomePageRegeneration=requires_home_regeneration,
+        requiresHomePageRegeneration=requires_tree_regeneration,
         requiresDiagramsIndexRegeneration=requires_diagrams_index_regeneration,
-        requiresNavigationRegeneration=requires_navigation_regeneration,
+        requiresNavigationRegeneration=requires_tree_regeneration,
     )
 
 

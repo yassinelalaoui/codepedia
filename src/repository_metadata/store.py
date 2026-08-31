@@ -25,6 +25,7 @@ from .sqlite_store import (
     load_symbols_for_source_file,
     repository_root_exists,
     save_summary_to_ledger,
+    update_repository_commit_sha,
     update_symbol_summary_provenance,
     stable_repository_id,
     stable_source_file_id,
@@ -42,9 +43,10 @@ class RepositoryMetadataStore:
         return connect(self.db_path)
 
     def ensure_repository(self, root_path: str | Path, *, detected_languages: Iterable[str] = ()) -> Repository:
-        # The one place HEAD is read: this runs once at the start of an indexing
-        # run, while `store_inventory` below runs per file and leaves the stored
-        # value alone by passing no `commit_sha` at all.
+        # HEAD is read here and in `refresh_commit_sha` below, and nowhere else:
+        # this runs once at the start of an indexing run, while `store_inventory`
+        # further down runs per file and leaves the stored value alone by passing
+        # no `commit_sha` at all.
         with closing(connect(self.db_path)) as connection:
             return upsert_repository(
                 connection,
@@ -53,6 +55,33 @@ class RepositoryMetadataStore:
                 last_indexed_at=datetime.now(timezone.utc).isoformat(),
                 commit_sha=read_commit_sha(root_path),
             )
+
+    def refresh_commit_sha(self, root_path: str | Path) -> str:
+        """Re-read HEAD for a process that outlives the commit it started on.
+
+        `ensure_repository` is right to read HEAD once for an `index` run: the
+        wiki describes the commit it was built from, and that commit does not
+        move mid-run. `serve` is the other case - the watcher regenerates pages
+        for hours across any number of commits, and every one of those pages was
+        stamping the sha the process started on. A footer asserting the wrong
+        commit is worse than one asserting none.
+
+        Cheap enough to do per pass because `git_provenance` reads the files
+        directly instead of spawning `git`.
+
+        An empty read is ignored rather than stored: `read_commit_sha` degrades
+        to "" for everything uninteresting - not a repository, an unborn branch,
+        a directory it cannot read - and a momentarily unreadable `.git` must not
+        erase a provenance that was correct a second ago.
+        """
+        commit_sha = read_commit_sha(root_path)
+        if not commit_sha:
+            return ""
+        with closing(connect(self.db_path)) as connection:
+            update_repository_commit_sha(
+                connection, repository_id=stable_repository_id(root_path), commit_sha=commit_sha
+            )
+        return commit_sha
 
     def store_inventory(
         self,
