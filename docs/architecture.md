@@ -248,10 +248,12 @@ the authoritative source:
    server/`chat_api` never binds anywhere else by default (constitution 2.2);
    `local_llm`/`embedding_engine`'s own local endpoints validate this at the
    URL-parsing level (`normalize_endpoint_url`). This does **not** mean every
-   *AI provider* call stays local — since constitution v3.0.0 (029), a fresh
-   install's default chains route to named remote providers (Groq, OpenAI),
-   disclosed once, blockingly, before first use; fully local remains fully
-   supported via `provider mode full-local`.
+   *AI provider* call stays local — a fresh install's default chains lead with
+   the local Ollama runtime but keep a named remote provider (Groq, OpenAI)
+   behind it as a fallback, so a call can still leave the machine when the
+   local entry is unreachable or its model isn't pulled. That fallback is
+   disclosed once, blockingly, before first use; `provider mode full-local`
+   removes it, which is the only configuration that guarantees no remote call.
 2. **No silent, undisclosed, or out-of-chain failover.** A stage automatically
    fails over only within its own explicitly configured provider chain, only on
    a classified network/rate-limit/auth failure — never on preference, never to

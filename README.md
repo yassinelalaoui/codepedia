@@ -47,14 +47,15 @@ picture and *why* it's built this way.
   browser or device) restores the same conversation — and every existing
   conversation is listable, so a client that lost track of its session id
   (a closed tab, a dropped connection) can find it again and resume it.
-  Summarization, embeddings, and chat answers each use a named remote
-  provider by default on a fresh install (Groq for summaries/chat, OpenAI
-  for embeddings) — disclosed once, blockingly, the first time any of these
-  run, and again whenever the configured providers actually change. Run
-  `codepedia provider mode full-local` to switch every stage to a local
-  model instead, or `codepedia provider chain set <stage> <provider:model>...`
-  to configure a specific stage's try-in-order provider chain (e.g. a
-  remote provider with a local fallback). A chain with more than one
+  Summarization, embeddings, and chat answers each try the local Ollama
+  runtime first on a fresh install, falling back to a named remote provider
+  (Groq for summaries/chat, OpenAI for embeddings) only when the local one
+  isn't reachable or hasn't pulled the model. The remote fallback is still
+  disclosed once, blockingly, the first time any of these run, and again
+  whenever the configured providers actually change. Run `codepedia provider
+  mode full-local` to drop the remote fallback entirely, or `codepedia
+  provider chain set <stage> <provider:model>...` to configure a specific
+  stage's try-in-order provider chain. A chain with more than one
   provider fails over automatically on a network/rate-limit/auth failure —
   never silently, never outside the configured chain — and every switch is
   logged and shown (`generatedBy` on chat answers, `GET
@@ -90,16 +91,17 @@ picture and *why* it's built this way.
   d'Évolution" for the plan to bring them back. `install.sh` already
   detects and reports this clearly on macOS/Linux rather than failing
   silently.
-- **For the AI-backed features** (summaries, chat): either a `GROQ_API_KEY`
-  (summaries/chat) and `OPENAI_API_KEY` (embeddings) in your environment —
-  the fresh-install defaults, disclosed before first use — **or** a local
-  LLM/embedding runtime exposing an Ollama-compatible API on `localhost`
-  (e.g. [Ollama](https://ollama.com) itself), selected via
-  `codepedia provider mode full-local`. A local runtime is a separate,
-  external prerequisite the installer below does not and cannot include —
-  install and start it yourself if you choose that mode; `codepedia
-  index`/`serve` detect and report clearly if a configured provider isn't
-  reachable, rather than failing silently.
+- **For the AI-backed features** (summaries, chat): a local LLM/embedding
+  runtime exposing an Ollama-compatible API on `localhost`
+  (e.g. [Ollama](https://ollama.com) itself) with `qwen2.5-coder` and
+  `nomic-embed-text` pulled — what the fresh-install defaults reach for
+  first — **and/or** a `GROQ_API_KEY` (summaries/chat) and `OPENAI_API_KEY`
+  (embeddings) in your environment, which the defaults fall back to when the
+  local runtime isn't there. Either alone is enough to run. A local runtime is
+  a separate, external prerequisite the installer below does not and cannot
+  include — install and start it yourself; `codepedia index`/`serve` detect
+  and report clearly if no provider in a stage's chain is reachable, rather
+  than failing silently.
   - **Needs one of the above**: `codepedia index`, and the AI-backed
     parts of `codepedia serve` (summarization, embedding, chat).
   - **Doesn't need either**: `codepedia scan`, `codepedia config`
@@ -176,11 +178,13 @@ serving it and prints the local URL:
 codepedia index /path/to/some/repository
 ```
 
-On a fresh install, `index` uses named remote providers by default —
-`groq:openai/gpt-oss-20b` for summaries and chat, `openai:text-embedding-3-small`
-for embeddings — and blocks the first time, printing exactly which
-providers it's about to use and how to opt out, until you explicitly
-acknowledge it. It checks every configured provider's availability up
+On a fresh install, `index` prefers the local Ollama runtime for every stage
+— `local:qwen2.5-coder` for summaries and chat, `local:nomic-embed-text` for
+embeddings — with `groq:openai/gpt-oss-20b` and
+`openai:text-embedding-3-small` behind them as fallbacks. Because those
+remote fallbacks are in the chain, `index` still blocks the first time,
+printing exactly which providers it's about to use and how to opt out, until
+you explicitly acknowledge it. It checks every configured provider's availability up
 front and fails with a clear, actionable message (naming what's missing
 and how to fix it) before doing any work if none of a stage's chain is
 reachable.
@@ -193,8 +197,9 @@ saved edits are reflected automatically without re-running `index`:
 codepedia serve /path/to/some/repository
 ```
 
-**Switch everything to fully local** — one action, atomically sets all
-three stages to a local model and re-discloses immediately:
+**Switch everything to fully local** — one action, atomically drops the
+remote fallback from all three stages and re-discloses immediately. Unlike
+the local-first default, this guarantees no call can leave the machine:
 
 ```bash
 codepedia provider mode full-local
@@ -207,7 +212,7 @@ auth failure (never silently, never outside this list):
 ```bash
 export GROQ_API_KEY=...       # for a groq: entry
 export OPENAI_API_KEY=...     # for an openai: entry - neither key is ever stored by this tool
-codepedia provider chain set chat groq:openai/gpt-oss-20b local:qwen2.5-coder
+codepedia provider chain set chat local:qwen2.5-coder groq:openai/gpt-oss-20b
 codepedia provider chain set embeddings openai:text-embedding-3-small
 ```
 

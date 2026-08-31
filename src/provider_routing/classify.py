@@ -2,17 +2,35 @@ from __future__ import annotations
 
 from typing import Literal
 
-FailureReason = Literal["network_error", "rate_limited", "auth_failed", "unknown"]
+FailureReason = Literal[
+    "network_error", "rate_limited", "auth_failed", "model_missing", "unknown"
+]
 
-# spec FR-005 triggers failover on exactly three reasons: network error,
-# rate/quota limit, or authentication failure. Any other `.kind` (e.g. a
-# missing local model, an invalid/unparseable response, a bad request) is a
-# real error a chain switch cannot fix, so it is classified "unknown" and
-# FailoverExecutor re-raises it instead of trying the next provider.
+# spec FR-005 triggers failover on a network error, a rate/quota limit, or an
+# authentication failure. Any other `.kind` (an invalid/unparseable response, a
+# bad request, a generation failure) is a real error a chain switch cannot fix,
+# so it is classified "unknown" and FailoverExecutor re-raises it instead of
+# trying the next provider.
+#
+# "model_missing" is the exception, and it is here because the default chains
+# now lead with `local:` (cli.config DEFAULT_*_CHAIN). An Ollama runtime that is
+# up but has not pulled `qwen2.5-coder`/`nomic-embed-text` is the ordinary state
+# of a fresh install, and unlike the kinds above it *is* fixable by a chain
+# switch: the next entry is a different provider serving a different model
+# entirely. Treating it as fatal would make the local-first default fail hard on
+# exactly the machines the remote fallback exists to serve. It is kept distinct
+# from "network_error" rather than folded into it so `engine_failover_log` still
+# records why the switch happened - "pull the model" and "start the runtime" are
+# different fixes for the operator reading that table.
+#
+# Note this also changes single-entry local chains (`provider mode full-local`):
+# a missing model there now surfaces as FailoverExhaustedError naming
+# "model_missing" rather than the engine's own ModelMissingError.
 _KIND_TO_REASON: dict[str, FailureReason] = {
     "service_unavailable": "network_error",
     "rate_limited": "rate_limited",
     "missing_api_key": "auth_failed",
+    "model_missing": "model_missing",
 }
 
 
