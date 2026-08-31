@@ -9,11 +9,11 @@ from pathlib import Path
 import httpx
 import pytest
 import uvicorn
-from fastapi.testclient import TestClient
 
+from chat_api.security import TOKEN_HEADER
 from doc_generator import DocGenerator, open_doc_manifest_store
 
-from ._chat_api_support import build_test_app, parse_sse_events
+from ._chat_api_support import api_client, build_test_app, parse_sse_events
 from ._doc_generator_support import build_indexed_repo
 
 
@@ -35,7 +35,7 @@ def _build_wiki(tmp_path: Path):
 def test_wiki_home_and_module_pages_serve_through_the_server(tmp_path):
     docs_root, doc_set = _build_wiki(tmp_path)
     app, index = build_test_app(tmp_path, docs_root=docs_root)
-    client = TestClient(app)
+    client = api_client(app)
 
     home_response = client.get("/")
 
@@ -56,7 +56,7 @@ def test_wiki_home_and_module_pages_serve_through_the_server(tmp_path):
 def test_diagram_page_and_static_asset_serve_through_the_server(tmp_path):
     docs_root, doc_set = _build_wiki(tmp_path)
     app, index = build_test_app(tmp_path, docs_root=docs_root)
-    client = TestClient(app)
+    client = api_client(app)
 
     diagram_page = next(page for page in doc_set.pages if page.kind == "diagram")
     diagram_response = client.get(f"/{diagram_page.outputPathHtml}")
@@ -72,7 +72,7 @@ def test_diagram_page_and_static_asset_serve_through_the_server(tmp_path):
 def test_missing_wiki_page_returns_404(tmp_path):
     docs_root, _ = _build_wiki(tmp_path)
     app, index = build_test_app(tmp_path, docs_root=docs_root)
-    client = TestClient(app)
+    client = api_client(app)
 
     response = client.get("/modules/does-not-exist.html")
     index.close()
@@ -83,7 +83,7 @@ def test_missing_wiki_page_returns_404(tmp_path):
 def test_chat_api_still_works_alongside_the_wiki_mount(tmp_path):
     docs_root, _ = _build_wiki(tmp_path)
     app, index = build_test_app(tmp_path, docs_root=docs_root)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     ask_response = client.post(
@@ -149,15 +149,16 @@ def test_combined_server_accepts_on_loopback_but_refuses_on_lan_interface(tmp_pa
     app, index = build_test_app(tmp_path, docs_root=docs_root)
     running = _RunningServer(app)
     try:
+        token = {TOKEN_HEADER: app.state.authToken}
         home_response = httpx.get(f"http://127.0.0.1:{running.port}/", timeout=5.0)
-        session_response = httpx.post(f"http://127.0.0.1:{running.port}/sessions", timeout=5.0)
-        list_sessions_response = httpx.get(f"http://127.0.0.1:{running.port}/sessions", timeout=5.0)
+        session_response = httpx.post(
+            f"http://127.0.0.1:{running.port}/sessions", headers=token, timeout=5.0
+        )
+        untokened_response = httpx.post(f"http://127.0.0.1:{running.port}/sessions", timeout=5.0)
         assert home_response.status_code == 200
         assert session_response.status_code == 201
-        # GET /sessions (027) is reachable on loopback exactly like every
-        # other chat API route - no separate exposure configuration exists
-        # for it.
-        assert list_sessions_response.status_code == 200
+        # The wiki is served to anyone who can reach the port; the API is not.
+        assert untokened_response.status_code == 401
 
         lan_ip = _discover_local_lan_ip()
         if lan_ip is None:
@@ -166,7 +167,7 @@ def test_combined_server_accepts_on_loopback_but_refuses_on_lan_interface(tmp_pa
         with pytest.raises(httpx.TransportError):
             httpx.get(f"http://{lan_ip}:{running.port}/", timeout=2.0)
         with pytest.raises(httpx.TransportError):
-            httpx.get(f"http://{lan_ip}:{running.port}/sessions", timeout=2.0)
+            httpx.post(f"http://{lan_ip}:{running.port}/sessions", headers=token, timeout=2.0)
     finally:
         running.stop()
         index.close()
@@ -175,7 +176,7 @@ def test_combined_server_accepts_on_loopback_but_refuses_on_lan_interface(tmp_pa
 def test_server_starts_and_chat_api_works_before_wiki_is_generated(tmp_path):
     docs_root = tmp_path / "docs-not-generated-yet"
     app, index = build_test_app(tmp_path, docs_root=docs_root)
-    client = TestClient(app)
+    client = api_client(app)
 
     home_response = client.get("/")
     session_response = client.post("/sessions")

@@ -30,6 +30,19 @@ Two properties of the stash shape the parser below:
 Anything outside the allowlist is **escaped, not dropped**: the reader sees the
 markup that was refused instead of a silent hole, which is the same posture
 `cross_references` takes when it declines to resolve a symbol.
+
+The stash is only half the surface. Two Markdown constructions become HTML
+*without ever being raw HTML*, so they never reach the stash at all:
+
+* `attr_list` - enabled to pin symbol anchors - applies whatever attribute an
+  author writes in `{: ... }`, event handlers included;
+* an ordinary Markdown link or image accepts any URL scheme, `javascript:`
+  included.
+
+`sanitize_element_tree` therefore makes a second pass, over the element tree
+python-markdown has finished building. That pass filters **attributes only** and
+never touches a tag: by then the tree is the markup *we* generated from the
+templates, and the author's own tags have already been judged in the stash.
 """
 
 from __future__ import annotations
@@ -80,6 +93,14 @@ SAFE_URL_SCHEMES = frozenset({"http", "https", "mailto"})
 
 VOID_TAGS = frozenset({"br", "hr", "img"})
 
+# `style` is not in any allowlist above and stays out of the raw-HTML one: an
+# author has no reason to write it. The tree pass needs a narrow exception,
+# because the `tables` extension renders column alignment as an inline style and
+# nothing else python-markdown generates carries an attribute outside the sets
+# above. Only `td`/`th`, and only this exact shape.
+STYLE_ALLOWED_TAGS = frozenset({"td", "th"})
+_TABLE_ALIGN_STYLE_PATTERN = re.compile(r"^text-align:\s*(?:left|right|center);?$", re.IGNORECASE)
+
 # A scheme is letters/digits/+/-/. before the first colon, and only counts as a
 # scheme when that colon comes before any path, query or fragment separator.
 _SCHEME_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*):")
@@ -107,6 +128,43 @@ def _attribute_allowed(tag: str, attribute: str) -> bool:
     if attribute in ALLOWED_GLOBAL_ATTRIBUTES:
         return True
     return attribute in ALLOWED_TAG_ATTRIBUTES.get(tag, frozenset())
+
+
+def _style_allowed(tag: str, value: str) -> bool:
+    """True only for the column alignment `tables` emits on a cell."""
+    return tag in STYLE_ALLOWED_TAGS and _TABLE_ALIGN_STYLE_PATTERN.match(value.strip()) is not None
+
+
+def sanitize_element_tree(root) -> None:  # noqa: ANN001 - ElementTree's Element
+    """Drop every disallowed attribute from a finished element tree, in place.
+
+    The counterpart to `sanitize_fragment`, for the constructions that never
+    become raw HTML: `attr_list`'s `{: onclick="..." }` and a Markdown
+    `[link](javascript:...)` or `![image](javascript:...)`.
+
+    Attributes only. The tags here were produced by python-markdown from our own
+    templates, so removing one would be a rendering bug, not a defence - the
+    author's tags were already sorted by the stash pass. A refused attribute is
+    *removed* rather than escaped, unlike a refused tag: an attribute has no
+    visible form to show the reader in its place. A refused `href`/`src` leaves
+    the link text and the `alt` behind, exactly as `_emit_tag` already does.
+    """
+    for element in root.iter():
+        tag = element.tag
+        if not isinstance(tag, str):
+            # Comments and processing instructions carry a callable tag.
+            continue
+        for name, value in tuple(element.attrib.items()):
+            attribute = name.lower()
+            if attribute == "style":
+                if not _style_allowed(tag, value):
+                    del element.attrib[name]
+                continue
+            if not _attribute_allowed(tag, attribute):
+                del element.attrib[name]
+                continue
+            if attribute in URL_ATTRIBUTES and not is_safe_url(value):
+                del element.attrib[name]
 
 
 class _FragmentSanitizer(HTMLParser):
@@ -193,13 +251,16 @@ def sanitize_fragment(fragment: str) -> str:
 
 # Runs last among treeprocessors: the stash is filled during block and inline
 # parsing, and is only consumed later by the `raw_html` postprocessor, so any
-# low priority works. 1 keeps it after `attr_list` (8) and `toc` (5) rather
-# than depending on their internals.
+# low priority works. 1 keeps it after `attr_list` (8), `toc` (5) and
+# `codepedia_symbol_references` (15) rather than depending on their internals -
+# which is also what makes the tree pass correct, since `attr_list` must have
+# applied every `{: ... }` before the attributes are judged.
 _TREEPROCESSOR_PRIORITY = 1
 
 
 class SanitizeRawHtmlTreeprocessor(Treeprocessor):
     def run(self, root):  # noqa: ANN001 - python-markdown's API
+        sanitize_element_tree(root)
         stash = getattr(self.md, "htmlStash", None)
         if stash is None:
             return root

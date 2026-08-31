@@ -4,11 +4,28 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from provider_routing import FailoverExecutor, ProviderRef
 from vector_index import VectorIndex, build_code_chunk
 from vector_index.search import encode_text
 
 from chat_api import create_app
+from chat_api.security import TOKEN_HEADER
+
+
+def api_client(app: FastAPI) -> TestClient:
+    """A client the API actually answers.
+
+    Two things a bare `TestClient(app)` no longer satisfies: every API route
+    requires this run's token, and `TrustedHostMiddleware` rejects TestClient's
+    default `testserver` Host with a 400 - which is the same refusal a
+    DNS-rebinding attempt gets.
+    """
+    return TestClient(
+        app,
+        base_url="http://127.0.0.1",
+        headers={TOKEN_HEADER: app.state.authToken},
+    )
 
 
 def parse_sse_events(text: str) -> list[tuple[str, dict]]:

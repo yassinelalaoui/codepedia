@@ -8,6 +8,8 @@ import httpx
 import pytest
 import uvicorn
 
+from chat_api.security import TOKEN_HEADER
+
 from ._chat_api_support import build_test_app
 
 
@@ -58,7 +60,10 @@ def test_server_accepts_on_loopback_but_refuses_on_lan_interface(tmp_path):
     app, index = build_test_app(tmp_path)
     running = _RunningServer(app)
     try:
-        loopback_response = httpx.post(f"http://127.0.0.1:{running.port}/sessions", timeout=5.0)
+        token = {TOKEN_HEADER: app.state.authToken}
+        loopback_response = httpx.post(
+            f"http://127.0.0.1:{running.port}/sessions", headers=token, timeout=5.0
+        )
         assert loopback_response.status_code == 201
 
         lan_ip = _discover_local_lan_ip()
@@ -69,7 +74,7 @@ def test_server_accepts_on_loopback_but_refuses_on_lan_interface(tmp_path):
         # must not succeed: depending on the platform/firewall it surfaces as either
         # an immediate refusal or a timeout waiting for a response, never a 2xx.
         with pytest.raises(httpx.TransportError):
-            httpx.post(f"http://{lan_ip}:{running.port}/sessions", timeout=2.0)
+            httpx.post(f"http://{lan_ip}:{running.port}/sessions", headers=token, timeout=2.0)
     finally:
         running.stop()
         index.close()

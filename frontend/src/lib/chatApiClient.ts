@@ -17,15 +17,7 @@ export interface SessionHistoryResponse {
   messages: ChatMessageView[];
 }
 
-export interface SessionSummary {
-  sessionId: string;
-  createdAt: string;
-  lastActivityAt: string;
-}
-
-export interface SessionListResponse {
-  sessions: SessionSummary[];
-}
+import { apiTokenHeaders } from "./apiToken";
 
 export interface ApiErrorResponse {
   code: string;
@@ -49,11 +41,19 @@ export class ChatApiError extends Error {
  * Same-origin, root-relative requests against the chat API (014), reachable
  * from the same server that serves this bundle (015) — research.md
  * Decision 4. No base URL or CORS configuration needed.
+ *
+ * Every call carries this run's token (apiToken.ts). The wiki pages themselves
+ * are served without it; the API is not, so a request made with no token comes
+ * back 401 rather than answering.
  */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...apiTokenHeaders(),
+      ...(init?.headers ?? {}),
+    },
   });
   if (!response.ok) {
     const body = (await response.json()) as ApiErrorResponse;
@@ -64,10 +64,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function createSession(): Promise<{ sessionId: string }> {
   return request("/sessions", { method: "POST" });
-}
-
-export function listSessions(): Promise<SessionListResponse> {
-  return request("/sessions");
 }
 
 /** One parsed SSE event: an event name (defaults to "message" per the SSE
@@ -98,9 +94,11 @@ export async function askQuestion(
   question: string,
   onFragment: (fragment: string) => void
 ): Promise<AskQuestionResponse> {
+  // Not routed through `request()` (it consumes the body as JSON), so the
+  // token header has to be added here too.
   const response = await fetch(`/sessions/${encodeURIComponent(sessionId)}/messages`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...apiTokenHeaders() },
     body: JSON.stringify({ question }),
   });
   if (!response.ok) {

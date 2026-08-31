@@ -95,3 +95,73 @@ def test_a_mermaid_fence_is_left_intact():
     html = _render("# M\n\n```mermaid\nflowchart LR\n  A --> B\n```\n")
     assert '<pre class="mermaid">' in html
     assert "A --&gt; B" in html or "A --> B" in html
+
+
+# The tests above all write raw HTML. Two Markdown constructions become HTML
+# without ever passing through the stash - `attr_list`'s `{: ... }` and a link's
+# own URL - and the tests below pin those, plus the generated markup the second
+# pass must leave alone.
+
+
+def test_an_event_handler_written_as_an_attr_list_is_dropped():
+    html = _render('# M\n\n## Section {: onmouseover="steal()" #keep }\n')
+    assert "onmouseover" not in html
+    assert "steal()" not in html
+    # The anchor `attr_list` is enabled for in the first place still lands.
+    assert 'id="keep"' in html
+
+
+def test_an_event_handler_on_a_paragraph_attr_list_is_dropped():
+    html = _render('# M\n\nParagraph.\n{: onclick="steal()" }\n')
+    assert "onclick" not in html
+    assert "<p>Paragraph.</p>" in html
+
+
+def test_a_style_written_as_an_attr_list_is_dropped():
+    html = _render('# M\n\nParagraph.\n{: style="background:url(http://x/y)" }\n')
+    assert "background:url" not in html
+
+
+def test_a_javascript_url_in_a_markdown_link_is_dropped_but_the_text_survives():
+    html = _render("# M\n\n[click](javascript:steal())\n")
+    assert "javascript:steal" not in html
+    assert "click" in html
+
+
+def test_a_javascript_url_in_a_markdown_image_is_dropped_but_the_alt_survives():
+    html = _render("# M\n\n![shot](javascript:steal())\n")
+    assert "javascript:steal" not in html
+    assert 'alt="shot"' in html
+
+
+def test_generated_table_alignment_survives_the_tree_pass():
+    # `tables` renders column alignment as an inline style - the one attribute
+    # python-markdown generates that no allowlist above covers.
+    html = _render("# M\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n")
+    assert 'style="text-align: left;"' in html
+    assert 'style="text-align: right;"' in html
+
+
+def test_a_style_smuggled_onto_a_table_cell_is_still_dropped():
+    html = _render('# M\n\nParagraph.\n{: style="text-align: left; background:url(http://x/y)" }\n')
+    assert "background:url" not in html
+
+
+def test_symbol_anchors_and_template_classes_survive():
+    html = _render("# M\n\n## Klass {: #klass-id }\n\nSome prose.\n{: .ai-generated }\n")
+    assert 'id="klass-id"' in html
+    assert 'class="ai-generated"' in html
+
+
+def test_a_mermaid_fence_still_reaches_its_pre_class():
+    # The `class="language-mermaid"` the fence produces is what
+    # `_MERMAID_FENCE_PATTERN` keys on downstream; dropping it in the tree pass
+    # would silently stop every diagram from rendering.
+    html = _render("# M\n\n```mermaid\nflowchart LR\n  A --> B\n```\n")
+    assert '<pre class="mermaid">' in html
+
+
+def test_ordinary_markdown_links_and_images_are_untouched():
+    html = _render("# M\n\n[other](other.md) and ![badge](https://example.com/b.svg)\n")
+    assert 'href="other.html"' in html  # rewritten .md -> .html, still present
+    assert 'src="https://example.com/b.svg"' in html

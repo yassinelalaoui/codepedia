@@ -14,6 +14,7 @@ from repository_metadata.sqlite_store import connect as connect_metadata_db
 from vector_index import VectorIndex
 
 from .app import create_app
+from .security import allowed_hosts_for, generate_token, startup_lines
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -54,10 +55,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return build_arg_parser().parse_args(argv)
 
 
-def _startup_message(host: str, port: int) -> str:
-    return f"Documentation wiki available at http://{host}:{port}/"
-
-
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     repo_root = Path(args.repo).expanduser().resolve()
@@ -89,8 +86,18 @@ def main(argv: list[str] | None = None) -> None:
     vector_index = VectorIndex(repo_root, metadata_db, embedding_engine=embedding_engine)
     docs_root = Path(args.docs_root)
 
-    app = create_app(vector_index, embedding_engine, llm_engine, docs_root, repository_metadata_db)
-    print(_startup_message(args.host, args.port))
+    token = generate_token()
+    app = create_app(
+        vector_index,
+        embedding_engine,
+        llm_engine,
+        docs_root,
+        repository_metadata_db,
+        auth_token=token,
+        allowed_hosts=allowed_hosts_for(args.host),
+    )
+    for line in startup_lines(args.host, args.port, token):
+        print(line)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

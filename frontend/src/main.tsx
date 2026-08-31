@@ -3,7 +3,12 @@ import { createRoot } from "react-dom/client";
 import { SearchWidget } from "./components/SearchWidget";
 import { ChatPanel } from "./components/ChatPanel";
 import { TocHighlighter } from "./components/TocHighlighter";
+import { captureApiTokenFromUrl } from "./lib/apiToken";
 import "./styles.css";
+
+// Before anything mounts: ChatPanel fires a history request on its first
+// render if the URL names a session, and that request needs the token.
+captureApiTokenFromUrl();
 
 function mount(elementId: string, node: ReactNode): void {
   const container = document.getElementById(elementId);

@@ -50,19 +50,6 @@ class SessionHistoryResponse(BaseModel):
     messages: tuple[ChatMessageView, ...]
 
 
-class SessionSummary(BaseModel):
-    """One entry in `GET /sessions` (027) - deliberately excludes messages;
-    a summary for picking a session to resume, not that session's history."""
-
-    sessionId: str
-    createdAt: str
-    lastActivityAt: str
-
-
-class SessionListResponse(BaseModel):
-    sessions: tuple[SessionSummary, ...]
-
-
 class ApiErrorResponse(BaseModel):
     code: str
     message: str

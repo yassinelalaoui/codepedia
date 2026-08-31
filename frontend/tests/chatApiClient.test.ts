@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { askQuestion, ChatApiError, listSessions } from "../src/lib/chatApiClient";
+import { askQuestion, ChatApiError, createSession, getHistory } from "../src/lib/chatApiClient";
+import { captureApiTokenFromUrl, TOKEN_HEADER } from "../src/lib/apiToken";
 
 /** A mock `fetch` Response body exposing just the `getReader()` shape our
  * SSE-parsing code needs — avoids depending on a real `ReadableStream`
@@ -131,25 +132,67 @@ describe("askQuestion", () => {
   });
 });
 
-describe("listSessions", () => {
+describe("the API token", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.sessionStorage.clear();
+    window.history.replaceState(null, "", "/modules/m.html");
   });
 
-  it("performs a plain GET /sessions and resolves with the parsed list", async () => {
-    const body = {
-      sessions: [
-        { sessionId: "session-1", createdAt: "2026-08-20T10:00:00Z", lastActivityAt: "2026-08-25T09:00:00Z" },
-      ],
-    };
-    const fetchMock = vi.fn(async () => jsonResponse(200, body));
+  function withToken(token: string): void {
+    window.history.replaceState(null, "", `/modules/m.html?token=${token}`);
+    captureApiTokenFromUrl();
+  }
+
+  it("moves ?token= out of the address bar and into storage on first load", () => {
+    withToken("sekret");
+
+    expect(window.location.search).toBe("");
+    expect(window.sessionStorage.getItem("codepedia.apiToken")).toBe("sekret");
+  });
+
+  it("keeps the rest of the query string and the hash intact", () => {
+    window.history.replaceState(null, "", "/modules/m.html?chatSession=s1&token=sekret#anchor");
+    captureApiTokenFromUrl();
+
+    expect(window.location.search).toBe("?chatSession=s1");
+    expect(window.location.hash).toBe("#anchor");
+  });
+
+  it("is sent on a plain JSON request", async () => {
+    withToken("sekret");
+    const fetchMock = vi.fn(async () => jsonResponse(201, { sessionId: "s1" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await listSessions();
+    await createSession();
 
-    expect(result).toEqual(body);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe("/sessions");
-    expect(init?.method ?? "GET").toBe("GET");
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init?.headers as Record<string, string>)[TOKEN_HEADER]).toBe("sekret");
+  });
+
+  it("is sent on the streaming ask request too", async () => {
+    withToken("sekret");
+    const fetchMock = vi.fn(async () =>
+      sseResponse([
+        `data: ${JSON.stringify({ fragment: "hi" })}\n\n`,
+        `event: done\ndata: ${JSON.stringify({ answer: "hi", citedSymbolIds: [], citedFilePaths: [] })}\n\n`,
+      ])
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await askQuestion("s1", "who?", () => {});
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init?.headers as Record<string, string>)[TOKEN_HEADER]).toBe("sekret");
+  });
+
+  it("sends no token header when the page was opened without one", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { sessionId: "s1", messages: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getHistory("s1");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init?.headers as Record<string, string>)[TOKEN_HEADER]).toBeUndefined();
   });
 });

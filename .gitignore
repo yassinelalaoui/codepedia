@@ -60,6 +60,9 @@ frontend/dist/
 # documentation of this codebase - keep them out of the public repo entirely.
 # (architecture.md, stack.md, and diagrams/ remain tracked - those document
 # the project itself.)
+# The whole report source folder (chapters, preamble, its own imgs/ and
+# built PDF) - added 2026-08-31 when pfa.tex was split into docs/pfa/.
+docs/pfa/
 docs/pfa.tex
 docs/*.aux
 docs/*.log

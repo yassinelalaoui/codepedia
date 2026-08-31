@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import urllib.request
 
-from fastapi.testclient import TestClient
-
-from ._chat_api_support import FakeEmbeddingEngine, FakeLLMEngine, build_test_app, parse_sse_events
+from ._chat_api_support import (
+    FakeEmbeddingEngine,
+    FakeLLMEngine,
+    api_client,
+    build_test_app,
+    parse_sse_events,
+)
 
 
 def _blocked_urlopen(*args, **kwargs):
@@ -13,7 +17,7 @@ def _blocked_urlopen(*args, **kwargs):
 
 def test_create_session_returns_unique_id_with_empty_history(tmp_path):
     app, index = build_test_app(tmp_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     response_one = client.post("/sessions")
     response_two = client.post("/sessions")
@@ -32,7 +36,7 @@ def test_ask_question_streams_fragments_then_a_structured_cited_done_event(tmp_p
     monkeypatch.setattr(urllib.request, "urlopen", _blocked_urlopen)
 
     app, index = build_test_app(tmp_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     response = client.post(
@@ -61,7 +65,7 @@ def test_ask_question_mid_stream_failure_ends_with_error_event_and_no_history_si
     embedding_engine = FakeEmbeddingEngine()
     llm_engine = FakeLLMEngine(fail_after_fragments=1)
     app, index = build_test_app(tmp_path, embedding_engine=embedding_engine, llm_engine=llm_engine)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     response = client.post(f"/sessions/{session_id}/messages", json={"question": "where is auth handled?"})
@@ -85,7 +89,7 @@ def test_ask_question_mid_stream_failure_ends_with_error_event_and_no_history_si
 
 def test_ask_question_on_unknown_session_returns_404_without_side_effects(tmp_path):
     app, index = build_test_app(tmp_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     response = client.post("/sessions/does-not-exist/messages", json={"question": "where is auth handled?"})
     index.close()
@@ -96,7 +100,7 @@ def test_ask_question_on_unknown_session_returns_404_without_side_effects(tmp_pa
 
 def test_ask_empty_question_returns_422_without_side_effects(tmp_path):
     app, index = build_test_app(tmp_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     response = client.post(f"/sessions/{session_id}/messages", json={"question": "   "})
@@ -114,7 +118,7 @@ def test_ask_question_with_unavailable_local_model_returns_503_without_side_effe
     embedding_engine = FakeEmbeddingEngine()
     llm_engine = FakeLLMEngine(available=False)
     app, index = build_test_app(tmp_path, embedding_engine=embedding_engine, llm_engine=llm_engine)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     response = client.post(f"/sessions/{session_id}/messages", json={"question": "where is auth handled?"})
@@ -131,7 +135,7 @@ def test_ask_question_with_unavailable_local_model_returns_503_without_side_effe
 
 def test_history_is_empty_for_unused_session_and_404_for_unknown_session(tmp_path):
     app, index = build_test_app(tmp_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     empty_history_response = client.get(f"/sessions/{session_id}/messages")
@@ -146,7 +150,7 @@ def test_history_is_empty_for_unused_session_and_404_for_unknown_session(tmp_pat
 
 def test_history_reflects_asked_questions_in_order_with_matching_citations(tmp_path):
     app, index = build_test_app(tmp_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     ask_response = client.post(
@@ -175,7 +179,7 @@ def test_history_reflects_asked_questions_in_order_with_matching_citations(tmp_p
 def test_session_history_survives_a_simulated_restart_via_http(tmp_path):
     metadata_db_path = tmp_path / "repository-metadata.sqlite"
     app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     ask_response = client.post(
@@ -188,49 +192,28 @@ def test_session_history_survives_a_simulated_restart_via_http(tmp_path):
     # Simulate a full server restart: build a brand-new app/SessionRegistry
     # pointed at the same metadata db path - nothing in-memory carries over.
     restarted_app, restarted_index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
-    restarted_client = TestClient(restarted_app)
+    restarted_client = api_client(restarted_app)
     after = restarted_client.get(f"/sessions/{session_id}/messages").json()
-    listed_sessions = restarted_client.get("/sessions").json()["sessions"]
     restarted_index.close()
 
     assert ask_response.status_code == 200
     assert after == before
     assert len(after["messages"]) == 2
-    # The session is discoverable via GET /sessions after the restart too
-    # (027 FR-002), not just retrievable by an id the client already knows.
-    (listed_session,) = [s for s in listed_sessions if s["sessionId"] == session_id]
-    assert listed_session["createdAt"]
-    assert listed_session["lastActivityAt"]
 
 
-def test_list_sessions_returns_empty_list_when_none_exist(tmp_path):
+def test_the_api_does_not_expose_a_session_listing(tmp_path):
+    # `SessionRegistry.list_sessions()` still exists and is still tested
+    # (tests/integration/test_session_registry.py); what is gone is the route
+    # that handed every conversation on this machine to any caller.
     app, index = build_test_app(tmp_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     response = client.get("/sessions")
     index.close()
 
-    assert response.status_code == 200
-    assert response.json() == {"sessions": []}
-
-
-def test_list_sessions_returns_every_session_ordered_most_recently_active_first(tmp_path):
-    metadata_db_path = tmp_path / "repository-metadata.sqlite"
-    app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
-    client = TestClient(app)
-
-    first_session_id = client.post("/sessions").json()["sessionId"]
-    second_session_id = client.post("/sessions").json()["sessionId"]
-    # Asking a question on the first session bumps its lastActivityAt past
-    # the second session's, so it should now sort first despite being older.
-    client.post(f"/sessions/{first_session_id}/messages", json={"question": "where is auth handled?"})
-    response = client.get("/sessions")
-    index.close()
-
-    body = response.json()
-    session_ids = [session["sessionId"] for session in body["sessions"]]
-    assert session_ids == [first_session_id, second_session_id]
-    assert set(body["sessions"][0].keys()) == {"sessionId", "createdAt", "lastActivityAt"}
+    # No route matches, so the request falls through to the wiki mount and gets
+    # an ordinary 404 - the same answer as any other path that is not a page.
+    assert response.status_code == 404
 
 
 def test_unknown_session_returns_404_after_restart(tmp_path):
@@ -239,7 +222,7 @@ def test_unknown_session_returns_404_after_restart(tmp_path):
     index.close()
 
     restarted_app, restarted_index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
-    client = TestClient(restarted_app)
+    client = api_client(restarted_app)
     response = client.get("/sessions/never-created/messages")
     restarted_index.close()
 
@@ -250,7 +233,7 @@ def test_unknown_session_returns_404_after_restart(tmp_path):
 def test_ask_question_response_and_history_carry_generated_by(tmp_path):
     metadata_db_path = tmp_path / "repository-metadata.sqlite"
     app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     session_id = client.post("/sessions").json()["sessionId"]
     response = client.post(f"/sessions/{session_id}/messages", json={"question": "where is auth handled?"})
@@ -270,7 +253,7 @@ def test_ask_question_response_and_history_carry_generated_by(tmp_path):
 def test_failover_log_endpoint_returns_empty_list_with_no_events(tmp_path):
     metadata_db_path = tmp_path / "repository-metadata.sqlite"
     app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     response = client.get("/providers/failover-log")
     index.close()
@@ -285,7 +268,7 @@ def test_failover_log_endpoint_returns_appended_events_filtered_by_stage(tmp_pat
 
     metadata_db_path = tmp_path / "repository-metadata.sqlite"
     app, index = build_test_app(tmp_path, metadata_db_path=metadata_db_path)
-    client = TestClient(app)
+    client = api_client(app)
 
     connection = connect(metadata_db_path)
     append_failover_event(connection, stage="chat", attempted_provider="groq:m1", result_provider="local:m2", reason="network_error")

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, Sequence
 
 from chat import ChatMessage
 from chat.session import ensure_local_dependencies_available
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Query
 from provider_routing import list_failover_events
 from repository_metadata.sqlite_store import connect as connect_metadata_db
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import StreamingResponse
 from starlette.staticfiles import StaticFiles
 
@@ -22,10 +23,18 @@ from .schemas import (
     FailoverLogEntryView,
     FailoverLogResponse,
     SessionHistoryResponse,
-    SessionListResponse,
-    SessionSummary,
+)
+from .security import (
+    DEFAULT_ALLOWED_HOSTS,
+    generate_token,
+    require_api_token,
 )
 from .session_store import SessionRegistry
+
+# The failover log is a diagnostic, not a feed: an unbounded `limit` lets one
+# request pull the whole table into memory and serialize it.
+MAX_FAILOVER_LOG_LIMIT = 500
+DEFAULT_FAILOVER_LOG_LIMIT = 100
 
 
 def _error_code_for(exc: Exception) -> str:
@@ -40,20 +49,31 @@ def create_app(
     docs_root: str | Path,
     metadata_db_path: str | Path | None = None,
     dependency_graph: Any = None,
+    auth_token: str | None = None,
+    allowed_hosts: Sequence[str] = DEFAULT_ALLOWED_HOSTS,
 ) -> FastAPI:
     app = FastAPI(title="Local Chat API")
     app.state.session_registry = SessionRegistry(
         vector_index, embedding_engine, llm_engine, metadata_db_path, dependency_graph=dependency_graph
     )
     app.state.metadata_db_path = metadata_db_path
+    # Generated rather than defaulted to "no auth": a caller that forgets to
+    # pass a token gets a random one it cannot use, never an open API.
+    app.state.authToken = auth_token or generate_token()
+    # Rejects a `Host` this server was not reached by name at - the DNS
+    # rebinding defence, and the only one that works before any route runs.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
     register_exception_handlers(app)
 
-    @app.post("/sessions", status_code=201)
+    # Every API route is token-guarded; the wiki mount at the bottom is not.
+    # A dependency per route rather than a middleware, precisely so that the
+    # `StaticFiles` catch-all cannot be swept in by accident.
+    @app.post("/sessions", status_code=201, dependencies=[Depends(require_api_token)])
     def create_session() -> CreateSessionResponse:
         session = app.state.session_registry.create_session()
         return CreateSessionResponse(sessionId=session.id)
 
-    @app.post("/sessions/{session_id}/messages")
+    @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_api_token)])
     async def ask_question(session_id: str, request: AskQuestionRequest) -> StreamingResponse:
         session = app.state.session_registry.get_session(session_id)
         # Checked here, before any StreamingResponse is constructed, so an
@@ -82,21 +102,7 @@ def create_app(
 
         return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
-    @app.get("/sessions")
-    def list_sessions() -> SessionListResponse:
-        sessions = app.state.session_registry.list_sessions()
-        return SessionListResponse(
-            sessions=tuple(
-                SessionSummary(
-                    sessionId=session.id,
-                    createdAt=session.createdAt,
-                    lastActivityAt=session.lastActivityAt,
-                )
-                for session in sessions
-            )
-        )
-
-    @app.get("/sessions/{session_id}/messages")
+    @app.get("/sessions/{session_id}/messages", dependencies=[Depends(require_api_token)])
     def get_history(session_id: str) -> SessionHistoryResponse:
         session = app.state.session_registry.get_session(session_id)
         messages = tuple(
@@ -112,8 +118,11 @@ def create_app(
         )
         return SessionHistoryResponse(sessionId=session_id, messages=messages)
 
-    @app.get("/providers/failover-log")
-    def get_failover_log(stage: Optional[str] = None, limit: int = 100) -> FailoverLogResponse:
+    @app.get("/providers/failover-log", dependencies=[Depends(require_api_token)])
+    def get_failover_log(
+        stage: Optional[str] = None,
+        limit: int = Query(DEFAULT_FAILOVER_LOG_LIMIT, ge=1, le=MAX_FAILOVER_LOG_LIMIT),
+    ) -> FailoverLogResponse:
         db_path = app.state.metadata_db_path
         if db_path is None:
             return FailoverLogResponse(events=())

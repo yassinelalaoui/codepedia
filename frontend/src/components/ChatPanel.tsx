@@ -160,7 +160,14 @@ export function ChatPanel() {
       // drop the question/in-progress-answer pair optimistically rendered
       // above rather than leaving a stale indicator or partial answer.
       setMessages((previous) => previous.slice(0, -2));
-      if (error instanceof ChatApiError) {
+      if (error instanceof ChatApiError && error.status === 401) {
+        // The page loaded without the `?token=` the server printed - opening
+        // any wiki page directly does that. The API's own message says as
+        // much, but it is written for a caller, not for a reader.
+        setErrorMessage(
+          "This page was opened without the access token. Reopen the URL printed when the server started."
+        );
+      } else if (error instanceof ChatApiError) {
         setErrorMessage(error.message);
       } else {
         setErrorMessage("The chat is unavailable right now. Please try again later.");
