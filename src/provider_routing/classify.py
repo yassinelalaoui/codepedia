@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 FailureReason = Literal[
-    "network_error", "rate_limited", "auth_failed", "model_missing", "unknown"
+    "network_error", "rate_limited", "auth_failed", "model_missing", "empty_response", "unknown"
 ]
 
 # spec FR-005 triggers failover on a network error, a rate/quota limit, or an
@@ -31,6 +31,11 @@ _KIND_TO_REASON: dict[str, FailureReason] = {
     "rate_limited": "rate_limited",
     "missing_api_key": "auth_failed",
     "model_missing": "model_missing",
+    # A provider that answered, but with nothing in it. Small local models do
+    # this occasionally, and the next provider in the chain is a different
+    # model that will very likely answer - so this switches rather than ending
+    # the run. Raised by repository_metadata.summary_pipeline.EmptySummaryError.
+    "empty_response": "empty_response",
 }
 
 

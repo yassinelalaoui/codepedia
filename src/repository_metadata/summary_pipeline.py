@@ -54,6 +54,24 @@ class SummaryPipelineError(RuntimeError):
     pass
 
 
+class EmptySummaryError(SummaryPipelineError):
+    """One provider returned a blank summary for one symbol.
+
+    Carries `.kind` so `provider_routing.classify_failure` can read it like any
+    engine error and fail the symbol over to the next provider in the chain.
+    Raised *inside* the `FailoverExecutor.run` callable for exactly that reason
+    - checked after the executor returned, a blank answer from the first
+    provider ended the whole indexing run instead of asking the second one.
+
+    Small local models return an occasional empty completion; that is ordinary
+    behaviour, not a broken repository. One blank answer at symbol 454 of 500
+    used to discard twenty minutes of finished work, because `index` builds
+    into a staging directory and deletes it on any exception.
+    """
+
+    kind = "empty_response"
+
+
 class LocalLLMUnavailableError(SummaryPipelineError):
     pass
 
@@ -392,10 +410,20 @@ class CodeSummaryPipeline:
             )
 
         prompt = self._build_prompt(summary_context)
-        failover_result = self.llmEngine.run(lambda engine: engine.generate(prompt))
-        generated_summary = failover_result.value.strip()
-        if not generated_summary:
-            raise SummaryPipelineError(f"LLM returned an empty summary for symbol {symbol.id}")
+
+        def generate_non_empty(engine: Any) -> str:
+            # The emptiness check belongs to the provider that produced it, so
+            # it has to happen in here: raising after `run` returns is past the
+            # point where the chain can still try anyone else.
+            text = engine.generate(prompt).strip()
+            if not text:
+                raise EmptySummaryError(
+                    f"LLM returned an empty summary for symbol {symbol.id}"
+                )
+            return text
+
+        failover_result = self.llmEngine.run(generate_non_empty)
+        generated_summary = failover_result.value
         result = SummaryResult(
             symbolId=symbol.id,
             generatedSummary=generated_summary,

@@ -167,3 +167,74 @@ def test_worker_count_must_be_at_least_one(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="maxWorkers"):
         _pipeline(store, graph, _ConcurrencyProbe(), workers=0)
+
+
+# ---------------------------------------------------------------------------
+# An empty completion fails the symbol over rather than ending the run
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedEngine:
+    """Returns each queued string in turn; `""` stands for a blank completion."""
+
+    def __init__(self, *replies: str) -> None:
+        self.modelName = "scripted"
+        self.endpointUrl = "http://localhost:11434"
+        self._replies = list(replies)
+        self._lock = threading.Lock()
+        self.call_count = 0
+
+    def checkAvailability(self) -> AvailabilityStatus:
+        return AvailabilityStatus(True, True, True, "available")
+
+    def isAvailableLocally(self) -> bool:
+        return True
+
+    def isAvailable(self) -> bool:
+        return True
+
+    def generate(self, prompt) -> str:
+        with self._lock:
+            self.call_count += 1
+            return self._replies.pop(0) if self._replies else "fallback summary"
+
+
+def _two_provider_pipeline(store, graph, first, second) -> CodeSummaryPipeline:
+    chain = ((ProviderRef.parse("local:blank"), first), (ProviderRef.parse("groq:real"), second))
+    return CodeSummaryPipeline(
+        metadataStore=store,
+        dependencyGraph=graph,
+        llmEngine=FailoverExecutor("summary", chain),
+        maxWorkers=1,
+    )
+
+
+def test_a_blank_completion_fails_over_to_the_next_provider(tmp_path) -> None:
+    """A small local model returning nothing is ordinary, not fatal: the chain
+    asks the next provider for that symbol and the run continues."""
+    root, store, graph = _prepared_repository(tmp_path)
+    blank = _ScriptedEngine("")  # blank once, then non-empty
+    real = _ScriptedEngine()
+
+    results = _two_provider_pipeline(store, graph, blank, real).summarizeRepository(
+        root, incremental=False
+    )
+
+    assert len(results) > 1  # the run finished every symbol, not just the first
+    assert all(result.generatedSummary for result in results)
+    assert real.call_count == 1  # exactly the one symbol the local model blanked
+    assert results[0].modelName == "groq:real"
+    assert results[1].modelName == "local:blank"
+
+
+def test_a_blank_completion_from_every_provider_still_raises(tmp_path) -> None:
+    """Failover is not silent tolerance - if nobody produces text, the run
+    still fails rather than writing an empty summary."""
+    root, store, graph = _prepared_repository(tmp_path)
+
+    with pytest.raises(Exception) as excinfo:
+        _two_provider_pipeline(
+            store, graph, _ScriptedEngine(""), _ScriptedEngine("")
+        ).summarizeRepository(root, incremental=False)
+
+    assert "empty_response" in str(excinfo.value)
