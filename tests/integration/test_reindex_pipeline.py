@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from shutil import copytree
 from unittest.mock import patch
@@ -243,27 +242,33 @@ def test_incremental_single_file_update_matches_a_full_reindex(tmp_path):
     assert {f.name for f in incremental_beta.functions} == {f.name for f in reference_beta.functions}
 
 
-def test_single_file_incremental_run_is_far_faster_than_a_full_reindex(tmp_path):
+def test_incremental_run_reparses_only_the_changed_file(tmp_path):
+    """The incremental path must do single-file work, not repository-wide work.
+
+    This used to be asserted with two `perf_counter` readings and
+    `incremental < max(full * 5, 1.0)`. That comparison never meant anything:
+    the x5 margin is wide enough that a pass reparsing the whole repository
+    would still have passed it, and the threshold goes red on any machine where
+    loading the tree-sitter grammars gets slower - a change to nothing this test
+    is about. Counting the reparses instead states the actual guarantee.
+    """
     harness = Harness(tmp_path)
     (harness.root / "beta.py").write_text(
         harness.root.joinpath("beta.py").read_text(encoding="utf-8") + "\n# touch\n",
         encoding="utf-8",
     )
-
-    full_start = time.perf_counter()
-    for py_file in sorted(harness.root.glob("*.py")):
-        source_file = SourceFile(path=py_file, language="python")
-        extract_symbols(source_file)
-    full_duration = time.perf_counter() - full_start
+    other_files = sorted(p.name for p in harness.root.glob("*.py") if p.name != "beta.py")
+    assert other_files, "fixture must hold more than the one changed file"
 
     pipeline = harness.build_pipeline()
-    incremental_start = time.perf_counter()
-    pipeline.run(_batch(("beta.py", ChangeType.MODIFIED)))
-    incremental_duration = time.perf_counter() - incremental_start
+    with patch(
+        "reindex_pipeline.pipeline.extract_symbols", side_effect=extract_symbols
+    ) as spy:
+        outcome = pipeline.run(_batch(("beta.py", ChangeType.MODIFIED)))
 
-    # Not a strict timing guarantee (machine-dependent) - just proves the incremental
-    # path does bounded, single-file work rather than repository-wide work.
-    assert incremental_duration < max(full_duration * 5, 1.0)
+    reparsed = [Path(call.args[0].path).name for call in spy.call_args_list]
+    assert reparsed == ["beta.py"]
+    assert outcome.reprocessedPaths == ("beta.py",)
 
 
 def test_pipeline_never_calls_scan_repository(tmp_path):
@@ -432,3 +437,33 @@ def test_summary_failure_does_not_block_metadata_graph_or_embedding_updates(tmp_
     helper = next(f for f in beta_bundle.functions if f.name == "beta_helper")
     assert helper.lineEnd >= helper.lineStart  # metadata was re-stored
     assert harness.vector_index.chunks_for_file("beta.py") != ()
+
+
+# ---------------------------------------------------------------------------
+# Long-running `serve`: scope files must not be read once and cached forever
+# ---------------------------------------------------------------------------
+
+
+def test_a_gitignore_edited_mid_serve_changes_what_gets_indexed(tmp_path):
+    """The pipeline builds one `IgnoreMatcher` in `__init__` and keeps it for
+    the life of the process. Without invalidation, a `.gitignore` written while
+    the server runs had no effect until a restart."""
+    harness = Harness(tmp_path)
+    pipeline = harness.build_pipeline()
+    (harness.root / "delta.py").write_text(
+        '"""Delta module."""\n\n\ndef delta_entry() -> int:\n    return 42\n', encoding="utf-8"
+    )
+
+    outcome = pipeline.run(_batch(("delta.py", ChangeType.CREATED)))
+    assert outcome.reprocessedPaths == ("delta.py",)
+
+    (harness.root / ".gitignore").write_text("delta.py\n", encoding="utf-8")
+    (harness.root / "delta.py").write_text(
+        '"""Delta module."""\n\n\ndef delta_entry() -> int:\n    return 43\n', encoding="utf-8"
+    )
+
+    outcome = pipeline.run(
+        _batch((".gitignore", ChangeType.CREATED), ("delta.py", ChangeType.MODIFIED))
+    )
+
+    assert "delta.py" not in outcome.reprocessedPaths

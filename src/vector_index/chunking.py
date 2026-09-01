@@ -54,7 +54,14 @@ def build_code_chunk(
     it a reused vector would be stored with an empty model id and stop matching
     `search`'s `embeddingModelId` filter, which is exactly how a cached chunk
     would silently vanish from results."""
-    normalized_content = content if content.endswith("\n") else content
+    # Deliberately a plain assignment. This used to read
+    # `content if content.endswith("\n") else content` - both branches
+    # identical, so it never normalized anything. The readable intent was to
+    # append the missing newline, but `build_chunk_id` hashes what is passed
+    # here: adding one now would change every chunk id in every existing index
+    # and force a full reindex, for a trailing newline. The name is kept
+    # because the value is passed on under it below.
+    normalized_content = content
     if embedding is None:
         embedding_model_id = ""
         if embedding_engine is None:

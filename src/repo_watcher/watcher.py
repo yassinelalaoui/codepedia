@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import threading
 import traceback
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Callable
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from repo_scanner.binary import is_binary_path
-from repo_scanner.ignore import load_ignore_matcher
+from repo_scanner.ignore import GITIGNORE_FILENAME, load_ignore_matcher
 from repo_scanner.scanner import os_accessible
 from repository_metadata import RepositoryMetadataStore
 
@@ -78,6 +78,12 @@ class RepositoryWatcher:
             self._report_error(exc)
 
     def _notify_raw_event(self, relative_path: str, change_type: ChangeType, *, is_dir: bool) -> None:
+        # Before the `ignores()` test, not after: the edit *is* the rule change,
+        # and this matcher is built once at construction and held for the whole
+        # life of `serve`. Asking a cache that predates the edit whether the
+        # edit matters answers with the old rules.
+        if PurePosixPath(relative_path).name == GITIGNORE_FILENAME:
+            self._ignore_matcher.invalidate()
         if self._ignore_matcher.ignores(relative_path, is_dir=is_dir):
             return
         self._debouncer.notify(relative_path, change_type)

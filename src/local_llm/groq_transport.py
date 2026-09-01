@@ -7,6 +7,8 @@ from typing import AsyncIterator
 
 import httpx
 
+from http_support import parse_retry_after
+
 from .errors import MissingApiKeyError, RateLimitedError, RemoteGenerationFailedError
 from .models import AvailabilityStatus, PromptEnvelope
 
@@ -83,6 +85,7 @@ class GroqLLMTransport:
                 modelInstalled=True,
                 message=f"Groq API at {self.endpointUrl} is rate-limiting this key (HTTP 429).",
                 rateLimited=True,
+                retryAfterSeconds=parse_retry_after(response.headers),
             )
         if response.status_code >= 400:
             return AvailabilityStatus(
@@ -134,6 +137,7 @@ class GroqLLMTransport:
                                 f"'{model_name}' (HTTP 429).",
                                 endpointUrl=self.endpointUrl,
                                 modelName=model_name,
+                                retryAfterSeconds=parse_retry_after(response.headers),
                             ) from None
                         raise RemoteGenerationFailedError(
                             f"Groq API at {self.endpointUrl} rejected the request for model "

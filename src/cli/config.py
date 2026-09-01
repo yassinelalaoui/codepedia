@@ -81,7 +81,11 @@ STAGES = ("embeddings", "summary", "chat")
 # bound queue rather than overlap. Leaving these values as they are is
 # deliberate - queueing is harmless, and the numbers still apply unchanged the
 # moment a stage falls back to its remote entry. Lower `summaryConcurrency`
-# via `config` if a local run makes the machine unresponsive.
+# via `config` if a local run makes the machine unresponsive, and note that a
+# tightly-quotaed remote key (a Groq free tier capped by tokens per minute, say)
+# wants 1 here whatever the local path can take. What protects such a key at 4
+# is no longer the guess it used to be: `provider_routing.BackoffPolicy` now
+# waits for as long as the provider's own `Retry-After` header asks.
 DEFAULT_SUMMARY_CONCURRENCY = 4
 DEFAULT_EMBEDDING_CONCURRENCY = 8
 

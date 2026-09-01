@@ -228,3 +228,86 @@ def test_delays_grow_exponentially_and_stop_at_the_cap() -> None:
     caps = [1.0, 2.0, 4.0, 4.0, 4.0]
     for index, cap in enumerate(caps):
         assert 0 <= policy.delay_for(index) <= cap
+
+
+# ---------------------------------------------------------------------------
+# `Retry-After`: the provider says how long, so stop guessing
+# ---------------------------------------------------------------------------
+
+
+def _rate_limited_after(seconds: float | None) -> RateLimitedError:
+    return RateLimitedError(
+        "HTTP 429", endpointUrl="https://api.groq.com", modelName="m", retryAfterSeconds=seconds
+    )
+
+
+def test_a_stated_retry_after_is_a_floor_on_the_wait() -> None:
+    """The exponential is a guess; `Retry-After` is the provider's answer. Never
+    wake before it, whatever the jitter drew."""
+    sleep = _RecordingSleep()
+    engine = _Engine(_rate_limited_after(7.0), _rate_limited_after(7.0))
+
+    executor = FailoverExecutor(
+        "summary", ((ProviderRef.parse("groq:m1"), engine),), sleep=sleep
+    )
+    result = executor.run(lambda e: e.run())
+
+    assert result.value == "ok"
+    assert len(sleep.delays) == 2
+    assert all(delay >= 7.0 for delay in sleep.delays)
+
+
+def test_threads_sharing_one_retry_after_do_not_wake_in_lockstep() -> None:
+    """The jittered exponential is added on top of the floor rather than
+    replacing it with `max()`. Every pool thread that hit the same 429 reads the
+    same header, so a bare `max()` would wake them all at the same instant and
+    re-hit the limit together - the failure full jitter exists to prevent."""
+    delays = set()
+    for _ in range(40):
+        sleep = _RecordingSleep()
+        executor = FailoverExecutor(
+            "summary",
+            ((ProviderRef.parse("groq:m1"), _Engine(_rate_limited_after(5.0))),),
+            sleep=sleep,
+        )
+        executor.run(lambda e: e.run())
+        delays.add(sleep.delays[0])
+
+    assert len(delays) > 1
+
+
+def test_an_absurd_retry_after_is_capped() -> None:
+    """A wrong or hostile header must not park an indexing thread for an hour."""
+    sleep = _RecordingSleep()
+    policy = BackoffPolicy(maxRetryAfterSeconds=30.0)
+    executor = FailoverExecutor(
+        "summary",
+        ((ProviderRef.parse("groq:m1"), _Engine(_rate_limited_after(3600.0))),),
+        backoff=policy,
+        sleep=sleep,
+    )
+
+    executor.run(lambda e: e.run())
+
+    assert sleep.delays == [30.0]
+
+
+def test_without_a_retry_after_the_schedule_is_unchanged() -> None:
+    """A provider that says nothing must behave exactly as it did before this
+    feature: capped exponential with full jitter, never above maxDelaySeconds."""
+    sleep = _RecordingSleep()
+    policy = BackoffPolicy(initialDelaySeconds=1.0, factor=2.0, maxDelaySeconds=4.0, maxWaits=4)
+    engine = _Engine(*(_rate_limited_after(None) for _ in range(4)))
+
+    executor = FailoverExecutor(
+        "summary", ((ProviderRef.parse("groq:m1"), engine),), backoff=policy, sleep=sleep
+    )
+    executor.run(lambda e: e.run())
+
+    assert len(sleep.delays) == 4
+    assert all(0.0 <= delay <= 4.0 for delay in sleep.delays)
+
+
+def test_a_negative_maxRetryAfterSeconds_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        BackoffPolicy(maxRetryAfterSeconds=-1.0)

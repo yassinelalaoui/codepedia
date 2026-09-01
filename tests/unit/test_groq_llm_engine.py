@@ -189,3 +189,77 @@ def test_check_availability_rejects_an_invalid_api_key(monkeypatch):
     finally:
         server.shutdown()
         server.server_close()
+
+
+class _RateLimitedWithRetryAfterHandler(_GroqHandler):
+    """A 429 that says how long to wait, as Groq's really do."""
+
+    def _write_rate_limited(self):
+        body = json.dumps({"error": "rate limited"}).encode("utf-8")
+        self.send_response(429)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Retry-After", "11")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        self._write_rate_limited()
+
+    def do_POST(self):
+        self._write_rate_limited()
+
+
+def test_a_429_carries_its_retry_after_through_both_paths(monkeypatch):
+    """Both the pre-flight probe and the generate path have to hand the header
+    on: `provider_routing` reads it off the exception, and either path is where
+    an indexing thread meets the limit."""
+    from local_llm.groq_transport import GroqLLMTransport
+    from local_llm.models import PromptEnvelope
+
+    monkeypatch.setenv(API_KEY_ENV_VAR, "test-key")
+    server = _start_server(_RateLimitedWithRetryAfterHandler)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        engine = create_groq_llm_engine("llama-3.3-70b-versatile", endpoint, timeout=1.0, generate_timeout=2.0)
+
+        status = engine.checkAvailability()
+        assert status.rateLimited is True
+        assert status.retryAfterSeconds == 11.0
+
+        with pytest.raises(RateLimitedError) as raised:
+            engine.generate("hello")
+        assert raised.value.retryAfterSeconds == 11.0
+
+        transport = GroqLLMTransport(endpoint, timeout=1.0, generateTimeout=2.0)
+
+        async def _drain():
+            return [
+                fragment
+                async for fragment in transport.generate_stream(
+                    "llama-3.3-70b-versatile", PromptEnvelope.from_prompt("hello")
+                )
+            ]
+
+        with pytest.raises(RateLimitedError) as raised:
+            asyncio.run(_drain())
+        assert raised.value.retryAfterSeconds == 11.0
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_429_without_the_header_leaves_the_wait_unstated(monkeypatch):
+    monkeypatch.setenv(API_KEY_ENV_VAR, "test-key")
+    server = _start_server(_RateLimitedHandler)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        engine = create_groq_llm_engine("llama-3.3-70b-versatile", endpoint, timeout=1.0, generate_timeout=2.0)
+
+        assert engine.checkAvailability().retryAfterSeconds is None
+        with pytest.raises(RateLimitedError) as raised:
+            engine.generate("hello")
+        assert raised.value.retryAfterSeconds is None
+    finally:
+        server.shutdown()
+        server.server_close()

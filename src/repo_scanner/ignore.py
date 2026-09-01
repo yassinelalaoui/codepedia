@@ -43,6 +43,18 @@ class IgnoreMatcher:
             return decision
         return _matches_default_excludes(normalized)
 
+    def invalidate(self) -> None:
+        """Forget every parsed `.gitignore`, so the next `ignores()` re-reads them.
+
+        `serve` builds one matcher at startup and holds it for the life of the
+        process (`repo_watcher.RepositoryWatcher`,
+        `reindex_pipeline.IncrementalReindexPipeline`). Without this, editing a
+        `.gitignore` while the server runs had no effect at all until a restart -
+        the cache answered from the file as it stood when the watcher was
+        launched.
+        """
+        self._spec_cache.clear()
+
     def _spec_for(self, directory: str) -> GitIgnoreSpec | None:
         cached = self._spec_cache.get(directory, _MISSING)
         if cached is not _MISSING:

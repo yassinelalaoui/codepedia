@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
 from chat import ChatSession, sqlite_store as chat_sqlite_store
+
+
+# How many sessions stay resident in one process. Each cached `ChatSession`
+# holds its full message history, and `serve` runs for days: without a bound,
+# every conversation anyone ever opened stayed in memory for the life of the
+# server. 64 is far more than one person keeps open at once, and a miss is not
+# a loss - `get_session` already re-reads an evicted session from
+# `chat.sqlite_store`, which is the same path a fresh process takes.
+MAX_CACHED_SESSIONS = 64
 
 
 class SessionNotFoundError(LookupError):
@@ -33,7 +43,7 @@ class SessionRegistry:
         self._llm_engine = llm_engine
         self._metadata_db_path = metadata_db_path
         self._dependency_graph = dependency_graph
-        self._sessions: dict[str, ChatSession] = {}
+        self._sessions: OrderedDict[str, ChatSession] = OrderedDict()
 
     def create_session(self) -> ChatSession:
         session_id = uuid.uuid4().hex
@@ -47,7 +57,7 @@ class SessionRegistry:
             messageStore=self._metadata_db_path,
             dependencyGraph=self._dependency_graph,
         )
-        self._sessions[session_id] = session
+        self._remember(session_id, session)
         return session
 
     def get_session(self, session_id: str) -> ChatSession:
@@ -58,6 +68,7 @@ class SessionRegistry:
         session doesn't exist."""
         session = self._sessions.get(session_id)
         if session is not None:
+            self._sessions.move_to_end(session_id)
             return session
         if self._metadata_db_path is not None:
             try:
@@ -73,9 +84,24 @@ class SessionRegistry:
             # answering normally.
             stored.dependencyGraph = self._dependency_graph
             stored.messages = list(chat_sqlite_store.load_messages(self._metadata_db_path, session_id))
-            self._sessions[session_id] = stored
+            self._remember(session_id, stored)
             return stored
         raise SessionNotFoundError(session_id)
+
+    def _remember(self, session_id: str, session: ChatSession) -> None:
+        """Cache `session` as most-recently-used, evicting the coldest past capacity.
+
+        Only when a metadata db is configured. Without one this cache *is* the
+        store - `get_session` raises rather than falling back and
+        `list_sessions` reads from here - so evicting would destroy sessions
+        outright instead of demoting them to a re-read.
+        """
+        self._sessions[session_id] = session
+        self._sessions.move_to_end(session_id)
+        if self._metadata_db_path is None:
+            return
+        while len(self._sessions) > MAX_CACHED_SESSIONS:
+            self._sessions.popitem(last=False)
 
     def list_sessions(self) -> tuple[ChatSession, ...]:
         """Every existing session, most-recently-active first (027).

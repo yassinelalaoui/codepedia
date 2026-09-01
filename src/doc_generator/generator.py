@@ -1015,22 +1015,19 @@ class DocGenerator:
         class_count = sum(len(file_bundle.classes) for file_bundle in code_files)
         function_count = sum(len(self._documented_functions(file_bundle)) for file_bundle in code_files)
 
-        # Over `code_files` too, so the per-directory counts still add up to
-        # `moduleCount` rather than to a total that includes documentation.
-        groups: dict[str, int] = {}
-        for file_bundle in code_files:
-            group_name = Path(file_bundle.module.filePath).parent.name or "."
-            groups[group_name] = groups.get(group_name, 0) + 1
-
+        # No per-directory `groups` here. There used to be, keyed on
+        # `Path(...).parent.name`, which `sections._group_members_by_directory`
+        # explains is wrong: `src/api/models` and `src/db/models` collapse into
+        # one "models" bucket and describe a structure the repository does not
+        # have. It was also read by nothing - no template rendered it. The home
+        # page's real grouping is `sections.select_sections`, keyed on the full
+        # repository-relative directory and already wired in through
+        # `section_entries` above.
         return {
             "moduleCount": len(code_files),
             "documentCount": document_count,
             "classCount": class_count,
             "functionCount": function_count,
-            "groups": sorted(
-                ({"name": name, "moduleCount": count} for name, count in groups.items()),
-                key=lambda entry: entry["name"],
-            ),
         }
 
     def _classes_with_methods(self, file_bundle: SourceFileBundle) -> list[tuple[object, tuple]]:

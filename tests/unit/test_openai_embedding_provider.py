@@ -71,3 +71,33 @@ def test_embed_missing_api_key_raises_without_a_network_call(monkeypatch) -> Non
         provider.embed("hello world")
 
     assert calls == []
+
+
+def test_a_429_carries_its_retry_after_onto_the_error(monkeypatch) -> None:
+    """The header has to survive all the way to the exception, because that is
+    where `provider_routing` reads it (`classify.retry_after_seconds`)."""
+    provider = _provider(monkeypatch)
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda url, **kw: httpx.Response(
+            429, json={}, headers={"Retry-After": "9"}, request=httpx.Request("POST", url)
+        ),
+    )
+
+    with pytest.raises(RateLimitedError) as raised:
+        provider.embed("hello world")
+
+    assert raised.value.retryAfterSeconds == 9.0
+
+
+def test_a_429_without_the_header_leaves_the_wait_unstated(monkeypatch) -> None:
+    provider = _provider(monkeypatch)
+    monkeypatch.setattr(
+        httpx, "post", lambda url, **kw: httpx.Response(429, json={}, request=httpx.Request("POST", url))
+    )
+
+    with pytest.raises(RateLimitedError) as raised:
+        provider.embed("hello world")
+
+    assert raised.value.retryAfterSeconds is None

@@ -172,3 +172,38 @@ def test_summary_pipeline_regenerates_impacted_symbols_only(tmp_path):
     results = pipeline.summarizeImpactedSymbols(root, [beta_helper_id])
 
     assert {result.symbolName for result in results} == {"beta_helper", "alpha_entry", "run"}
+
+
+def test_summary_pipeline_survives_a_non_utf8_byte_in_a_source_file(tmp_path):
+    """One undecodable byte must cost that file's fidelity, not the whole pass.
+
+    `_read_source_text` was the only source read in the project without
+    `errors=`. A `UnicodeDecodeError` is not an `OSError`, and both call sites
+    guard only against `OSError` - so a single Latin-1 byte anywhere in the
+    repository aborted summarization for every symbol in it.
+    """
+    root = _copy_fixture_repo(tmp_path)
+    beta = root / "beta.py"
+    beta.write_bytes(beta.read_bytes() + b"\n# caf\xe9\n")
+
+    inventories, edges, graph = _inventories_and_graph(root)
+    store = RepositoryMetadataStore(tmp_path / "repo.sqlite")
+    store.ensure_repository(root, detected_languages=("python",))
+    for inventory in inventories:
+        source_path = Path(inventory.sourceFile)
+        store.store_inventory(
+            repository_root=root,
+            source_file=SourceFile(path=source_path, language="python"),
+            inventory=inventory,
+            dependency_edges=edges,
+            content_hash=compute_content_hash(source_path),
+        )
+
+    engine = RecordingLLMEngine()
+    pipeline = CodeSummaryPipeline(metadataStore=store, dependencyGraph=graph, llmEngine=_wrap(engine))
+
+    results = pipeline.summarizeRepository(root, incremental=False)
+
+    summarized = {result.symbolName for result in results}
+    assert "beta_helper" in summarized
+    assert "alpha_entry" in summarized

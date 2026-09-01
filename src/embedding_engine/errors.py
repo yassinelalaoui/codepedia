@@ -15,6 +15,12 @@ class EmbeddingError(RuntimeError):
     message: str
     endpointUrl: str
     modelName: str
+    # Seconds the provider itself asked us to wait, from the 429's `Retry-After`
+    # header; None when it did not say. A trailing field with a default, so
+    # every subclass's positional `super().__init__(kind, message, endpointUrl,
+    # modelName)` still works unchanged - only the rate-limit subclasses pass it.
+    # Read by `provider_routing.classify.retry_after_seconds`.
+    retryAfterSeconds: float | None = None
 
     def __post_init__(self) -> None:
         RuntimeError.__init__(self, self.message)
@@ -54,5 +60,12 @@ class MissingApiKeyError(EmbeddingError):
 
 
 class RateLimitedError(EmbeddingError):
-    def __init__(self, message: str, *, endpointUrl: str, modelName: str) -> None:
-        super().__init__("rate_limited", message, endpointUrl, modelName)
+    def __init__(
+        self,
+        message: str,
+        *,
+        endpointUrl: str,
+        modelName: str,
+        retryAfterSeconds: float | None = None,
+    ) -> None:
+        super().__init__("rate_limited", message, endpointUrl, modelName, retryAfterSeconds)

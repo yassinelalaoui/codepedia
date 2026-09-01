@@ -20,34 +20,48 @@ from .parsers import (
     RustParser,
     TypeScriptParser,
 )
-from .symbols import ClassSymbol, FunctionSymbol, ModuleSymbol, Parameter, Symbol
+# Exported under `Extracted*` names, and only under those. `repository_metadata
+# .models` defines a second, different hierarchy that is also called `Symbol`,
+# `ModuleSymbol`, `ClassSymbol`, `FunctionSymbol`, and for a long time the two
+# were imported under the same names in the same modules. The result was
+# `isinstance()` checks that could never match: `summary_context` and
+# `summary_pipeline` tested persisted symbols against these extracted classes,
+# so whole branches of prompt construction never ran and nothing reported it.
+# Two hierarchies that cannot share a name cannot repeat that.
+from .symbols import (
+    ClassSymbol as ExtractedClassSymbol,
+    FunctionSymbol as ExtractedFunctionSymbol,
+    ModuleSymbol as ExtractedModuleSymbol,
+    Parameter,
+    Symbol as ExtractedSymbol,
+)
 
 __all__ = [
     "AST",
     "ASTNode",
     "CallRelation",
-    "ClassSymbol",
+    "ExtractedClassSymbol",
+    "ExtractedFunctionSymbol",
+    "ExtractedModuleSymbol",
+    "ExtractedSymbol",
     "FileSymbolInventory",
-    "FunctionSymbol",
     "GoParser",
     "ImportRecord",
     "InheritanceRelation",
     "JavaParser",
     "JavaScriptParser",
-    "ModuleSymbol",
+    "Parameter",
     "ParseError",
     "ParseFailure",
     "ParseResult",
     "Parser",
     "ParserUnavailableError",
     "Point",
-    "Parameter",
     "PythonParser",
     "RustParser",
-    "SourceFile",
-    "Symbol",
-    "SymbolExtractor",
     "SUPPORTED_LANGUAGES",
+    "SourceFile",
+    "SymbolExtractor",
     "TypeScriptParser",
     "UnsupportedLanguageError",
     "extract_symbols",

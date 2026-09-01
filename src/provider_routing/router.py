@@ -16,7 +16,7 @@ from typing import (
 )
 
 from .chain import ProviderRef
-from .classify import classify_failure
+from .classify import classify_failure, retry_after_seconds
 from .errors import FailoverExhaustedError
 
 EngineT = TypeVar("EngineT")
@@ -59,6 +59,12 @@ class BackoffPolicy:
     factor: float = 2.0
     maxDelaySeconds: float = 30.0
     maxWaits: int = 4
+    # Ceiling on a wait the *provider* asked for via `Retry-After`. Separate from
+    # `maxDelaySeconds`, and higher: that one caps a guess and should stay short,
+    # while this one caps a number the server stated and which is worth honouring
+    # even when it exceeds the guess. It exists only so a wrong or hostile header
+    # cannot park an indexing thread for an hour.
+    maxRetryAfterSeconds: float = 120.0
 
     def __post_init__(self) -> None:
         if self.initialDelaySeconds < 0:
@@ -69,6 +75,8 @@ class BackoffPolicy:
             raise ValueError("maxDelaySeconds must not be negative")
         if self.maxWaits < 0:
             raise ValueError("maxWaits must not be negative")
+        if self.maxRetryAfterSeconds < 0:
+            raise ValueError("maxRetryAfterSeconds must not be negative")
 
     def delay_for(self, wait_index: int) -> float:
         """Seconds to sleep before retry number `wait_index` (0-based).
@@ -80,6 +88,21 @@ class BackoffPolicy:
         """
         capped = min(self.initialDelaySeconds * (self.factor**wait_index), self.maxDelaySeconds)
         return random.uniform(0.0, capped)
+
+    def delay_for_retry_after(self, wait_index: int, retry_after: float | None) -> float:
+        """`delay_for`, raised to what the provider's `Retry-After` asked for.
+
+        The jittered exponential is added *on top of* the stated floor rather
+        than replacing it with `max()`. Every pool thread that hit the same 429
+        gets the same header value, so a bare `max()` would wake them all at the
+        same instant and re-hit the limit in lockstep - the exact failure full
+        jitter exists to prevent. Adding keeps the spread while never waking
+        before the provider said to.
+        """
+        jittered = self.delay_for(wait_index)
+        if retry_after is None:
+            return jittered
+        return min(retry_after + jittered, self.maxRetryAfterSeconds)
 
 
 class BackoffNotifier(Protocol):
@@ -193,6 +216,11 @@ class FailoverExecutor(Generic[EngineT]):
         next provider in the chain is no more likely to answer - only waiting
         is. `network_error` and `auth_failed` keep switching at once: neither
         repairs itself within a few seconds of sleeping.
+
+        How long to wait comes from the provider when it said so: both remote
+        transports read `Retry-After` off the 429 and hang it on the exception,
+        and `delay_for_retry_after` treats it as a floor. Only when the header
+        is absent is the delay a pure guess.
         """
         attempts: list[FailoverAttempt] = []
         for index, (ref, engine) in enumerate(self.chain):
@@ -206,7 +234,9 @@ class FailoverExecutor(Generic[EngineT]):
                         self.attempts = tuple(attempts)
                         raise
                     if reason == "rate_limited" and waits_used < self._backoff.maxWaits:
-                        delay = self._backoff.delay_for(waits_used)
+                        delay = self._backoff.delay_for_retry_after(
+                            waits_used, retry_after_seconds(exc)
+                        )
                         waits_used += 1
                         attempts.append(
                             FailoverAttempt(providerRef=ref, outcome="retried", reason=reason, timestamp=_utc_now())

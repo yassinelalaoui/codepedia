@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator
 from parser_engine import SourceFile, extract_symbols
-from repo_scanner.docs_scope import load_docs_scope
-from repo_scanner.ignore import load_ignore_matcher
+from repo_scanner.docs_scope import CONFIG_FILENAME, load_docs_scope
+from repo_scanner.ignore import GITIGNORE_FILENAME, load_ignore_matcher
 from repo_watcher import ChangeBatch, ChangeType
 from repository_metadata import CodeSummaryPipeline, LocalLLMUnavailableError, RepositoryMetadataStore, compute_content_hash
 from vector_index import VectorIndex
@@ -58,6 +58,7 @@ class IncrementalReindexPipeline:
         # startup, was the commit the watcher was launched on rather than the one
         # the pages actually describe.
         self.metadataStore.refresh_commit_sha(self.repositoryRoot)
+        self._refresh_scope_for(batch)
 
         to_remove: list[str] = []
         to_skip: list[str] = []
@@ -163,6 +164,21 @@ class IncrementalReindexPipeline:
             summaryFailure=summary_failure,
             failedPaths=tuple(failed),
         )
+
+    def _refresh_scope_for(self, batch: ChangeBatch) -> None:
+        """Re-read the two files that decide *what gets indexed at all*.
+
+        Both are loaded once in `__init__` and then held for the entire life of
+        `serve`, so editing either one had no effect until a restart - the
+        process kept classifying paths by the rules as they stood when the
+        watcher was launched. They are re-read here rather than per path because
+        a batch is the smallest unit that can contain the edit.
+        """
+        names = {PurePosixPath(change.relative_path).name for change in batch.changes}
+        if GITIGNORE_FILENAME in names:
+            self._ignoreMatcher.invalidate()
+        if CONFIG_FILENAME in names:
+            self._docsScope = load_docs_scope(self.repositoryRoot)
 
     def _reparse_and_store(self, relative_path: str, language: str):
         absolute_path = self.repositoryRoot / relative_path

@@ -118,6 +118,10 @@ class AvailabilityStatus:
     # spec FR-005 requires rate-limit to be its own classified failover
     # reason (research.md §6). Always False for the local engine.
     rateLimited: bool = False
+    # Seconds from the 429's `Retry-After`, when the provider said. Rides
+    # alongside `rateLimited` so `groq_engine._availability_error` can build a
+    # `RateLimitedError` that knows the wait, exactly as the generate path does.
+    retryAfterSeconds: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

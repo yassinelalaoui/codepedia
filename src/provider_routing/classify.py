@@ -48,3 +48,20 @@ def classify_failure(exc: Exception) -> FailureReason:
     if isinstance(kind, str) and kind in _KIND_TO_REASON:
         return _KIND_TO_REASON[kind]
     return "unknown"
+
+
+def retry_after_seconds(exc: Exception) -> float | None:
+    """How long the provider itself asked us to wait, or None if it did not say.
+
+    Read off `.retryAfterSeconds`, the same uniform-attribute style
+    `classify_failure` uses for `.kind` - so an engine family that has not
+    grown the field yet simply reports None and the caller keeps guessing.
+    Populated from the 429's `Retry-After` header by the remote transports
+    (`local_llm.groq_transport`, `embedding_engine.openai_transport`).
+    """
+    value = getattr(exc, "retryAfterSeconds", None)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or value in (float("inf"), float("-inf")):  # NaN / inf
+        return None
+    return max(0.0, float(value))

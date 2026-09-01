@@ -64,3 +64,32 @@ def test_extra_patterns_are_applied_at_the_repository_root(tmp_path: Path):
 
     assert matcher.ignores("tests/render.snap") is True
     assert matcher.ignores("tests/render.ts") is False
+
+
+def test_invalidate_makes_a_rewritten_gitignore_take_effect(tmp_path: Path):
+    """`serve` builds one matcher at startup and holds it for the life of the
+    process, so without this a `.gitignore` edited while the server runs had no
+    effect at all until a restart."""
+    _write(tmp_path / ".gitignore", "*.log\n")
+    matcher = load_ignore_matcher(tmp_path)
+    assert matcher.ignores("debug.log") is True
+
+    _write(tmp_path / ".gitignore", "*.tmp\n")
+    assert matcher.ignores("debug.log") is True  # still the cached spec
+
+    matcher.invalidate()
+
+    assert matcher.ignores("debug.log") is False
+    assert matcher.ignores("scratch.tmp") is True
+
+
+def test_invalidate_also_forgets_nested_gitignores(tmp_path: Path):
+    _write(tmp_path / ".gitignore", "*.log\n")
+    _write(tmp_path / "pkg" / ".gitignore", "!keep.log\n")
+    matcher = load_ignore_matcher(tmp_path)
+    assert matcher.ignores("pkg/keep.log") is False
+
+    _write(tmp_path / "pkg" / ".gitignore", "*.log\n")
+    matcher.invalidate()
+
+    assert matcher.ignores("pkg/keep.log") is True

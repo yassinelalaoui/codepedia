@@ -287,3 +287,40 @@ def test_an_index_entry_carries_no_second_copy_of_its_vector(tmp_path):
         assert index.search("a = 1", k=1), "and search still scores it, from the matrix"
     finally:
         index.close()
+
+
+def test_deleting_a_file_leaves_no_lifecycle_rows_behind(tmp_path):
+    """`chunk_lifecycle` used to keep a "removed" tombstone per deleted chunk,
+    forever. Nothing ever read them - `load_lifecycle_state` is reachable only
+    through `VectorIndex.get_lifecycle`, which has no caller - so they were one
+    INSERT per deleted chunk on every incremental pass, in a table that then
+    grew for the life of the server."""
+    connection, index_id, _ = _counting_index(tmp_path)
+    try:
+        storage.replace_chunks_for_file(
+            connection, index_id=index_id, source_file_path="src/app.py", chunks=_chunks(20)
+        )
+        assert len(storage.load_lifecycle_state(connection, source_file_path="src/app.py")) == 20
+
+        storage.delete_chunks_for_file(connection, index_id=index_id, source_file_path="src/app.py")
+
+        assert storage.load_lifecycle_state(connection) == {}
+    finally:
+        connection.close()
+
+
+def test_re_embedding_a_file_does_not_grow_the_lifecycle_table(tmp_path):
+    """What is in the table is what is live: rewriting the same file must leave
+    one row per current chunk, not one per chunk ever written."""
+    connection, index_id, _ = _counting_index(tmp_path)
+    try:
+        for _ in range(5):
+            storage.replace_chunks_for_file(
+                connection, index_id=index_id, source_file_path="src/app.py", chunks=_chunks(10)
+            )
+
+        states = storage.load_lifecycle_state(connection)
+        assert len(states) == 10
+        assert set(states.values()) == {"added"}
+    finally:
+        connection.close()

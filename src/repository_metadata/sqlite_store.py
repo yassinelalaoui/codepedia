@@ -5,8 +5,13 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Iterable
 
-from parser_engine import ClassSymbol as ExtractedClassSymbol
-from parser_engine import FileSymbolInventory, FunctionSymbol as ExtractedFunctionSymbol, ModuleSymbol as ExtractedModuleSymbol, SourceFile
+from parser_engine import (
+    ExtractedClassSymbol,
+    ExtractedFunctionSymbol,
+    ExtractedModuleSymbol,
+    FileSymbolInventory,
+    SourceFile,
+)
 
 from sqlite_support import apply_write_pragmas
 

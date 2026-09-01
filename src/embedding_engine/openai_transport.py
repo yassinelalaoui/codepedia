@@ -6,6 +6,8 @@ from typing import Optional
 
 import httpx
 
+from http_support import parse_retry_after
+
 from .errors import EmbeddingFailedError, MissingApiKeyError, RateLimitedError, ServiceUnavailableError
 from .models import DEFAULT_EMBED_TIMEOUT, EmbeddingAvailabilityStatus, Vector
 
@@ -105,6 +107,7 @@ class OpenAIEmbeddingTransport:
                 f"OpenAI API at {self.endpointUrl} is rate-limiting requests for model '{model_name}' (HTTP 429).",
                 endpointUrl=self.endpointUrl,
                 modelName=model_name,
+                retryAfterSeconds=parse_retry_after(response.headers),
             )
         if response.status_code >= 400:
             raise EmbeddingFailedError(

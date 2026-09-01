@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from dependency_graph import DependencyGraph
-from parser_engine import ClassSymbol, FunctionSymbol, ModuleSymbol, Symbol
 
-from .models import DependencyEdge, SourceFileBundle
+# The *persisted* symbols, from this package's own models - not the identically
+# named extracted ones in `parser_engine`. A `SourceFileBundle` carries these,
+# and the `isinstance()` checks below are what read them; imported from
+# `parser_engine` instead, as they were, none of those checks could ever be true.
+from .models import ClassSymbol, DependencyEdge, FunctionSymbol, ModuleSymbol, SourceFileBundle, Symbol
 
 # Defined here rather than in `doc_generator.prose`, which used to hold a second
 # copy of it: `repository_metadata` is the lower of the two packages, so this is

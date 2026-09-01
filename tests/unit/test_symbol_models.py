@@ -1,4 +1,10 @@
-from parser_engine import ClassSymbol, FunctionSymbol, ModuleSymbol, Parameter, SymbolExtractor
+from parser_engine import (
+    ExtractedClassSymbol as ClassSymbol,
+    ExtractedFunctionSymbol as FunctionSymbol,
+    ExtractedModuleSymbol as ModuleSymbol,
+    Parameter,
+    SymbolExtractor,
+)
 
 
 def test_symbol_hierarchy_exposes_shared_fields():

@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
 from dependency_graph import DependencyGraph
-from parser_engine import FunctionSymbol, ModuleSymbol, Symbol
 
-from .models import SourceFileBundle
+# The *persisted* symbols, not `parser_engine`'s identically named extracted
+# ones - see `parser_engine.symbols`. `_symbol_source_text` isinstance-checks
+# what a `SourceFileBundle` actually holds, which is these.
+from .models import ModuleSymbol, SourceFileBundle, Symbol
 from .store import RepositoryMetadataStore
 from .summary_context import (
     ImpactedSymbolSet,
@@ -469,7 +471,13 @@ class CodeSummaryPipeline:
         source_path = Path(relative_path)
         if not source_path.is_absolute():
             source_path = Path(repository_root) / source_path
-        return source_path.read_text(encoding="utf-8")
+        # `errors="replace"`, like every other source read in the project
+        # (`parser_engine.models.SourceFile.read_text`,
+        # `git_provenance._read_text`). A `UnicodeDecodeError` is not an
+        # `OSError`, and both callers here guard only against `OSError` - so a
+        # single non-UTF-8 byte anywhere in the repository used to take down the
+        # whole summary pass rather than that one file.
+        return source_path.read_text(encoding="utf-8", errors="replace")
 
     def _symbol_source_text(self, bundle: SourceFileBundle, symbol: Symbol, source_text: str) -> str:
         if isinstance(symbol, ModuleSymbol):

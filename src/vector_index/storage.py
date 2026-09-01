@@ -439,9 +439,7 @@ def replace_chunks_for_file(
     entries = tuple(_entry_for_chunk(chunk, normalized) for chunk in chunks)
     timestamp = utc_now()
     with connection:
-        removed_ids = _delete_chunks_for_file(
-            connection, index_id=index_id, source_file_path=normalized, timestamp=timestamp
-        )
+        removed_ids = _delete_chunks_for_file(connection, index_id=index_id, source_file_path=normalized)
         for entry in entries:
             _write_chunk(
                 connection,
@@ -541,11 +539,7 @@ def load_chunks_for_file(connection: sqlite3.Connection, *, index_id: str, sourc
 
 
 def _delete_chunks_for_file(
-    connection: sqlite3.Connection,
-    *,
-    index_id: str,
-    source_file_path: str,
-    timestamp: str,
+    connection: sqlite3.Connection, *, index_id: str, source_file_path: str
 ) -> tuple[str, ...]:
     """The deletes alone, so `replace_chunks_for_file` can share one transaction."""
     rows = connection.execute(
@@ -553,17 +547,16 @@ def _delete_chunks_for_file(
         (index_id, source_file_path),
     ).fetchall()
     chunk_ids = tuple(row["id"] for row in rows)
-    for chunk_id in chunk_ids:
+    # The lifecycle row goes away with the chunk rather than being upserted to
+    # "removed". Nothing ever read those tombstones - `load_lifecycle_state` is
+    # reached only through `VectorIndex.get_lifecycle`, which has no caller -
+    # so they bought nothing and cost one INSERT per deleted chunk on every
+    # incremental pass, in a table that then grew for the life of the server.
+    # One statement replaces N, and what is in the table is what is live.
+    if chunk_ids:
+        placeholders = ",".join("?" * len(chunk_ids))
         connection.execute(
-            """
-            INSERT INTO chunk_lifecycle (chunk_id, source_file_path, lifecycle_state, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(chunk_id) DO UPDATE SET
-                source_file_path = excluded.source_file_path,
-                lifecycle_state = excluded.lifecycle_state,
-                updated_at = excluded.updated_at
-            """,
-            (chunk_id, source_file_path, "removed", timestamp),
+            f"DELETE FROM chunk_lifecycle WHERE chunk_id IN ({placeholders})", chunk_ids
         )
     connection.execute(
         "DELETE FROM chunks WHERE index_id = ? AND source_file_path = ?",
@@ -577,9 +570,7 @@ def _delete_chunks_for_file(
 def delete_chunks_for_file(connection: sqlite3.Connection, *, index_id: str, source_file_path: str | Path) -> tuple[str, ...]:
     normalized = normalize_path(source_file_path)
     with connection:
-        return _delete_chunks_for_file(
-            connection, index_id=index_id, source_file_path=normalized, timestamp=utc_now()
-        )
+        return _delete_chunks_for_file(connection, index_id=index_id, source_file_path=normalized)
 
 
 def count_vectors_by_dimensionality(connection: sqlite3.Connection, *, index_id: str) -> dict[int, int]:

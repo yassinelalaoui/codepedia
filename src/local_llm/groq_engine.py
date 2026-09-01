@@ -13,7 +13,12 @@ from .models import AvailabilityStatus, PromptEnvelope, normalize_model_name
 
 def _availability_error(status: AvailabilityStatus, *, endpoint_url: str, model_name: str) -> Exception:
     if status.rateLimited:
-        return RateLimitedError(status.message, endpointUrl=endpoint_url, modelName=model_name)
+        return RateLimitedError(
+            status.message,
+            endpointUrl=endpoint_url,
+            modelName=model_name,
+            retryAfterSeconds=status.retryAfterSeconds,
+        )
     if not status.serviceReachable:
         return RemoteServiceUnavailableError(status.message, endpointUrl=endpoint_url, modelName=model_name)
     if not status.modelInstalled:
