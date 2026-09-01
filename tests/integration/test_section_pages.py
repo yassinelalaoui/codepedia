@@ -83,6 +83,26 @@ def test_section_page_diagrams_only_internal_dependencies(tmp_path):
     assert "click m0 href" in mermaid
 
 
+def test_section_diagram_click_directives_survive_into_rendered_html(tmp_path):
+    """Same guarantee as the per-module diagram (034): a section page's internal
+    dependency diagram is one of only two surfaces carrying click targets, so its
+    directives must reach the rendered HTML the pan/zoom enhancer wraps.
+    """
+    root, store, graph = build_indexed_repo(tmp_path)
+    generator = _build_generator(tmp_path, root, store, graph)
+    doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
+
+    section_page = next(
+        page for page in doc_set.pages
+        if page.kind == "section" and "```mermaid" in page.contentMarkdown
+    )
+    html = section_page.renderedHtml
+
+    assert '<pre class="mermaid">' in html
+    block = html.split('<pre class="mermaid">')[1].split("</pre>")[0]
+    assert "click " in block and "href" in block
+
+
 def test_home_and_module_pages_are_wired_to_their_section(tmp_path):
     root, store, graph = _two_section_repo(tmp_path)
     generator = _build_generator(tmp_path, root, store, graph, db_name="two-section-repo.sqlite")

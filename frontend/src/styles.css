@@ -462,6 +462,93 @@ ul:has(> li.diag-grid) .diagram-card::before { margin: 0 -14px 12px; }
 .content-col pre code { background: none; padding: 0; font-size: 13px; }
 pre.mermaid { background: none; border: none; text-align: center; padding: 12px 0; }
 
+/* ---------------------------------------------------------------------
+   Diagram viewport (034)
+
+   A rendered Mermaid diagram is scaled to the column and unreadable past a
+   handful of nodes, so `lib/diagramViewport.ts` wraps each one - after Mermaid
+   has drawn it - in a bounded, pan-and-zoom viewport. Everything below styles
+   DOM that only exists once that enhancer has run: a page whose bundle fails to
+   load keeps the plain `pre.mermaid` rule above and still renders and
+   navigates, just without zoom.
+   --------------------------------------------------------------------- */
+.diagram-viewport {
+  position: relative;
+  height: 460px;
+  max-height: 70vh;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  /* The viewport owns wheel and drag gestures; without this the browser also
+     scrolls the page and pans the diagram at the same time. */
+  touch-action: none;
+  cursor: grab;
+}
+.diagram-viewport.is-grabbing { cursor: grabbing; }
+.diagram-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.diagram-canvas {
+  /* Transform target. Deliberately a wrapper div rather than the SVG itself:
+     hit-testing, <a> targets and Mermaid's coordinate system all survive a
+     transform on an ancestor, whereas rewriting the SVG's own transform is
+     where anchor hit areas drift away from the shapes they wrap. */
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.diagram-canvas svg { display: block; width: 100%; height: 100%; }
+
+.diagram-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
+}
+.diagram-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.diagram-controls button:hover { background: var(--surface-sunken); color: var(--ink); }
+.diagram-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Expanded: a presentation state of the page, not the Fullscreen API, which can
+   be refused and behaves inconsistently for pages opened over file://. */
+.diagram-viewport.is-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  height: auto;
+  max-height: none;
+  border-radius: 0;
+  /* Opaque, so page content cannot show through behind the diagram. */
+  background: var(--bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagram-controls button { transition: none; }
+}
+
 /* footer */
 .site-footer {
   margin-top: auto;

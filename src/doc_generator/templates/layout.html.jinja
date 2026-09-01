@@ -65,8 +65,18 @@
 </div>
 <script src="{{ mermaid_script_href }}"></script>
 <script>
+  // `startOnLoad: false` plus an explicit `mermaid.run()`: auto-render-on-load
+  // offers no completion signal, and the wiki UI's pan/zoom enhancer has to
+  // attach after the SVG exists. `run()` returns a promise, which is that
+  // signal. `suppressErrors` keeps one unparseable diagram from aborting the
+  // batch, and the dispatch sits in `finally` so the enhancer still runs when
+  // the batch rejects. Deliberately inline rather than inside wiki-ui.js: a
+  // bundle that fails to load must cost the zoom, never the diagram itself.
   if (window.mermaid) {
-    mermaid.initialize({ startOnLoad: true });
+    mermaid.initialize({ startOnLoad: false });
+    mermaid.run({ suppressErrors: true }).finally(function () {
+      document.dispatchEvent(new CustomEvent('wiki:mermaid-rendered'));
+    });
   }
 </script>
 <script>window.__WIKI_UI_CONFIG__ = { searchIndexHref: {{ search_index_href | tojson }} };</script>

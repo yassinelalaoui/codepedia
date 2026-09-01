@@ -88,3 +88,26 @@ def test_wiki_ui_assets_are_not_rewritten_when_unchanged(tmp_path):
     second_mtimes = (js_path.stat().st_mtime_ns, css_path.stat().st_mtime_ns, search_index_path.stat().st_mtime_ns)
 
     assert first_mtimes == second_mtimes, "unchanged wiki-ui assets and search index should not be rewritten"
+
+
+def test_mermaid_bootstrap_awaits_run_instead_of_start_on_load(tmp_path):
+    """The layout must hand the enhancer a completion signal, not auto-render.
+
+    `startOnLoad: true` draws on DOMContentLoaded and marks every element
+    `data-processed`, so a later `mermaid.run()` would find nothing and never
+    resolve - and `wiki-ui.js` would have no moment at which the SVG is known to
+    exist. `suppressErrors` keeps one unparseable diagram from aborting the
+    batch, and the whole block stays inline so a failed bundle load costs the
+    zoom rather than the diagram.
+    """
+    root, store, graph = build_indexed_repo(tmp_path)
+    generator = _build_generator(tmp_path, root, store, graph)
+    doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
+
+    html = next(page for page in doc_set.pages if page.kind == "module").renderedHtml
+
+    assert "startOnLoad: false" in html
+    assert "startOnLoad: true" not in html
+    assert "mermaid.run(" in html
+    assert "suppressErrors" in html
+    assert "wiki:mermaid-rendered" in html

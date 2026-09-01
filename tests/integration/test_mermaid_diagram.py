@@ -115,6 +115,27 @@ def test_diagram_click_hrefs_point_at_correct_module_pages(tmp_path):
             )
 
 
+def test_click_directives_survive_into_the_rendered_html_block(tmp_path):
+    """The client-side pan/zoom enhancer (034) wraps the rendered diagram, so the
+    click targets have to reach the HTML a reader actually loads - not just the
+    Markdown. `html_render` rewrites the fence to `<pre class="mermaid">` and
+    html-escapes the quotes inside it, which is what Mermaid parses at runtime
+    and turns into the `<a xlink:href>` the enhancer must not break.
+    """
+    root, store, graph = build_indexed_repo(tmp_path)
+    generator = _build_generator(tmp_path, root, store, graph)
+    doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
+
+    diagram_page = next(page for page in doc_set.pages if page.kind == "diagram")
+    html = diagram_page.renderedHtml
+
+    assert '<pre class="mermaid">' in html
+    block = html.split('<pre class="mermaid">')[1].split("</pre>")[0]
+    assert "click " in block and "href" in block, (
+        "the rendered mermaid block must still carry its click directives"
+    )
+
+
 def test_diagram_scoped_to_direct_dependencies_in_a_large_chain(tmp_path):
     root, store, graph = _build_chain_repo(tmp_path, length=21)
     generator = _build_generator(tmp_path, root, store, graph, db_name="chain-repo.sqlite")
