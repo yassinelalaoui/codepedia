@@ -158,3 +158,42 @@ def test_select_major_classes_tie_break_is_edge_count_then_name_then_id():
     assert "z-extra" not in included_ids
     for index in range(40):
         assert f"a{index:02d}" in included_ids
+
+
+def test_select_major_classes_skips_documentation_headings():
+    # A `##` in a README is stored as a ClassSymbol so prose reuses the wiki
+    # pipeline. Left in, headings compete with the repository's real classes for
+    # this diagram's 40 slots - and on a documentation-heavy repository they win.
+    prose_module = ModuleSymbol(
+        id="module2", sourceFileId="file2", kind="module", name="README", lineStart=1, lineEnd=10, filePath="README.md"
+    )
+    prose_file = SourceFile(
+        id="file2",
+        repositoryId="repo1",
+        path="README.md",
+        language="markdown",
+        contentHash="hash2",
+        lastModified="2026-08-17T00:00:00Z",
+    )
+    code_bundle = SourceFileBundle(
+        file=_source_file(), module=_module_symbol(), classes=(_class_symbol("c1", "RealClass"),), functions=()
+    )
+    prose_bundle = SourceFileBundle(
+        file=prose_file,
+        module=prose_module,
+        classes=(ClassSymbol(id="h1", sourceFileId="file2", kind="class", name="Installation", lineStart=1, lineEnd=5),),
+        functions=(),
+    )
+    bundle = RepositoryBundle(
+        repository=Repository(id="repo1", rootPath="/repo"),
+        files=(code_bundle, prose_bundle),
+        graph=MetadataDependencyGraph(id="g1", repositoryId="repo1"),
+    )
+    graph = DependencyGraph(id="g1", sourceFile="repo")
+    _add_class_node(graph, "c1", "RealClass")
+    _add_class_node(graph, "h1", "Installation")
+
+    result = select_major_classes(bundle, graph)
+
+    assert [selected.classId for selected in result.includedClasses] == ["c1"]
+    assert result.omittedClassCount == 0, "a heading is not an omitted class, it is not a class"

@@ -131,3 +131,37 @@ def test_repository_watcher_health_check_reports_inaccessible_repository(tmp_pat
     watcher._run_health_check()
     assert len(errors) == 1
     assert isinstance(errors[0], RuntimeError)
+
+
+def test_catchup_removes_documentation_that_left_the_perimeter(tmp_path):
+    """Narrowing the perimeter prunes what it excluded, with no migration code.
+
+    A repository indexed before the perimeter existed has pages for every `*.md`
+    it contained. `compute_catchup_batch` compares what is on disk *and in
+    scope* against what the store knows, so those files come back as DELETED on
+    the next catch-up and the pages go with them.
+    """
+    from repo_watcher.reconciliation import compute_catchup_batch
+    from repository_metadata import RepositoryMetadataStore, compute_content_hash
+    from parser_engine import SourceFile, extract_symbols
+
+    root = tmp_path / "repo"
+    (root / "specs").mkdir(parents=True)
+    spec = root / "specs" / "spec.md"
+    spec.write_text("# Spec\n\n## Section\n\nBody.\n", encoding="utf-8")
+
+    store = RepositoryMetadataStore(tmp_path / "repo.sqlite")
+    store.ensure_repository(root, detected_languages=("Markdown",))
+    store.store_inventory(
+        repository_root=root,
+        source_file=SourceFile(path=spec, language="Markdown"),
+        inventory=extract_symbols(SourceFile(path=spec, language="Markdown")),
+        content_hash=compute_content_hash(spec),
+    )
+
+    batch = compute_catchup_batch(root, store)
+
+    assert batch is not None
+    assert [(change.relative_path, change.change_type) for change in batch.changes] == [
+        ("specs/spec.md", ChangeType.DELETED)
+    ]

@@ -242,3 +242,41 @@ def test_refreshing_the_commit_never_blanks_the_language_list(tmp_path):
     assert repository.detectedLanguages == ("markdown", "python")
     assert repository.commitSha == "d" * 40
 
+
+
+def test_classify_path_applies_the_documentation_perimeter(tmp_path):
+    # The watcher has to answer the same question `scan_repository` answers, or
+    # a save under `specs/` gets reindexed here while a full `index` no longer
+    # knows the file exists, and the two views of the repository drift apart.
+    from repo_scanner.docs_scope import DocsScope
+    from repo_scanner.ignore import load_ignore_matcher
+    from reindex_pipeline.classification import classify_path
+
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "specs").mkdir()
+    (root / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (root / "specs" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    (root / "app.py").write_text("x = 1\n", encoding="utf-8")
+    matcher = load_ignore_matcher(root)
+    scope = DocsScope()
+
+    assert classify_path(root, "docs/guide.md", matcher, scope).language == "Markdown"
+    assert classify_path(root, "specs/spec.md", matcher, scope).language is None
+    # Excluded, not ignored: `.gitignore` has no opinion about `specs/`, the
+    # documentation perimeter does - and code is never scoped by it.
+    assert classify_path(root, "specs/spec.md", matcher, scope).excluded is False
+    assert classify_path(root, "app.py", matcher, scope).language == "Python"
+
+
+def test_classify_path_honours_a_declared_perimeter(tmp_path):
+    from repo_scanner.docs_scope import DocsScope
+    from repo_scanner.ignore import load_ignore_matcher
+    from reindex_pipeline.classification import classify_path
+
+    root = tmp_path / "repo"
+    (root / "specs").mkdir(parents=True)
+    (root / "specs" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    matcher = load_ignore_matcher(root)
+
+    assert classify_path(root, "specs/spec.md", matcher, DocsScope(include=("specs/",))).language == "Markdown"

@@ -26,6 +26,13 @@ COMMON_LANGUAGE_MAP = {
     ".markdown": "Markdown",
 }
 
+# The language name every prose file detects as. `docs_scope` keys the
+# documentation perimeter on this rather than on a suffix set of its own:
+# `repository_metadata.summary_context.PROSE_FILE_SUFFIXES` is already the one
+# definition of "which suffixes are prose" (a second copy is exactly the defect
+# that consolidation removed), and this package sits below the one that owns it.
+PROSE_LANGUAGE = "Markdown"
+
 
 @dataclass(frozen=True, slots=True)
 class LanguageDetector:

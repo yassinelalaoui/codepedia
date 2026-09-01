@@ -1,9 +1,10 @@
 """Heading extraction for documentation files.
 
-The mapping is heading -> existing symbol type (`##` becomes a class, `###` and
-below become functions owned by it), so these tests assert the two things that
-mapping has to get right: which lines actually are headings, and identifiers
-that survive an edit elsewhere in the file.
+The mapping is heading -> existing symbol type (`##` becomes a class, `###` a
+function owned by it, and nothing deeper is promoted at all), so these tests
+assert the three things that mapping has to get right: which lines actually are
+headings, identifiers that survive an edit elsewhere in the file, and that the
+depth cap costs no prose.
 """
 
 from __future__ import annotations
@@ -115,3 +116,37 @@ def test_a_document_without_headings_still_yields_a_module(tmp_path: Path):
     assert inventory.module.docstring == "Just prose, no headings at all."
     assert inventory.classes == ()
     assert inventory.functions == ()
+
+
+def test_headings_deeper_than_h3_do_not_become_symbols(tmp_path: Path):
+    # Every promoted heading costs one LLM summary call and one embedding, and a
+    # `####` is rarely a documentation unit anyone navigates to on its own.
+    inventory = _inventory(
+        tmp_path,
+        "# Doc\n\n## Install\n\nOwn prose.\n\n### Detail\n\nNested prose.\n\n#### Deeper\n\nDeepest prose.\n",
+    )
+
+    assert [item.name for item in inventory.classes] == ["Install"]
+    assert [item.name for item in inventory.functions] == ["Detail"]
+
+
+def test_a_heading_past_the_cap_folds_into_the_promoted_heading_above_it(tmp_path: Path):
+    # The saving must not be a loss: the docstring feeds the page, the chunks
+    # and the search index, so text under a `####` has to survive the cap.
+    inventory = _inventory(
+        tmp_path,
+        "# Doc\n\n### Detail\n\nOwn prose.\n\n#### Deeper\n\nDeepest prose.\n\n##### Deepest\n\nMore.\n",
+    )
+    detail = inventory.functions[0]
+
+    assert "Deepest prose." in detail.docstring
+    assert "More." in detail.docstring
+    assert detail.docstring.startswith("Own prose.")
+
+
+def test_a_document_whose_only_headings_are_past_the_cap_is_all_intro(tmp_path: Path):
+    inventory = _inventory(tmp_path, "# Doc\n\nIntro.\n\n#### Deep\n\nDeep prose.\n")
+
+    assert inventory.classes == ()
+    assert inventory.functions == ()
+    assert "Deep prose." in inventory.module.docstring

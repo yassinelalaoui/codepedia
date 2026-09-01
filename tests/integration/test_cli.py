@@ -734,3 +734,19 @@ def test_index_does_not_reshow_disclosure_once_acknowledged(tmp_path, cli_home, 
 
     assert result.exit_code == 0, result.output
     assert "Continue with this configuration?" not in result.output
+
+
+def test_index_rejects_a_malformed_docs_perimeter_before_doing_any_work(tmp_path):
+    # A typo in `.codepedia.json` is a user error, and silently falling back to
+    # the default perimeter would be indistinguishable from a config that was
+    # never written - the symptom, documentation missing from the wiki, would
+    # only surface an indexing run later.
+    import typer
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (repo / ".codepedia.json").write_text("{ not json", encoding="utf-8")
+
+    with pytest.raises(typer.BadParameter, match=".codepedia.json"):
+        run_index(repo, config=CLIConfiguration())

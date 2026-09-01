@@ -10,7 +10,7 @@
 
 ## Architecture overview
 
-This repository has {{ architecture_summary.moduleCount }} documented module{{ '' if architecture_summary.moduleCount == 1 else 's' }}, {{ architecture_summary.classCount }} class{{ '' if architecture_summary.classCount == 1 else 'es' }}, and {{ architecture_summary.functionCount }} top-level function{{ '' if architecture_summary.functionCount == 1 else 's' }}.
+This repository has {{ architecture_summary.moduleCount }} documented module{{ '' if architecture_summary.moduleCount == 1 else 's' }}, {{ architecture_summary.classCount }} class{{ '' if architecture_summary.classCount == 1 else 'es' }}, and {{ architecture_summary.functionCount }} top-level function{{ '' if architecture_summary.functionCount == 1 else 's' }}{% if architecture_summary.documentCount %}, alongside {{ architecture_summary.documentCount }} documentation page{{ '' if architecture_summary.documentCount == 1 else 's' }}{% endif %}.
 
 {% if section_entries %}
 | Section | Modules |

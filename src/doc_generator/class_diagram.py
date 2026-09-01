@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from dependency_graph import DependencyGraph
 from repository_metadata.models import RepositoryBundle
 
+from .prose import is_prose_file
+
 MAX_INCLUDED_CLASSES = 40
 
 
@@ -75,6 +77,13 @@ def select_major_classes(bundle: RepositoryBundle, graph: DependencyGraph) -> Cl
 def _gather_candidates(bundle: RepositoryBundle) -> list[SelectedClass]:
     candidates: list[SelectedClass] = []
     for file_bundle in bundle.files:
+        # A `##` in a README is stored as a ClassSymbol so documentation can
+        # reuse the wiki pipeline, but it is a heading, not a type. Left in, it
+        # competes with the repository's real classes for this diagram's
+        # `MAX_INCLUDED_CLASSES` slots - and on a documentation-heavy repository
+        # it wins, because there are more headings than classes.
+        if is_prose_file(file_bundle.module.filePath):
+            continue
         functions_by_id = {function.id: function for function in file_bundle.functions}
         for class_symbol in file_bundle.classes:
             methods = tuple(

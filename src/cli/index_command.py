@@ -18,6 +18,7 @@ from parser_engine import SourceFile, extract_symbols
 from provider_routing import FailoverExecutor, PathFailoverLog, build_stage_executor
 from reindex_pipeline import EmbeddingCache
 from reindex_pipeline.embeddings import update_embeddings
+from repo_scanner.docs_scope import load_docs_scope
 from repo_scanner.scanner import scan_repository
 from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, Symbol, compute_content_hash
@@ -221,6 +222,13 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     §10, spec.md's anti-corruption requirement).
     """
     root = validate_repo_path(repo_path)
+    # Before the staging directory, the provider checks and the first parse: a
+    # typo in `.codepedia.json` is the user's, not the pipeline's, and it should
+    # read as one rather than as a traceback out of the scanner ten stages in.
+    try:
+        load_docs_scope(root)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
 
     final_state_dir = paths.repo_state_dir(root)
     staging_dir = final_state_dir.parent / f"{final_state_dir.name}.staging-{os.getpid()}"

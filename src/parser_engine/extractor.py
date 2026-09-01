@@ -728,6 +728,19 @@ _MD_SETEXT_PATTERN = re.compile(r"^ {0,3}(=+|-+)\s*$")
 _MD_FRONT_MATTER_DELIMITER = re.compile(r"^---\s*$")
 _MD_SLUG_STRIP_PATTERN = re.compile(r"[^a-z0-9]+")
 
+# Deepest heading level promoted to a symbol: `##` -> class, `###` -> function.
+# A `####` is rarely a documentation unit anyone navigates to on its own, and it
+# costs exactly what a real one costs - one summary call and one embedding.
+# Nothing is dropped: `_resolve_markdown_spans` folds a deeper heading's text
+# into the body of the promoted heading above it, so it still reaches the page,
+# the chunks and the search index, just not as a symbol of its own.
+_MD_MAX_SYMBOL_LEVEL = 3
+
+
+def _is_promoted_heading(heading: "_MarkdownHeading") -> bool:
+    """A heading that becomes a symbol: below the document title, above the cap."""
+    return 2 <= heading.level <= _MD_MAX_SYMBOL_LEVEL
+
 
 @dataclass(slots=True)
 class _MarkdownHeading:
@@ -827,16 +840,22 @@ def _resolve_markdown_spans(headings: list[_MarkdownHeading], total_lines: int) 
 
     `section_end` runs to the next heading of the same or higher level, so a
     `##` span covers its `###` subsections - that is what `_symbol_source_text`
-    slices for chunking and summarization. `body_end` stops at the next heading
-    of any level, so the prose shown on the page is the section's own text and
-    not a copy of everything nested under it.
+    slices for chunking and summarization. `body_end` stops at the next
+    *promoted* heading, so the prose shown on the page is the section's own text
+    and not a copy of everything nested under it.
+
+    Promoted, not "of any level": a heading past `_MD_MAX_SYMBOL_LEVEL` never
+    becomes a symbol, so stopping the body there would drop its text out of the
+    docstring - and therefore out of the page, the chunks and the search index -
+    with nothing anywhere reporting it. Folding it into the promoted heading
+    above is what makes the cap a saving rather than a loss.
     """
     for position, heading in enumerate(headings):
         following = headings[position + 1 :]
-        next_heading = following[0] if following else None
+        next_symbol = next((other for other in following if _is_promoted_heading(other)), None)
         next_peer = next((other for other in following if other.level <= heading.level), None)
 
-        body_end = next_heading.line - 1 if next_heading is not None else total_lines
+        body_end = next_symbol.line - 1 if next_symbol is not None else total_lines
         section_end = next_peer.line - 1 if next_peer is not None else total_lines
         heading.body_end = max(heading.line, body_end)
         heading.section_end = max(heading.line, section_end)
@@ -868,10 +887,11 @@ def _extract_markdown_inventory(*, source_file: SourceFile, text: str) -> FileSy
     # (`links.page_slug`) every time a title is edited, orphaning the previous
     # file since page *ids* are keyed on the stable `sourceFileId`.
     content_start = _markdown_content_start(lines)
-    # Stops at the first heading that becomes a symbol of its own - any level
-    # at or below `##`, which includes an orphan `###` in a document that never
-    # uses `##`. The `#` title itself is not a boundary; it is part of the intro.
-    intro_end = next((heading.line - 1 for heading in headings if heading.level >= 2), total_lines)
+    # Stops at the first heading that becomes a symbol of its own - `##` or
+    # `###`, which includes an orphan `###` in a document that never uses `##`.
+    # The `#` title itself is not a boundary; it is part of the intro, and
+    # neither is a `####`, which is now body text rather than a symbol.
+    intro_end = next((heading.line - 1 for heading in headings if _is_promoted_heading(heading)), total_lines)
     module = ModuleSymbol(
         id=_markdown_symbol_id("module", source_path, Path(source_path).name, 0),
         name=Path(source_path).stem,
@@ -888,9 +908,10 @@ def _extract_markdown_inventory(*, source_file: SourceFile, text: str) -> FileSy
     inside_section = False
 
     for heading in headings:
-        if heading.level <= 1:
-            # The document title is already the page's own H1; it never becomes
-            # a section of itself.
+        if not _is_promoted_heading(heading):
+            # A `#` is the page's own H1 and never becomes a section of itself;
+            # a `####` or deeper is body text, already folded into the promoted
+            # heading above it by `_resolve_markdown_spans`.
             continue
         slug = _markdown_slug(heading.title)
         body = _markdown_body(lines, heading)

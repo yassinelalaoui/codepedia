@@ -6,8 +6,9 @@ from typing import Iterator
 import os
 
 from .binary import is_binary_path
+from .docs_scope import DocsScope, load_docs_scope
 from .ignore import IgnoreMatcher, load_ignore_matcher
-from .language import LanguageDetector
+from .language import PROSE_LANGUAGE, LanguageDetector
 from .models import RepositoryScanRequest, ScanResult, ScanSummary, SourceFileEntry
 
 
@@ -16,6 +17,7 @@ class ScanContext:
     root: Path
     ignore: IgnoreMatcher
     language_detector: LanguageDetector
+    docs_scope: DocsScope
 
 
 def scan_repository(request: RepositoryScanRequest | Path | str) -> ScanResult:
@@ -25,6 +27,7 @@ def scan_repository(request: RepositoryScanRequest | Path | str) -> ScanResult:
         root=root,
         ignore=load_ignore_matcher(root),
         language_detector=LanguageDetector(),
+        docs_scope=load_docs_scope(root),
     )
     entries: list[SourceFileEntry] = []
     summary = ScanSummary()
@@ -55,6 +58,13 @@ def scan_repository(request: RepositoryScanRequest | Path | str) -> ScanResult:
             )
             continue
         language = context.language_detector.detect(absolute_path)
+        # Documentation is scoped, code is not. Every heading in an in-scope
+        # Markdown file becomes a symbol, and every symbol is one LLM call plus
+        # one embedding, so a repository's scaffolding would otherwise decide
+        # what an indexing run costs. `.gitignore` is the wrong lever for this:
+        # `specs/` is tracked on purpose, it is simply not the wiki's subject.
+        if language == PROSE_LANGUAGE and not context.docs_scope.covers(relative_path):
+            language = None
         if not language:
             summary = ScanSummary(
                 total_candidates=summary.total_candidates,

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from repository_metadata.models import RepositoryBundle, SourceFileBundle
 
 from . import links
+from .prose import display_label, is_prose_file
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,24 +41,34 @@ class SearchIndexDocument:
         }
 
 
-def build_search_index(bundle: RepositoryBundle) -> SearchIndexDocument:
+def build_search_index(bundle: RepositoryBundle, repository_root: str | Path | None = None) -> SearchIndexDocument:
     entries: list[SearchIndexEntry] = []
+    root = repository_root if repository_root is not None else bundle.repository.rootPath
     for file_bundle in bundle.files:
-        entries.extend(_entries_for_file(file_bundle))
+        entries.extend(_entries_for_file(file_bundle, root))
     entries.sort(key=lambda entry: (entry.name.lower(), entry.symbolId))
     return SearchIndexDocument(generatedAt=datetime.now(timezone.utc).isoformat(), entries=tuple(entries))
 
 
-def _entries_for_file(file_bundle: SourceFileBundle) -> list[SearchIndexEntry]:
+def _entries_for_file(file_bundle: SourceFileBundle, repository_root: str | Path) -> list[SearchIndexEntry]:
     module = file_bundle.module
     module_key = module.sourceFileId
     slug = links.page_slug(module.name, module_key)
     _, module_html = links.module_output_paths(slug)
+    # Documentation reuses the class/function symbol types so it can reuse the
+    # whole pipeline, but the search box and the chat's citations print `kind`
+    # verbatim - so a README heading published as "class" is a wrong answer
+    # shown to a reader, not an internal detail.
+    prose = is_prose_file(module.filePath)
+    module_kind = "document" if prose else "module"
+    class_kind = "section" if prose else "class"
+    method_kind = "section" if prose else "method"
+    function_kind = "section" if prose else "function"
 
     entries = [
         SearchIndexEntry(
-            name=module.name,
-            kind="module",
+            name=display_label(module.name, module.filePath, repository_root),
+            kind=module_kind,
             symbolId=module_key,
             filePath=module.filePath,
             pageUrl=module_html,
@@ -68,7 +80,7 @@ def _entries_for_file(file_bundle: SourceFileBundle) -> list[SearchIndexEntry]:
         entries.append(
             SearchIndexEntry(
                 name=class_symbol.name,
-                kind="class",
+                kind=class_kind,
                 symbolId=class_symbol.id,
                 filePath=module.filePath,
                 pageUrl=f"{module_html}#{class_symbol.id}",
@@ -80,8 +92,8 @@ def _entries_for_file(file_bundle: SourceFileBundle) -> list[SearchIndexEntry]:
                 continue
             entries.append(
                 SearchIndexEntry(
-                    name=f"{class_symbol.name}.{method.name}",
-                    kind="method",
+                    name=f"{class_symbol.name}.{method.name}" if not prose else f"{class_symbol.name} › {method.name}",
+                    kind=method_kind,
                     symbolId=method.id,
                     filePath=module.filePath,
                     pageUrl=f"{module_html}#{method.id}",
@@ -95,7 +107,7 @@ def _entries_for_file(file_bundle: SourceFileBundle) -> list[SearchIndexEntry]:
         entries.append(
             SearchIndexEntry(
                 name=function.name,
-                kind="function",
+                kind=function_kind,
                 symbolId=function.id,
                 filePath=module.filePath,
                 pageUrl=f"{module_html}#{function.id}",

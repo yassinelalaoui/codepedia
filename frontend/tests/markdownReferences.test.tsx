@@ -53,3 +53,35 @@ describe("parseReference", () => {
     expect(resolved).toBeUndefined();
   });
 });
+
+describe("findByCitation across documentation entries", () => {
+  const DOC_ENTRIES: SearchIndexEntry[] = [
+    {
+      name: "docs/architecture",
+      kind: "document",
+      symbolId: "module_d1",
+      filePath: "docs/architecture.md",
+      pageUrl: "modules/architecture-d1.html",
+    },
+    {
+      name: "Storage",
+      kind: "section",
+      symbolId: "class_d2",
+      filePath: "docs/architecture.md",
+      pageUrl: "modules/architecture-d1.html#class_d2",
+    },
+  ];
+
+  it("resolves a file-only citation to a documentation page", () => {
+    // The file-path fallback used to match `kind === "module"` alone, so once
+    // prose stopped being published as a module every citation pointing at a
+    // documentation file silently stopped resolving to a link.
+    const resolved = findByCitation(DOC_ENTRIES, { filePath: "docs/architecture.md" });
+    expect(resolved?.pageUrl).toBe("modules/architecture-d1.html");
+  });
+
+  it("still prefers a symbol id over the file-level entry", () => {
+    const resolved = findByCitation(DOC_ENTRIES, { symbolId: "class_d2", filePath: "docs/architecture.md" });
+    expect(resolved?.pageUrl).toBe("modules/architecture-d1.html#class_d2");
+  });
+});

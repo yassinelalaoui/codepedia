@@ -1,4 +1,20 @@
-export type SearchIndexEntryKind = "module" | "class" | "method" | "function";
+/**
+ * `document` and `section` are the documentation half: `parser_engine` maps a
+ * Markdown file onto the same module/class/function symbol types the code uses,
+ * so the generator relabels them on the way out rather than publishing a README
+ * heading as a "class" - which is what the search box and the citation list
+ * below print, verbatim, to a reader.
+ */
+export type SearchIndexEntryKind =
+  | "module"
+  | "class"
+  | "method"
+  | "function"
+  | "document"
+  | "section";
+
+/** The kinds whose entry stands for a whole file, which is what a citation carrying only a `filePath` can resolve to. */
+const FILE_LEVEL_KINDS: readonly SearchIndexEntryKind[] = ["module", "document"];
 
 export interface SearchIndexEntry {
   name: string;
@@ -105,7 +121,7 @@ export function findByCitation(
     if (bySymbol) return bySymbol;
   }
   if (filePath) {
-    return entries.find((entry) => entry.kind === "module" && entry.filePath === filePath);
+    return entries.find((entry) => FILE_LEVEL_KINDS.includes(entry.kind) && entry.filePath === filePath);
   }
   return undefined;
 }

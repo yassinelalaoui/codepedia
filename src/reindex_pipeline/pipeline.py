@@ -6,6 +6,7 @@ from typing import Any
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator
 from parser_engine import SourceFile, extract_symbols
+from repo_scanner.docs_scope import load_docs_scope
 from repo_scanner.ignore import load_ignore_matcher
 from repo_watcher import ChangeBatch, ChangeType
 from repository_metadata import CodeSummaryPipeline, LocalLLMUnavailableError, RepositoryMetadataStore, compute_content_hash
@@ -48,6 +49,7 @@ class IncrementalReindexPipeline:
         self.embeddingEngine = embeddingEngine
         self.docGenerator = docGenerator
         self._ignoreMatcher = load_ignore_matcher(self.repositoryRoot)
+        self._docsScope = load_docs_scope(self.repositoryRoot)
 
     def run(self, batch: ChangeBatch) -> ReindexOutcome:
         # First, before any page is regenerated below. `serve` keeps this process
@@ -67,7 +69,7 @@ class IncrementalReindexPipeline:
                 to_remove.append(change.relative_path)
                 continue
 
-            classification = classify_path(self.repositoryRoot, change.relative_path, self._ignoreMatcher)
+            classification = classify_path(self.repositoryRoot, change.relative_path, self._ignoreMatcher, self._docsScope)
             classifications[change.relative_path] = classification
             if classification.excluded or classification.isBinary or classification.language is None:
                 continue

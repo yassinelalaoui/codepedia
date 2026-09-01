@@ -225,6 +225,28 @@ codepedia config --llm-model <your-local-model-name> --embedding-model <your-emb
 codepedia config --show   # view the current configuration and chains
 ```
 
+**Choose which documentation gets indexed** — every Markdown heading becomes
+a symbol, and every symbol costs one summary call plus one embedding, so the
+documentation perimeter is declared rather than discovered. By default that is
+the root `README*.md` plus a root `docs/`, `doc/` or `documentation/`
+directory; a repository that keeps its documentation elsewhere says so in a
+`.codepedia.json` at its root:
+
+```json
+{
+  "docs": {
+    "include": ["README.md", "handbook/**/*.md"],
+    "exclude": ["handbook/archive/**"]
+  }
+}
+```
+
+Patterns are gitignore patterns, so anchoring (`/README.md`), directory
+patterns (`docs/`) and negations behave as in a `.gitignore`. `include`
+replaces the default rather than extending it, and `exclude` is applied after
+it. Only documentation is scoped this way — which *code* is indexed is
+`.gitignore`'s job, as before.
+
 **Scan a repository only** (no local LLM needed) — prints a JSON inventory
 of its source files, unchanged from the original scanner (001):
 

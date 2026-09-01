@@ -26,7 +26,7 @@ from .mermaid_diagram import (
     build_use_case_diagram_mermaid_source,
 )
 from .models import DocPage, DocumentationSet, EdgeId, PageLink
-from .prose import is_prose_file
+from .prose import display_label, is_prose_file
 from .search_index import SearchIndexDocument, build_search_index
 from .section_narrator import SectionNarrator, apply_section_narrations
 from .sections import Section, SectionSelection, build_sections
@@ -188,6 +188,10 @@ class DocGenerator:
     ) -> DocPage:
         file_bundle = self._module_bundle(moduleSymbol)
         module_key = moduleSymbol.sourceFileId
+        # The slug still comes from `moduleSymbol.name`: `label` is what a
+        # reader sees, `name` is what the output path and every stored link are
+        # keyed on, and the two must not be swapped.
+        label = display_label(moduleSymbol.name, moduleSymbol.filePath, self.repositoryRoot)
         slug = links.page_slug(moduleSymbol.name, module_key)
         module_md, module_html = links.module_output_paths(slug)
         page_id = links.module_page_id(module_key)
@@ -228,7 +232,7 @@ class DocGenerator:
             from_output_path_markdown=module_md,
             to_page_id=links.diagram_page_id(module_key),
             to_output_path_markdown=diagram_md,
-            label=f"{moduleSymbol.name} dependency diagram",
+            label=f"{label} dependency diagram",
         )
         if diagram_link:
             page_links.append(diagram_link)
@@ -269,7 +273,7 @@ class DocGenerator:
             entry_point_links=entry_point_links,
         )
         html = self._render_page(
-            title=moduleSymbol.name,
+            title=label,
             content_markdown=content,
             output_path_html=module_html,
             nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup,
@@ -280,7 +284,7 @@ class DocGenerator:
 
         return DocPage(
             id=page_id,
-            title=moduleSymbol.name,
+            title=label,
             contentMarkdown=content,
             relatedSymbols=tuple(related_key for related_key, _ in related_modules),
             kind="module",
@@ -839,7 +843,7 @@ class DocGenerator:
             # Same reasoning for the wiki UI bundle (016 research.md Decision 8)
             # and the search index it and the chat panel both depend on.
             self._writer.ensure_wiki_ui_assets()
-            self._writer.write_search_index(self._search_index or build_search_index(bundle))
+            self._writer.write_search_index(self._search_index or build_search_index(bundle, self.repositoryRoot))
 
         return DocumentationSet(repositoryId=self.repositoryId, outputRoot=str(self.outputRoot), pages=tuple(pages))
 
@@ -863,7 +867,8 @@ class DocGenerator:
             for member in section.members:
                 slug = links.page_slug(member.name, member.moduleKey)
                 _, module_html = links.module_output_paths(slug)
-                modules.append((member.name, module_html, member.moduleKey))
+                label = display_label(member.name, member.filePath, self.repositoryRoot)
+                modules.append((label, module_html, member.moduleKey))
             entries.append((section.title, section_html, section.key, modules))
         return entries
 
@@ -938,7 +943,7 @@ class DocGenerator:
             # Built here rather than at the end of the run: page rendering needs
             # it to resolve inline symbol mentions, and it is a pure function of
             # the bundle, so the same document is reused for the manifest write.
-            self._search_index = build_search_index(self._bundle)
+            self._search_index = build_search_index(self._bundle, self.repositoryRoot)
             self._symbol_lookup = build_symbol_lookup(self._search_index)
         return self._bundle
 
@@ -982,16 +987,25 @@ class DocGenerator:
         return sorted(related.items(), key=lambda item: item[1])
 
     def _build_architecture_summary(self, files: tuple[SourceFileBundle, ...]) -> dict:
-        class_count = sum(len(file_bundle.classes) for file_bundle in files)
-        function_count = sum(len(self._documented_functions(file_bundle)) for file_bundle in files)
+        # Documentation headings are stored as classes and functions so prose
+        # reuses the wiki pipeline, so counting them here would answer "how many
+        # classes does this repository have?" with a number several times the
+        # truth. Prose is counted, just as what it is.
+        code_files = [file_bundle for file_bundle in files if not is_prose_file(file_bundle.module.filePath)]
+        document_count = len(files) - len(code_files)
+        class_count = sum(len(file_bundle.classes) for file_bundle in code_files)
+        function_count = sum(len(self._documented_functions(file_bundle)) for file_bundle in code_files)
 
+        # Over `code_files` too, so the per-directory counts still add up to
+        # `moduleCount` rather than to a total that includes documentation.
         groups: dict[str, int] = {}
-        for file_bundle in files:
+        for file_bundle in code_files:
             group_name = Path(file_bundle.module.filePath).parent.name or "."
             groups[group_name] = groups.get(group_name, 0) + 1
 
         return {
-            "moduleCount": len(files),
+            "moduleCount": len(code_files),
+            "documentCount": document_count,
             "classCount": class_count,
             "functionCount": function_count,
             "groups": sorted(

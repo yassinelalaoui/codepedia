@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from repo_scanner.binary import is_binary_path
+from repo_scanner.docs_scope import DocsScope
 from repo_scanner.ignore import IgnoreMatcher
-from repo_scanner.language import LanguageDetector
+from repo_scanner.language import PROSE_LANGUAGE, LanguageDetector
 from repository_metadata import RepositoryMetadataStore, compute_content_hash
 
 from .models import ChangeConfirmation, PathClassification
@@ -12,13 +13,25 @@ from .models import ChangeConfirmation, PathClassification
 _LANGUAGE_DETECTOR = LanguageDetector()
 
 
-def classify_path(repository_root: Path, relative_path: str, ignore_matcher: IgnoreMatcher) -> PathClassification:
+def classify_path(
+    repository_root: Path,
+    relative_path: str,
+    ignore_matcher: IgnoreMatcher,
+    docs_scope: DocsScope | None = None,
+) -> PathClassification:
     if ignore_matcher.ignores(relative_path, is_dir=False):
         return PathClassification(relativePath=relative_path, excluded=True, isBinary=False, language=None)
     absolute_path = repository_root / relative_path
     if is_binary_path(absolute_path):
         return PathClassification(relativePath=relative_path, excluded=False, isBinary=True, language=None)
     language = _LANGUAGE_DETECTOR.detect(absolute_path)
+    # The same documentation perimeter `scan_repository` applies, applied to the
+    # watcher's path: without it a save under `specs/` would be reindexed here
+    # even though a full `index` no longer knows the file exists, and the two
+    # views of the repository would drift apart file by file.
+    scope = docs_scope if docs_scope is not None else DocsScope()
+    if language == PROSE_LANGUAGE and not scope.covers(relative_path):
+        language = None
     return PathClassification(relativePath=relative_path, excluded=False, isBinary=False, language=language)
 
 

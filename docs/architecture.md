@@ -48,7 +48,7 @@ Turns raw source files into structured, queryable facts about the codebase.
 
 | Package | Responsibility |
 |---|---|
-| `repo_scanner` | Walk a repository, apply exclusion rules, detect binary files and languages, produce the candidate file list. |
+| `repo_scanner` | Walk a repository, apply exclusion rules, detect binary files and languages, produce the candidate file list. Documentation is additionally bounded by a declared perimeter (`docs_scope`, read from `.codepedia.json`), because every Markdown heading becomes a symbol and therefore one summary call plus one embedding: unbounded, a repository's scaffolding decides what an indexing run costs. |
 | `parser_engine` | Parse one file into an AST (Tree-sitter, or Python's own `ast`) and extract its symbols (modules, classes, functions), imports, calls, and inheritance relations. |
 | `dependency_graph` | Hold the graph of every file/symbol and the `import`/`call`/`inheritance` edges between them; answer "what depends on X" / "what does X depend on." |
 | `repository_metadata` | The durable record of every scanned file, its symbols, and its content hash — the system's source of truth for "is this file actually indexed, and has it changed." |
