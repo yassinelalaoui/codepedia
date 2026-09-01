@@ -18,6 +18,11 @@ class SearchIndexEntry:
     symbolId: str
     filePath: str
     pageUrl: str
+    #: The wiki page this entry lives on. Not serialized - the browser has the
+    #: URL and needs nothing else - but `cross_references` reports it back to
+    #: the generator so a page that links here is regenerated when this one is
+    #: removed.
+    pageId: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +60,10 @@ def _entries_for_file(file_bundle: SourceFileBundle, repository_root: str | Path
     module_key = module.sourceFileId
     slug = links.page_slug(module.name, module_key)
     _, module_html = links.module_output_paths(slug)
+    module_page_id = links.module_page_id(module_key)
+    # The same table the module template writes its headings from, so a
+    # `pageUrl` here can never name a fragment the page does not carry.
+    anchors = links.build_symbol_anchors(file_bundle)
     # Documentation reuses the class/function symbol types so it can reuse the
     # whole pipeline, but the search box and the chat's citations print `kind`
     # verbatim - so a README heading published as "class" is a wrong answer
@@ -72,6 +81,7 @@ def _entries_for_file(file_bundle: SourceFileBundle, repository_root: str | Path
             symbolId=module_key,
             filePath=module.filePath,
             pageUrl=module_html,
+            pageId=module_page_id,
         )
     ]
 
@@ -83,7 +93,8 @@ def _entries_for_file(file_bundle: SourceFileBundle, repository_root: str | Path
                 kind=class_kind,
                 symbolId=class_symbol.id,
                 filePath=module.filePath,
-                pageUrl=f"{module_html}#{class_symbol.id}",
+                pageUrl=f"{module_html}#{anchors[class_symbol.id]}",
+                pageId=module_page_id,
             )
         )
         for method_id in class_symbol.methods:
@@ -96,7 +107,8 @@ def _entries_for_file(file_bundle: SourceFileBundle, repository_root: str | Path
                     kind=method_kind,
                     symbolId=method.id,
                     filePath=module.filePath,
-                    pageUrl=f"{module_html}#{method.id}",
+                    pageUrl=f"{module_html}#{anchors[method.id]}",
+                    pageId=module_page_id,
                 )
             )
 
@@ -110,7 +122,8 @@ def _entries_for_file(file_bundle: SourceFileBundle, repository_root: str | Path
                 kind=function_kind,
                 symbolId=function.id,
                 filePath=module.filePath,
-                pageUrl=f"{module_html}#{function.id}",
+                pageUrl=f"{module_html}#{anchors[function.id]}",
+                pageId=module_page_id,
             )
         )
 

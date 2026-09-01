@@ -190,6 +190,12 @@ def connect(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.C
     return connection
 
 
+#: Bumped whenever `parser_engine.extractor` changes how a symbol id is
+#: derived. Version 2 is the line-free scheme: an id is seeded on the file, the
+#: kind, the qualified name and an ordinal, never on `lineStart`/`lineEnd`.
+SYMBOL_ID_SCHEME_VERSION = 2
+
+
 def ensure_schema(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA foreign_keys = ON")
     for statement in SCHEMA_STATEMENTS:
@@ -197,6 +203,34 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     _ensure_chat_messages_generated_by_column(connection)
     _ensure_repositories_commit_sha_column(connection)
     _ensure_symbols_summary_provenance_columns(connection)
+    _ensure_symbol_id_scheme(connection)
+
+
+def _ensure_symbol_id_scheme(connection: sqlite3.Connection) -> None:
+    """Re-parse every file once when the id derivation itself has changed.
+
+    An index written by an older version holds symbols keyed the old way. The
+    incremental path only re-parses files whose content hash moved, so without
+    this a long-lived `serve` would keep both schemes side by side forever,
+    each file switching over only if someone happened to edit it.
+
+    Blanking `content_hash` is the lever the watcher already has: its catch-up
+    scan compares the stored hash with the file's, so an empty one reads as
+    "modified" and the file is re-parsed on the next pass. Nothing is deleted -
+    a re-parse rewrites the symbols, and the summary ledger is keyed on content
+    rather than on symbol identity, so the summaries come straight back with no
+    model call (`copy_summary_ledger`).
+
+    A database created just now reports version 0 with no rows to update, so
+    this only ever stamps it.
+    """
+    stored = connection.execute("PRAGMA user_version").fetchone()[0]
+    if stored == SYMBOL_ID_SCHEME_VERSION:
+        return
+    with connection:
+        connection.execute("UPDATE source_files SET content_hash = ''")
+        # `PRAGMA user_version` takes no parameter binding.
+        connection.execute(f"PRAGMA user_version = {SYMBOL_ID_SCHEME_VERSION:d}")
 
 
 def _ensure_symbols_summary_provenance_columns(connection: sqlite3.Connection) -> None:
@@ -235,13 +269,6 @@ def stable_repository_id(root_path: str | Path) -> str:
 def stable_source_file_id(repository_id: str, path: str | Path) -> str:
     normalized = Path(path).as_posix().replace("\\", "/")
     return f"{repository_id}::file::{normalized}"
-
-
-def stable_symbol_id(source_file_id: str, kind: str, name: str, line_start: int, line_end: int) -> str:
-    seed = f"{source_file_id}|{kind}|{name}|{line_start}|{line_end}"
-    import hashlib
-
-    return f"symbol_{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:16]}"
 
 
 def upsert_repository(
@@ -776,6 +803,41 @@ def save_summary_to_ledger(
         )
 
 
+def copy_summary_ledger(connection: sqlite3.Connection, *, source_db_path: str | Path) -> int:
+    """Carry a previous run's ledger into this run's database. Returns rows copied.
+
+    A full `index` builds into a fresh staging directory, so its metadata
+    database starts empty - and an empty ledger means every symbol in the
+    repository is re-summarized at the model, however unchanged the code is.
+    `cli.index_command._warm_embedding_cache` already carries the previous
+    run's *vectors* forward for exactly this reason; this is the same move for
+    the answers that cost far more per call.
+
+    `ATTACH` rather than a read-and-reinsert loop: the ledger holds one row per
+    summary ever generated for the repository, and the whole point is that this
+    is cheap enough to do unconditionally.
+
+    Rows are matched on `context_hash`, which is what the ledger is keyed on and
+    what makes this safe across a change of symbol ids: the hash covers the
+    material the model was shown and deliberately not the symbol's id
+    (`summary_context.context_hash`).
+    """
+    connection.execute("ATTACH DATABASE ? AS previous_state", (str(source_db_path),))
+    try:
+        with connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO summary_ledger
+                    (context_hash, source_file_id, symbol_kind, symbol_name, generated_summary, model_name, generated_at)
+                SELECT context_hash, source_file_id, symbol_kind, symbol_name, generated_summary, model_name, generated_at
+                FROM previous_state.summary_ledger
+                """
+            )
+            return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+    finally:
+        connection.execute("DETACH DATABASE previous_state")
+
+
 def load_summary_by_context_hash(connection: sqlite3.Connection, *, context_hash: str) -> str:
     """A summary already generated for exactly this content, or "".
 
@@ -797,9 +859,10 @@ def load_latest_summary_for_symbol(
     """The most recent summary written for this symbol, whatever version it described.
 
     Returns `(generated_summary, context_hash)`, or `("", "")`. Matched on
-    file/kind/name rather than symbol id because ids embed line numbers and so
-    change when anything above the symbol moves - the name does not. Used only
-    to carry a *stale* summary forward when the current version has none.
+    file/kind/name rather than symbol id: a re-parse deletes and re-inserts
+    every symbol in the file, and an id can still move on a rename or when an
+    earlier homonym appears above it. Used only to carry a *stale* summary
+    forward when the current version of a symbol has none of its own.
     """
     row = connection.execute(
         """

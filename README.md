@@ -197,6 +197,17 @@ saved edits are reflected automatically without re-running `index`:
 codepedia serve /path/to/some/repository
 ```
 
+> **Upgrading from an index built before symbol ids became line-independent**
+> — re-run `codepedia index` once. Symbol ids no longer encode a line range,
+> so an index written by an earlier version keys its symbols the old way.
+> Re-indexing is cheap: the previous run's summaries are carried forward
+> through the ledger and its vectors through the embedding cache, so a
+> re-index of unchanged code makes no model calls at all. `serve` also
+> detects the older index on its own and re-parses each file on its next
+> pass; the explicit `index` just does it in one go. Chat citations stored
+> against the old ids stop resolving and show the raw id instead — starting
+> a new chat session is enough.
+
 **Switch everything to fully local** — one action, atomically drops the
 remote fallback from all three stages and re-discloses immediately. Unlike
 the local-first default, this guarantees no call can leave the machine:

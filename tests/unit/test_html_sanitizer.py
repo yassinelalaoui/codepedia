@@ -165,3 +165,28 @@ def test_ordinary_markdown_links_and_images_are_untouched():
     html = _render("# M\n\n[other](other.md) and ![badge](https://example.com/b.svg)\n")
     assert 'href="other.html"' in html  # rewritten .md -> .html, still present
     assert 'src="https://example.com/b.svg"' in html
+
+
+def test_a_symbol_id_survives_on_a_heading():
+    """`module.md.jinja` stamps the opaque id next to the readable anchor.
+
+    Without an allowlist entry the tree pass would strip it silently, and the
+    only symptom would be a `data-symbol-id` nobody could find later.
+    """
+    html = _render('# M\n\n## Widget {: #widget data-symbol-id="class_abc123" }\n')
+    assert 'id="widget"' in html
+    assert 'data-symbol-id="class_abc123"' in html
+
+
+def test_other_data_attributes_are_still_dropped():
+    """The allowlist widened by one name on one family of tags, not by a prefix."""
+    html = _render('# M\n\n## Widget {: #widget data-onclick-payload="x" }\n')
+    assert "data-onclick-payload" not in html
+
+
+def test_a_symbol_id_is_dropped_outside_a_heading():
+    """Headings only. The attribute says nothing anywhere else, and a
+    documented repository can write `attr_list` too."""
+    html = _render('# M\n\n[link](https://example.com){: data-symbol-id="class_abc123" }\n')
+    assert 'href="https://example.com"' in html
+    assert "data-symbol-id" not in html

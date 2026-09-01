@@ -160,8 +160,11 @@ def context_hash(context: SummaryContext) -> str:
     fields identify the symbol rather than describe it, and both move for
     reasons a summary should not care about:
 
-    * `symbolId` embeds the symbol's line range, so inserting a line anywhere
-      above it changes the id while the symbol itself is untouched;
+    * `symbolId` names the symbol; it does not describe it. It no longer moves
+      on an unrelated edit (`parser_engine.extractor._symbol_id`), but it still
+      moves when a symbol is renamed or an earlier homonym is added - and a
+      ledger keyed on identity could never match a symbol whose row a re-parse
+      has just destroyed and rebuilt;
     * `sourceFileId` embeds the absolute repository path, which differs between
       an `index` run (built inside `.staging-<pid>`) and the published state
       directory it is renamed into.
@@ -171,10 +174,10 @@ def context_hash(context: SummaryContext) -> str:
     hash really does mean an identical prompt.
 
     That last sentence is load-bearing in both directions, and it is where this
-    used to go wrong: the line range excluded above walked straight back in
-    through `metadata`, which carried `lineStart`/`lineEnd` until
-    `_symbol_metadata` stopped emitting them. Anything added to the prompt is
-    added to the ledger's key, so a field has to earn its place twice.
+    used to go wrong: line numbers, kept out of the payload above, walked
+    straight back in through `metadata`, which carried `lineStart`/`lineEnd`
+    until `_symbol_metadata` stopped emitting them. Anything added to the prompt
+    is added to the ledger's key, so a field has to earn its place twice.
 
     `metadata` is dropped entirely for prose, because the prose prompt has no
     `Metadata:` block at all (`summary_prompts.build_prose_summary_prompt`) -
@@ -244,9 +247,10 @@ def _symbol_metadata(symbol: Symbol) -> dict[str, Any]:
       symbol does, and putting it in the prompt put it in `context_hash` too, so
       a comment added at the top of a file made the summary ledger miss for
       every symbol below it and re-paid each one at the model.
-    * `methods`/`nestedSymbols` - these are symbol *ids*, and an id embeds the
-      symbol's line range, so they carry the same volatility one level down.
-      They are also unreadable as prompt material.
+    * `methods`/`nestedSymbols` - these are symbol *ids*, which name symbols
+      rather than describing them, and carry the identity volatility of the
+      `symbolId` exclusion one level down. They are also unreadable as prompt
+      material.
 
     This is a derived dict; `symbol.metadata` as stored in the database is not
     touched.

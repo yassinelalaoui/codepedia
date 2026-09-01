@@ -107,7 +107,11 @@ def render_page_html(
     symbol_lookup: SymbolLookup | None = None,
     current_file_path: str = "",
     commit_sha: str = "",
+    reference_sink: set[str] | None = None,
 ) -> str:
+    # `reference_sink` is an out-parameter rather than a second return value:
+    # every one of the eight call sites reads `html = render_page_html(...)`,
+    # and only the pages that record links care about the answer.
     # A fresh Markdown instance per page, rather than the module-level
     # convenience function, is what makes `toc_tokens` reachable. Building a
     # new one each call also keeps the `toc` extension's used-id set scoped to
@@ -126,6 +130,7 @@ def render_page_html(
                 lookup=symbol_lookup,
                 output_path_html=output_path_html,
                 current_file_path=current_file_path,
+                reference_sink=reference_sink,
             )
         )
     md = markdown_lib.Markdown(extensions=extensions)

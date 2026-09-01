@@ -38,12 +38,10 @@ class DocGenerator:
     """Assembles wiki-style documentation pages from repository metadata.
 
     Pages are identified by each module's ``sourceFileId`` rather than its
-    ``ModuleSymbol.id``: the latter is a content hash over the whole file
-    (including its line range) and shifts on every edit, which would make
-    "the same module's page" look like a different page on every run and
-    defeat incremental regeneration. ``sourceFileId`` is derived only from
-    the repository id and file path, so it stays stable across edits and
-    only changes when a file is actually moved or renamed.
+    ``ModuleSymbol.id``. Both are stable across an edit now, but they answer
+    different questions: ``sourceFileId`` is derived from the repository id and
+    the file path alone, so it survives even the file being emptied, while a
+    symbol id belongs to the symbol. A page is a page of a *file*.
     """
 
     def __init__(
@@ -165,8 +163,9 @@ class DocGenerator:
             use_case_diagram_link=use_case_diagram_link,
             class_diagram_source=classDiagramSource,
         )
+        referenced_page_ids: set[str] = set()
         html = self._render_page(
-            title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=links.HOME_OUTPUT_HTML, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids
         )
 
         return DocPage(
@@ -178,6 +177,7 @@ class DocGenerator:
             sourceEntityId=repository.id,
             contentSymbolIds=tuple(module.sourceFileId for module in modules),
             renderedHtml=html,
+            referencedPageIds=tuple(sorted(referenced_page_ids)),
             outputPathMarkdown=links.HOME_OUTPUT_MARKDOWN,
             outputPathHtml=links.HOME_OUTPUT_HTML,
             links=tuple(page_links),
@@ -254,6 +254,10 @@ class DocGenerator:
 
         classes = self._classes_with_methods(file_bundle) if file_bundle else ()
         functions = self._documented_functions(file_bundle) if file_bundle else ()
+        # Built here and handed to the template rather than derived inside it,
+        # because `search_index` builds the very same table for the `pageUrl`
+        # it publishes - one function, one answer.
+        anchors = links.build_symbol_anchors(file_bundle) if file_bundle else {}
         content_symbol_ids = (
             moduleSymbol.id,
             *(symbol.id for symbol, _methods in classes),
@@ -267,16 +271,18 @@ class DocGenerator:
             module=moduleSymbol,
             classes=classes,
             functions=functions,
+            anchors=anchors,
             related_links=related_links,
             diagram_link=diagram_link,
             section_link=section_link,
             entry_point_links=entry_point_links,
         )
+        referenced_page_ids: set[str] = set()
         html = self._render_page(
             title=label,
             content_markdown=content,
             output_path_html=module_html,
-            nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup,
+            nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids,
             active_module_key=module_key,
             active_section_key=owning_section.key if owning_section else "",
             current_file_path=moduleSymbol.filePath,
@@ -291,6 +297,7 @@ class DocGenerator:
             sourceEntityId=moduleSymbol.id,
             contentSymbolIds=content_symbol_ids,
             renderedHtml=html,
+            referencedPageIds=tuple(sorted(referenced_page_ids)),
             outputPathMarkdown=module_md,
             outputPathHtml=module_html,
             links=tuple(page_links),
@@ -350,13 +357,14 @@ class DocGenerator:
             neighbor_links=neighbor_links,
             section_diagram_source=section_diagram_source,
         )
+        referenced_page_ids: set[str] = set()
         html = self._render_page(
             title=section.title,
             content_markdown=content,
             output_path_html=section_html,
             nav_sections=self._nav_sections(),
             active_section_key=section.key,
-            symbol_lookup=self._symbol_lookup,
+            symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids,
         )
 
         return DocPage(
@@ -368,6 +376,7 @@ class DocGenerator:
             sourceEntityId=section.key,
             contentSymbolIds=section.moduleKeys,
             renderedHtml=html,
+            referencedPageIds=tuple(sorted(referenced_page_ids)),
             outputPathMarkdown=section_md,
             outputPathHtml=section_html,
             links=tuple(page_links),
@@ -432,8 +441,9 @@ class DocGenerator:
             neighbor_links=[link for link in page_links if link is not owner_link],
             mermaid_source=mermaid_source.sourceText,
         )
+        referenced_page_ids: set[str] = set()
         html = self._render_page(
-            title=title, content_markdown=content, output_path_html=diagram_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=diagram_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids
         )
 
         related_symbols = tuple(dict.fromkeys(neighbor_keys))
@@ -446,6 +456,7 @@ class DocGenerator:
             sourceEntityId=module_key,
             contentSymbolIds=(module_key, *related_symbols),
             renderedHtml=html,
+            referencedPageIds=tuple(sorted(referenced_page_ids)),
             outputPathMarkdown=diagram_md,
             outputPathHtml=diagram_html,
             links=tuple(page_links),
@@ -476,8 +487,9 @@ class DocGenerator:
             "class_diagram.md.jinja",
             class_diagram_source=class_diagram_source,
         )
+        referenced_page_ids: set[str] = set()
         html = self._render_page(
-            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids
         )
 
         return DocPage(
@@ -489,6 +501,7 @@ class DocGenerator:
             sourceEntityId="",
             contentSymbolIds=class_diagram_source.includedClassIds,
             renderedHtml=html,
+            referencedPageIds=tuple(sorted(referenced_page_ids)),
             outputPathMarkdown=output_md,
             outputPathHtml=output_html,
             links=(),
@@ -509,8 +522,9 @@ class DocGenerator:
             "use_case_diagram.md.jinja",
             use_case_diagram_source=use_case_diagram_source,
         )
+        referenced_page_ids: set[str] = set()
         html = self._render_page(
-            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids
         )
 
         related_symbols = tuple(use_case.entryPointStableKey for use_case in selection.useCases)
@@ -523,6 +537,7 @@ class DocGenerator:
             sourceEntityId="",
             contentSymbolIds=related_symbols,
             renderedHtml=html,
+            referencedPageIds=tuple(sorted(referenced_page_ids)),
             outputPathMarkdown=output_md,
             outputPathHtml=output_html,
             links=(),
@@ -556,8 +571,9 @@ class DocGenerator:
                 selection=selection,
                 sequence_diagram_source=sequence_diagram_source,
             )
+            referenced_page_ids: set[str] = set()
             html = self._render_page(
-            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids
         )
 
             related_symbols = tuple(dict.fromkeys(step.calleeSymbolId for step in selection.steps))
@@ -571,6 +587,7 @@ class DocGenerator:
                     sourceEntityId=entry_point.symbolId,
                     contentSymbolIds=(entry_point.symbolId, *related_symbols),
                     renderedHtml=html,
+                    referencedPageIds=tuple(sorted(referenced_page_ids)),
                     outputPathMarkdown=output_md,
                     outputPathHtml=output_html,
                     links=(),
@@ -650,8 +667,9 @@ class DocGenerator:
             sequence_diagram_links=sequence_diagram_links,
             dependency_diagram_links=dependency_diagram_links,
         )
+        referenced_page_ids: set[str] = set()
         html = self._render_page(
-            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup
+            title=title, content_markdown=content, output_path_html=output_html, nav_sections=self._nav_sections(), symbol_lookup=self._symbol_lookup, reference_sink=referenced_page_ids
         )
 
         return DocPage(
@@ -663,6 +681,7 @@ class DocGenerator:
             sourceEntityId="",
             contentSymbolIds=(),
             renderedHtml=html,
+            referencedPageIds=tuple(sorted(referenced_page_ids)),
             outputPathMarkdown=output_md,
             outputPathHtml=output_html,
             links=tuple(page_links),

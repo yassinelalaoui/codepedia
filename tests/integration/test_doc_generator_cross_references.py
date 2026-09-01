@@ -67,3 +67,33 @@ def test_a_module_page_renders_its_section_rail(tmp_path):
 
     assert 'class="nav-group page-toc"' in beta.renderedHtml
     assert '<a class="page-toc-link" href="#classes">Classes</a>' in beta.renderedHtml
+
+
+def test_an_inline_reference_is_recorded_as_a_link_in_the_manifest(tmp_path):
+    """B3, end to end.
+
+    `beta` mentions `BaseThing`, which lives on `gamma`'s page, and the
+    treeprocessor turns that mention into a link. Until this was recorded, only
+    the links the generator built itself reached `linkedPageIds`, so removing
+    `gamma` left `beta` unregenerated and pointing at a deleted file.
+    """
+    root, store, graph = build_indexed_repo(tmp_path)
+    manifest_store = open_doc_manifest_store(tmp_path / "manifest.sqlite")
+    generator = DocGenerator(
+        metadataStore=store,
+        dependencyGraph=graph,
+        manifestStore=manifest_store,
+        outputRoot=tmp_path / "docs",
+        repositoryRoot=root,
+    )
+    doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
+
+    beta = _module_page(doc_set, "beta")
+    gamma = _module_page(doc_set, "gamma")
+
+    assert gamma.id in beta.referencedPageIds
+    entry = manifest_store.load_entry(beta.id)
+    assert entry is not None
+    assert gamma.id in entry.linkedPageIds
+    # The links the generator builds itself are still there.
+    assert set(link.toPageId for link in beta.links) <= set(entry.linkedPageIds)

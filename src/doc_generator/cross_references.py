@@ -152,12 +152,24 @@ def build_reference_href(entry: SearchIndexEntry, *, output_path_html: str) -> s
 
 class SymbolReferenceTreeprocessor(Treeprocessor):
     def __init__(
-        self, md, *, lookup: SymbolLookup, output_path_html: str, current_file_path: str
+        self,
+        md,
+        *,
+        lookup: SymbolLookup,
+        output_path_html: str,
+        current_file_path: str,
+        reference_sink: set[str] | None = None,
     ) -> None:
         super().__init__(md)
         self._lookup = lookup
         self._output_path_html = output_path_html
         self._current_file_path = current_file_path
+        # Where each resolved target's page id is reported back. Without it the
+        # links this pass creates are invisible to the manifest: only
+        # `DocPage.links` reaches `linkedPageIds`, so deleting a page left every
+        # page that mentioned one of its symbols pointing at a file that is no
+        # longer there, with nothing to trigger a regeneration.
+        self._reference_sink = reference_sink
 
     def run(self, root: Element) -> None:
         # Collected first, rewritten second: replacing a child in place while
@@ -180,6 +192,12 @@ class SymbolReferenceTreeprocessor(Treeprocessor):
             href = build_reference_href(entry, output_path_html=self._output_path_html)
             if not href:
                 continue
+            # `build_reference_href` answers a bare fragment - or nothing at all
+            # - when the target is this very page, which is not a dependency on
+            # anything: recording it would only link every page to itself in the
+            # manifest.
+            if self._reference_sink is not None and entry.pageId and not href.startswith("#"):
+                self._reference_sink.add(entry.pageId)
             anchor = Element("a", {"href": href, "class": "symbol-ref"})
             anchor.tail = code.tail
             code.tail = None
@@ -189,12 +207,18 @@ class SymbolReferenceTreeprocessor(Treeprocessor):
 
 class SymbolReferenceExtension(Extension):
     def __init__(
-        self, *, lookup: SymbolLookup, output_path_html: str, current_file_path: str = ""
+        self,
+        *,
+        lookup: SymbolLookup,
+        output_path_html: str,
+        current_file_path: str = "",
+        reference_sink: set[str] | None = None,
     ) -> None:
         super().__init__()
         self._lookup = lookup
         self._output_path_html = output_path_html
         self._current_file_path = current_file_path
+        self._reference_sink = reference_sink
 
     def extendMarkdown(self, md) -> None:  # noqa: N802 - python-markdown's API
         md.treeprocessors.register(
@@ -203,6 +227,7 @@ class SymbolReferenceExtension(Extension):
                 lookup=self._lookup,
                 output_path_html=self._output_path_html,
                 current_file_path=self._current_file_path,
+                reference_sink=self._reference_sink,
             ),
             "codepedia_symbol_references",
             _TREEPROCESSOR_PRIORITY,

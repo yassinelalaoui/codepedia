@@ -80,6 +80,7 @@ class RecordingLLMEngine:
         self._installed_models = installed_models
         self.generateTimeout = generate_timeout
         self.generate_calls = 0
+        self.prompts: list[str] = []
 
     @property
     def available(self) -> bool:
@@ -104,6 +105,7 @@ class RecordingLLMEngine:
         self.generate_calls += 1
         envelope = prompt if isinstance(prompt, PromptEnvelope) else PromptEnvelope.from_prompt(prompt)
         rendered = envelope.to_prompt_text()
+        self.prompts.append(rendered)
         symbol_line = next((line for line in rendered.splitlines() if line.startswith("Symbol name: ")), "Symbol name: unknown")
         symbol_name = symbol_line.split(": ", 1)[1]
         return f"{symbol_name} summary"
@@ -750,3 +752,46 @@ def test_index_rejects_a_malformed_docs_perimeter_before_doing_any_work(tmp_path
 
     with pytest.raises(typer.BadParameter, match=".codepedia.json"):
         run_index(repo, config=CLIConfiguration())
+
+
+def test_a_rerun_of_index_over_unchanged_code_summarizes_nothing(tmp_path, cli_home, fake_engines, monkeypatch):
+    """A full `index` builds into an empty staging directory.
+
+    Without the ledger travelling with it, that meant every symbol in the
+    repository was re-summarized at the model on every full run - which is what
+    made a re-index something to avoid, and what made changing the symbol id
+    scheme look expensive. The vectors were already carried across
+    (`_warm_embedding_cache`); this is the same move for the answers that cost
+    the most per call.
+    """
+    llm_factory, _embedding_factory = fake_engines
+    engines: list[RecordingLLMEngine] = []
+
+    def recording_llm_factory(*args, **kwargs):
+        engine = llm_factory(*args, **kwargs)
+        engines.append(engine)
+        return engine
+
+    for module in (cli.config_command, provider_routing.factory):
+        monkeypatch.setattr(module, "create_local_llm_engine", recording_llm_factory)
+
+    def symbol_summary_calls() -> int:
+        return sum(
+            1
+            for engine in engines
+            for prompt in engine.prompts
+            if "Symbol name: " in prompt
+        )
+
+    root = _copy_fixture_repo(tmp_path)
+
+    first = run_index(root, config=_local_config())
+    first.vectorIndex.close()
+    assert symbol_summary_calls() > 0, "the first run has to pay for its summaries"
+
+    for engine in engines:
+        engine.prompts.clear()
+
+    second = run_index(root, config=_local_config())
+    second.vectorIndex.close()
+    assert symbol_summary_calls() == 0

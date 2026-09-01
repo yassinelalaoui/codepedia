@@ -29,9 +29,9 @@ def compute_regeneration_impact(
     changed_path_strings = {_normalize(path) for path in changed_paths}
     changed_edges = list(changed_dependency_edge_ids)
 
-    # Every id below keys off each module's stable sourceFileId (path-derived),
-    # never the volatile content-hash ModuleSymbol.id, so page identity survives
-    # ordinary edits that shift a symbol's line range.
+    # Every id below keys off each module's sourceFileId (path-derived) rather
+    # than ModuleSymbol.id: page identity follows the file, so it holds even
+    # across a change to how symbol ids themselves are derived.
     module_key_by_symbol_id: dict[str, str] = {}
     module_key_by_file_path: dict[str, str] = {}
     for file_bundle in bundle.files:

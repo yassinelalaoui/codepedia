@@ -81,6 +81,13 @@ ALLOWED_TAG_ATTRIBUTES: dict[str, frozenset[str]] = {
     "details": frozenset({"open"}),
     "del": frozenset({"datetime"}),
     "ins": frozenset({"datetime"}),
+    # `module.md.jinja` stamps the symbol's opaque id onto its heading, next to
+    # the readable anchor a reader sees in the URL bar. Headings only, and not
+    # in the global set: an attribute a documented repository can also write
+    # from a docstring should reach as few elements as possible, and this one
+    # means nothing anywhere else. Nothing acts on it - it is a key the chat
+    # panel can match a citation against without parsing the anchor text.
+    **{tag: frozenset({"data-symbol-id"}) for tag in ("h1", "h2", "h3", "h4", "h5", "h6")},
 }
 
 # Attributes whose value is a URL and therefore needs its scheme checked.

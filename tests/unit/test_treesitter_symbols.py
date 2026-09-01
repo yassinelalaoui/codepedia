@@ -215,3 +215,34 @@ def test_missing_grammar_falls_back_to_the_regex_scanner(monkeypatch):
     # exactly why it is a fallback and no longer the default path.
     assert [item.name for item in inventory.classes] == ["TocHighlighter"]
     assert [item.name for item in inventory.functions] == ["dispose"]
+
+
+def _ts_ids(content: str) -> dict[str, str]:
+    inventory = extract_symbols(SourceFile(path=Path("sample.ts"), language="typescript", content=content))
+    symbols = [inventory.module, *inventory.classes, *inventory.functions]
+    return {f"{type(symbol).__name__}:{symbol.name}": symbol.id for symbol in symbols}
+
+
+def test_symbol_ids_survive_a_line_inserted_above_them():
+    """`_materialize_items` is the single funnel for every brace language.
+
+    Both the tree-sitter path and the regex fallback build their symbols
+    through it, so this one property covers JS, TS, Java, Go and Rust at once.
+    """
+    body = 'export class Widget {\n  render(): number {\n    return 1;\n  }\n}\n\nexport function helper(): number {\n  return 2;\n}\n'
+    before = _ts_ids(f'import {{ a }} from "a";\n\n{body}')
+    after = _ts_ids(f'import {{ a }} from "a";\nimport {{ b }} from "b";\n\n{body}')
+    assert before == after
+
+
+def test_same_method_name_under_two_classes_gets_distinct_ids():
+    inventory = extract_symbols(
+        SourceFile(
+            path=Path("sample.ts"),
+            language="typescript",
+            content="export class A {\n  run(): void {}\n}\n\nexport class B {\n  run(): void {}\n}\n",
+        )
+    )
+    identifiers = [item.id for item in inventory.functions if item.name == "run"]
+    assert len(identifiers) == 2
+    assert len(set(identifiers)) == 2

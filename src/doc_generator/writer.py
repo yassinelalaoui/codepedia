@@ -56,7 +56,13 @@ class DocumentationWriter:
             outputPathMarkdown=page.outputPathMarkdown,
             outputPathHtml=page.outputPathHtml,
             lastGeneratedAt=datetime.now(timezone.utc).isoformat(),
-            linkedPageIds=tuple(dict.fromkeys(link.toPageId for link in page.links)),
+            # Both kinds of outgoing link: the ones the generator built, and
+            # the ones the markdown treeprocessor resolved out of an inline
+            # symbol mention. A page removed from under either one has to
+            # regenerate whoever pointed at it (`impact._add_referrers_of`).
+            linkedPageIds=tuple(
+                dict.fromkeys((*(link.toPageId for link in page.links), *page.referencedPageIds))
+            ),
         )
         self.manifestStore.save_entry(self.repositoryId, entry)
         return page

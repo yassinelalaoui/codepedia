@@ -23,7 +23,7 @@ from repo_scanner.scanner import scan_repository
 from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, Symbol, compute_content_hash
 from repository_metadata.sqlite_store import connect as connect_metadata_db
-from repository_metadata.sqlite_store import stable_repository_id
+from repository_metadata.sqlite_store import copy_summary_ledger, stable_repository_id
 from sqlite_support import checkpoint_and_close
 from vector_index import VectorIndex
 
@@ -348,6 +348,8 @@ def _run_pipeline(
     with _stage(Stage.GENERATING_DOCS_STRUCTURE):
         doc_generator.generateRepositoryDocumentation(root, incremental=False)
 
+    _carry_forward_summary_ledger(state_dir, previous_state_dir)
+
     with _stage(Stage.SUMMARIZING):
         summary_pipeline = CodeSummaryPipeline(
             metadataStore=metadata_store,
@@ -381,6 +383,36 @@ def _run_pipeline(
                 typer.echo(f"  reused {cache.hits} embedding(s) from cache, computed {cache.misses}")
         finally:
             vector_index.close()
+
+
+def _carry_forward_summary_ledger(state_dir: Path, previous_state_dir: Path | None) -> int:
+    """Bring the previous run's summaries into this staging database.
+
+    Same shape and same two rules as `_warm_embedding_cache` below: opened and
+    closed immediately, because the state directory this reads is the one about
+    to be replaced and a held connection blocks that replace on Windows; and no
+    failure here is allowed to fail the run, because a stale or missing prior
+    state means "pay for the summaries again", never "refuse to index".
+
+    Without this a full `index` re-summarizes the entire repository at the
+    model even when nothing changed, which is what made a reindex expensive
+    enough to be worth avoiding.
+    """
+    if previous_state_dir is None:
+        return 0
+    previous_db = paths.metadata_db_path(previous_state_dir)
+    if not previous_db.exists():
+        return 0
+    connection = connect_metadata_db(paths.metadata_db_path(state_dir))
+    try:
+        copied = copy_summary_ledger(connection, source_db_path=previous_db)
+    except Exception:  # noqa: BLE001 - a stale prior ledger must never fail a fresh run
+        return 0
+    finally:
+        checkpoint_and_close(connection)
+    if copied:
+        typer.echo(f"  carried {copied} summary(ies) forward from the previous index")
+    return copied
 
 
 def _warm_embedding_cache(root: Path, previous_state_dir: Path | None) -> EmbeddingCache:

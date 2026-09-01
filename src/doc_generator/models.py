@@ -40,6 +40,11 @@ class DocPage:
     outputPathMarkdown: str = ""
     outputPathHtml: str = ""
     links: tuple[PageLink, ...] = ()
+    #: Pages this one links to through an inline symbol mention resolved while
+    #: rendering, as opposed to `links`, which the generator builds itself.
+    #: Both feed `PageManifestEntry.linkedPageIds`; only together do they
+    #: describe every outgoing link the page actually carries.
+    referencedPageIds: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +59,7 @@ class DocPage:
             "outputPathMarkdown": self.outputPathMarkdown,
             "outputPathHtml": self.outputPathHtml,
             "links": [link.to_dict() for link in self.links],
+            "referencedPageIds": list(self.referencedPageIds),
         }
 
 

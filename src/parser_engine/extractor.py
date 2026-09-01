@@ -61,10 +61,69 @@ def _normalize_language(language: str) -> str:
     return value
 
 
+def _seed_path(source_path: str) -> str:
+    """The file path as every id seed spells it.
+
+    Separators are normalized so the same file yields the same id whatever
+    platform walked it. An id is not supposed to record which machine parsed
+    the repository, and a Windows separator here is exactly that.
+    """
+    return source_path.replace("\\", "/")
+
+
 def _stable_id(prefix: str, source_path: str, name: str, line_start: int, line_end: int, extra: str = "") -> str:
-    seed = f"{source_path}|{prefix}|{name}|{line_start}|{line_end}|{extra}"
+    """Identity for a *relation* - a call, an import, an inheritance edge.
+
+    Still seeded on the line range, and deliberately so: a relation is an event
+    at a source location, and two calls to the same callee from the same caller
+    are told apart by nothing else. Nothing persists these ids - no table stores
+    them, and `dependency_edges` is keyed on `(source_id, target_id, type)` - so
+    they live for one run and the volatility costs nothing.
+
+    Symbols are the opposite case and use `_symbol_id` below.
+    """
+    seed = f"{_seed_path(source_path)}|{prefix}|{name}|{line_start}|{line_end}|{extra}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
     return f"{prefix}_{digest}"
+
+
+def _symbol_id(prefix: str, source_path: str, name: str, ordinal: int) -> str:
+    """Identity for a symbol: what it is, never where it sits.
+
+    Seeded on the file, the kind, the *qualified* name (`Outer.method.Inner`)
+    and an ordinal, and on nothing else. Notably not on `lineStart`/`lineEnd`,
+    which is what the previous scheme did and what made a single inserted line
+    at the top of a file rewrite the id of every symbol below it - and with it
+    every HTML anchor, every `search-index.json` entry, every vector chunk key
+    and every stored chat citation, none of whose subjects had changed.
+
+    The ordinal keeps homonyms apart: two `def parse()` under opposite branches
+    of a conditional, a method redefined further down. It counts per
+    `(kind, qualified name)` so that adding a *differently* named symbol above
+    one never shifts it.
+
+    Written first as `_markdown_symbol_id`, for prose, where the problem is
+    unmissable - one inserted paragraph moves every heading in the document.
+    Code has exactly the same problem; it is only quieter.
+    """
+    seed = f"{_seed_path(source_path)}|{prefix}|{name}|{ordinal}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}_{digest}"
+
+
+class _SymbolOrdinals:
+    """Per-file ordinals for symbols sharing a kind and a qualified name."""
+
+    __slots__ = ("_counts",)
+
+    def __init__(self) -> None:
+        self._counts: dict[tuple[str, str], int] = {}
+
+    def next(self, prefix: str, name: str) -> int:
+        key = (prefix, name)
+        ordinal = self._counts.get(key, 0)
+        self._counts[key] = ordinal + 1
+        return ordinal
 
 
 def _split_lines(text: str) -> list[str]:
@@ -217,12 +276,15 @@ def _extract_python_inventory(*, source_file: SourceFile, text: str) -> FileSymb
                     lineEnd=end,
                 )
             )
+    ordinals = _SymbolOrdinals()
+    module_name = Path(source_path).name
     result = _python_build_module(
         tree,
         source_path=source_path,
         text=text,
-        module_id=_stable_id("module", source_path, Path(source_path).name, 1, _line_span(text)),
+        module_id=_symbol_id("module", source_path, module_name, ordinals.next("module", module_name)),
         imports=imports,
+        ordinals=ordinals,
     )
     module = ModuleSymbol(
         id=result.symbol.id,
@@ -252,17 +314,24 @@ def _python_build_module(
     text: str,
     module_id: str,
     imports: list[ImportRecord],
+    ordinals: _SymbolOrdinals,
 ) -> _PythonBuildResult:
     classes: list[ClassSymbol] = []
     functions: list[FunctionSymbol] = []
     calls: list[CallRelation] = []
     inheritance: list[InheritanceRelation] = []
 
-    def build_class(node: pyast.ClassDef) -> _PythonBuildResult:
+    def build_class(node: pyast.ClassDef, *, qualifier: str = "") -> _PythonBuildResult:
         line_start = _line_number(node, "lineno", 1)
         line_end = _line_number(node, "end_lineno", line_start)
         parent_class = ", ".join(filter(None, (_python_unparse(base) for base in node.bases))) or None
-        class_id = _stable_id("class", source_path, node.name, line_start, line_end, parent_class or "")
+        # `qualifier` is the dotted path of enclosing classes and functions, so
+        # a nested `Inner` is `Outer.Inner` and never collides with a top-level
+        # one. It replaces the parent's *id* as the disambiguator: an id is
+        # what this scheme is trying to make derivable, so seeding one on
+        # another would put the parent's volatility back into the child.
+        qualified_name = f"{qualifier}.{node.name}" if qualifier else node.name
+        class_id = _symbol_id("class", source_path, qualified_name, ordinals.next("class", qualified_name))
         methods: list[FunctionSymbol] = []
         nested_symbols: list[Symbol] = []
         nested_classes: list[ClassSymbol] = []
@@ -283,7 +352,7 @@ def _python_build_module(
                 )
         for stmt in node.body:
             if isinstance(stmt, (pyast.FunctionDef, pyast.AsyncFunctionDef)):
-                function_result = build_function(stmt, owner="class", parent_symbol_id=class_id)
+                function_result = build_function(stmt, owner="class", qualifier=qualified_name)
                 methods.append(function_result.symbol)  # type: ignore[arg-type]
                 functions.append(function_result.symbol)  # type: ignore[arg-type]
                 functions.extend(function_result.functions)
@@ -292,7 +361,7 @@ def _python_build_module(
                 class_inheritance.extend(function_result.inheritance)
                 continue
             if isinstance(stmt, pyast.ClassDef):
-                nested_class_result = build_class(stmt)
+                nested_class_result = build_class(stmt, qualifier=qualified_name)
                 nested_classes.append(nested_class_result.symbol)  # type: ignore[arg-type]
                 nested_classes.extend(nested_class_result.classes)
                 functions.extend(nested_class_result.functions)
@@ -325,11 +394,12 @@ def _python_build_module(
         node: pyast.FunctionDef | pyast.AsyncFunctionDef,
         *,
         owner: str,
-        parent_symbol_id: str,
+        qualifier: str = "",
     ) -> _PythonBuildResult:
         line_start = _line_number(node, "lineno", 1)
         line_end = _line_number(node, "end_lineno", line_start)
-        function_id = _stable_id("function", source_path, node.name, line_start, line_end, parent_symbol_id)
+        qualified_name = f"{qualifier}.{node.name}" if qualifier else node.name
+        function_id = _symbol_id("function", source_path, qualified_name, ordinals.next("function", qualified_name))
         nested_symbols: list[Symbol] = []
         nested_functions: list[FunctionSymbol] = []
         nested_classes: list[ClassSymbol] = []
@@ -337,7 +407,7 @@ def _python_build_module(
         function_inheritance: list[InheritanceRelation] = []
         for stmt in node.body:
             if isinstance(stmt, (pyast.FunctionDef, pyast.AsyncFunctionDef)):
-                nested_result = build_function(stmt, owner="module", parent_symbol_id=function_id)
+                nested_result = build_function(stmt, owner="module", qualifier=qualified_name)
                 nested_functions.append(nested_result.symbol)  # type: ignore[arg-type]
                 nested_functions.extend(nested_result.functions)
                 nested_classes.extend(nested_result.classes)
@@ -346,7 +416,7 @@ def _python_build_module(
                 nested_symbols.append(nested_result.symbol)
                 continue
             if isinstance(stmt, pyast.ClassDef):
-                nested_class_result = build_class(stmt)
+                nested_class_result = build_class(stmt, qualifier=qualified_name)
                 nested_classes.append(nested_class_result.symbol)  # type: ignore[arg-type]
                 nested_classes.extend(nested_class_result.classes)
                 functions.extend(nested_class_result.functions)
@@ -387,7 +457,7 @@ def _python_build_module(
             inheritance.extend(class_result.inheritance)
             continue
         if isinstance(stmt, (pyast.FunctionDef, pyast.AsyncFunctionDef)):
-            function_result = build_function(stmt, owner="module", parent_symbol_id=module_id)
+            function_result = build_function(stmt, owner="module")
             functions.append(function_result.symbol)  # type: ignore[arg-type]
             functions.extend(function_result.functions)
             classes.extend(function_result.classes)
@@ -484,7 +554,8 @@ def _extract_treesitter_inventory(
                 item.parent_index = owner_index
     _link_parent_children(items)
 
-    classes, functions = _materialize_items(source_path, items)
+    ordinals = _SymbolOrdinals()
+    classes, functions = _materialize_items(source_path, items, ordinals)
     inheritance = _inheritance_relations(source_path, items)
     inheritance.extend(_treesitter_impl_relations(source_path, items, facts.inheritance))
 
@@ -499,8 +570,9 @@ def _extract_treesitter_inventory(
         for record in facts.imports
         if record.text
     ]
+    module_name = Path(source_path).name
     module = ModuleSymbol(
-        id=_stable_id("module", source_path, Path(source_path).name, 1, line_count),
+        id=_symbol_id("module", source_path, module_name, ordinals.next("module", module_name)),
         name=Path(source_path).stem,
         lineStart=1,
         lineEnd=line_count,
@@ -611,7 +683,28 @@ def _treesitter_calls(
     return calls
 
 
-def _materialize_items(source_path: str, items: list[_DeclaredItem]) -> tuple[list[ClassSymbol], list[FunctionSymbol]]:
+def _declared_qualified_name(items: list[_DeclaredItem], index: int) -> str:
+    """`Outer.Inner.method` for a declared item, walked from `parent_index`.
+
+    The nesting chain rather than `parent_class`, which names only the
+    immediate owner and so cannot tell two `Inner.run` apart under different
+    outer types. Guarded against a cycle: `_assign_brace_parents` derives
+    parents from line spans, and a malformed file has produced stranger
+    things.
+    """
+    parts: list[str] = []
+    seen: set[int] = set()
+    cursor: int | None = index
+    while cursor is not None and cursor not in seen:
+        seen.add(cursor)
+        parts.append(items[cursor].name)
+        cursor = items[cursor].parent_index
+    return ".".join(reversed(parts))
+
+
+def _materialize_items(
+    source_path: str, items: list[_DeclaredItem], ordinals: _SymbolOrdinals
+) -> tuple[list[ClassSymbol], list[FunctionSymbol]]:
     """Turn declared items into symbols and wire their parent/child links.
 
     Shared by the tree-sitter and the regex path: both produce the same
@@ -620,9 +713,10 @@ def _materialize_items(source_path: str, items: list[_DeclaredItem]) -> tuple[li
     """
     item_to_symbol: dict[int, Symbol] = {}
     for index, item in enumerate(items):
+        qualified_name = _declared_qualified_name(items, index)
         if item.kind == "class":
             item.symbol = ClassSymbol(
-                id=_stable_id("class", source_path, item.name, item.start_line, item.end_line, item.parent_class or ""),
+                id=_symbol_id("class", source_path, qualified_name, ordinals.next("class", qualified_name)),
                 name=item.name,
                 lineStart=item.start_line,
                 lineEnd=item.end_line,
@@ -633,7 +727,7 @@ def _materialize_items(source_path: str, items: list[_DeclaredItem]) -> tuple[li
             item_to_symbol[index] = item.symbol
         elif item.kind == "function":
             item.symbol = FunctionSymbol(
-                id=_stable_id("function", source_path, item.name, item.start_line, item.end_line, item.parent_class or item.owner),
+                id=_symbol_id("function", source_path, qualified_name, ordinals.next("function", qualified_name)),
                 name=item.name,
                 lineStart=item.start_line,
                 lineEnd=item.end_line,
@@ -682,10 +776,12 @@ def _extract_brace_inventory(*, source_file: SourceFile, text: str, language: st
     _assign_brace_parents(items)
     calls: list[CallRelation] = []
     imports = _extract_brace_imports(source_path=source_path, language=language, lines=lines)
-    classes, functions = _materialize_items(source_path, items)
+    ordinals = _SymbolOrdinals()
+    classes, functions = _materialize_items(source_path, items, ordinals)
     inheritance = _inheritance_relations(source_path, items)
+    module_name = Path(source_path).name
     module = ModuleSymbol(
-        id=_stable_id("module", source_path, Path(source_path).name, 1, max(1, len(lines))),
+        id=_symbol_id("module", source_path, module_name, ordinals.next("module", module_name)),
         name=Path(source_path).stem,
         lineStart=1,
         lineEnd=max(1, len(lines)),
@@ -749,21 +845,6 @@ class _MarkdownHeading:
     line: int
     body_end: int = 0
     section_end: int = 0
-
-
-def _markdown_symbol_id(prefix: str, source_path: str, slug: str, ordinal: int) -> str:
-    """A heading id that survives an edit anywhere else in the file.
-
-    Deliberately not `_stable_id`, which seeds on `lineStart`/`lineEnd`: in
-    prose a single inserted paragraph shifts every heading below it, so a
-    line-derived id would change every anchor, every `search-index.json` entry
-    and every stored chat citation on an ordinary documentation edit. Slug plus
-    ordinal identifies a heading by what it *is*, and the ordinal keeps two
-    identically-named headings in one file apart.
-    """
-    seed = f"{source_path}|{prefix}|{slug}|{ordinal}"
-    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
-    return f"{prefix}_{digest}"
 
 
 def _markdown_slug(title: str) -> str:
@@ -872,12 +953,10 @@ def _extract_markdown_inventory(*, source_file: SourceFile, text: str) -> FileSy
     headings = _markdown_headings(lines)
     _resolve_markdown_spans(headings, total_lines)
 
-    ordinals: dict[str, int] = {}
-
-    def next_ordinal(slug: str) -> int:
-        ordinal = ordinals.get(slug, 0)
-        ordinals[slug] = ordinal + 1
-        return ordinal
+    # The same counter the code paths use. A heading is identified by its slug
+    # where a class is identified by its qualified name, but the property
+    # wanted is the same one, so the mechanism is the same one.
+    ordinals = _SymbolOrdinals()
 
     # The module's prose is everything before the first `##`, which is where a
     # README states what the project is. The document's own `#` title stays in
@@ -893,7 +972,7 @@ def _extract_markdown_inventory(*, source_file: SourceFile, text: str) -> FileSy
     # neither is a `####`, which is now body text rather than a symbol.
     intro_end = next((heading.line - 1 for heading in headings if _is_promoted_heading(heading)), total_lines)
     module = ModuleSymbol(
-        id=_markdown_symbol_id("module", source_path, Path(source_path).name, 0),
+        id=_symbol_id("module", source_path, Path(source_path).name, 0),
         name=Path(source_path).stem,
         lineStart=1,
         lineEnd=total_lines,
@@ -918,7 +997,7 @@ def _extract_markdown_inventory(*, source_file: SourceFile, text: str) -> FileSy
         if heading.level == 2:
             classes.append(
                 ClassSymbol(
-                    id=_markdown_symbol_id("class", source_path, slug, next_ordinal(slug)),
+                    id=_symbol_id("class", source_path, slug, ordinals.next("class", slug)),
                     name=heading.title or "Section",
                     lineStart=heading.line,
                     lineEnd=heading.section_end,
@@ -938,7 +1017,7 @@ def _extract_markdown_inventory(*, source_file: SourceFile, text: str) -> FileSy
         # flat list exactly as it does for real methods.
         functions.append(
             FunctionSymbol(
-                id=_markdown_symbol_id("function", source_path, slug, next_ordinal(slug)),
+                id=_symbol_id("function", source_path, slug, ordinals.next("function", slug)),
                 name=heading.title or "Section",
                 lineStart=heading.line,
                 lineEnd=heading.section_end,
@@ -990,7 +1069,7 @@ def _markdown_method_groups(
 def _extract_generic_inventory(*, source_file: SourceFile, text: str) -> FileSymbolInventory:
     source_path = str(source_file.path)
     module = ModuleSymbol(
-        id=_stable_id("module", source_path, Path(source_path).name, 1, _line_span(text)),
+        id=_symbol_id("module", source_path, Path(source_path).name, 0),
         name=Path(source_path).stem,
         lineStart=1,
         lineEnd=_line_span(text),

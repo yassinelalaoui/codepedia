@@ -67,3 +67,58 @@ def _read_search_index(docs_root: Path) -> dict:
     import json
 
     return json.loads((docs_root / "assets" / "search-index.json").read_text(encoding="utf-8"))
+
+
+def test_search_index_anchors_are_readable(tmp_path):
+    """The point of 1.5: an anchor a reader can recognise in the URL bar.
+
+    `#alpha-entry` rather than `#function_9c1f...`. The opaque id is still on
+    the heading, in `data-symbol-id`, where a machine reads it.
+    """
+    root, store, graph = build_indexed_repo(tmp_path)
+    docs_root = tmp_path / "docs"
+    manifest_store = open_doc_manifest_store(tmp_path / "manifest.sqlite")
+    generator = DocGenerator(
+        metadataStore=store,
+        dependencyGraph=graph,
+        manifestStore=manifest_store,
+        outputRoot=docs_root,
+        repositoryRoot=root,
+    )
+    doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
+
+    entries = {entry["name"]: entry for entry in _read_search_index(docs_root)["entries"]}
+    assert entries["alpha_entry"]["pageUrl"].endswith("#alpha-entry")
+
+    module_pages = {page.outputPathHtml: page for page in doc_set.pages if page.kind == "module"}
+    page_path, _, _anchor = entries["alpha_entry"]["pageUrl"].partition("#")
+    rendered = module_pages[page_path].renderedHtml
+    assert f'data-symbol-id="{entries["alpha_entry"]["symbolId"]}"' in rendered
+
+
+def test_symbol_anchors_do_not_collide_with_the_pages_own_headings(tmp_path):
+    """A README section named "Summary" must not take the page's Summary anchor.
+
+    python-markdown keeps an explicit `attr_list` id verbatim, so the collision
+    would not break the symbol's own anchor - it would silently rename the
+    template's heading to `summary_1` instead.
+    """
+    from doc_generator import links
+
+    class _Module:
+        name = "readme"
+
+    class _Section:
+        def __init__(self, identifier, name):
+            self.id = identifier
+            self.name = name
+            self.methods = ()
+
+    class _Bundle:
+        module = _Module()
+        classes = (_Section("class_1", "Summary"), _Section("class_2", "Summary"))
+        functions = ()
+
+    anchors = links.build_symbol_anchors(_Bundle())
+    assert anchors["class_1"] == "summary-2"
+    assert anchors["class_2"] == "summary-3"

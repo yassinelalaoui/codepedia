@@ -46,9 +46,11 @@ class CountingLLM:
 
 
 class Harness:
-    def __init__(self, tmp_path: Path, source: str) -> None:
-        self.root = tmp_path / "repo"
-        self.root.mkdir()
+    def __init__(self, tmp_path: Path, source: str, root: Path | None = None) -> None:
+        # `root` is shared when a test needs a second database over the *same*
+        # repository, which is what a staging directory is.
+        self.root = root if root is not None else tmp_path / "repo"
+        self.root.mkdir(exist_ok=True)
         self.path = self.root / "app.py"
         self.path.write_text(source, encoding="utf-8")
         self.store = RepositoryMetadataStore(tmp_path / "meta.sqlite")
@@ -306,3 +308,49 @@ def test_a_session_is_reentrant(harness: Harness, monkeypatch):
         harness.store.recall_summary(context_hash="nothing either")
 
     assert len(opened) == 1
+
+
+def test_the_ledger_carries_into_a_fresh_database(tmp_path: Path):
+    """What makes a full `index` affordable after the id scheme changed.
+
+    A full run builds into an empty staging directory, so without this every
+    symbol in the repository is re-summarized at the model however unchanged
+    the code is. The ledger is keyed on the material the model was shown, not
+    on the symbol's id, so it survives a re-keying intact.
+    """
+    from repository_metadata.sqlite_store import connect, copy_summary_ledger
+
+    previous = Harness(tmp_path, THREE_FUNCTIONS)
+    previous.pipeline.summarizeRepository(previous.root, incremental=False)
+    assert previous.llm.calls > 0
+
+    staging_dir = tmp_path / "staging"
+    staging_dir.mkdir()
+    staging = Harness(staging_dir, THREE_FUNCTIONS, root=previous.root)
+
+    connection = connect(staging_dir / "meta.sqlite")
+    try:
+        copied = copy_summary_ledger(connection, source_db_path=tmp_path / "meta.sqlite")
+    finally:
+        connection.close()
+    assert copied > 0
+
+    staging.pipeline.summarizeRepository(staging.root, incremental=False)
+    assert staging.llm.calls == 0, "a carried-forward ledger must answer every symbol"
+
+
+def test_copying_a_ledger_twice_adds_nothing_and_raises_nothing(tmp_path: Path):
+    from repository_metadata.sqlite_store import connect, copy_summary_ledger
+
+    previous = Harness(tmp_path, THREE_FUNCTIONS)
+    previous.pipeline.summarizeRepository(previous.root, incremental=False)
+
+    connection = connect(tmp_path / "staging.sqlite")
+    try:
+        first = copy_summary_ledger(connection, source_db_path=tmp_path / "meta.sqlite")
+        second = copy_summary_ledger(connection, source_db_path=tmp_path / "meta.sqlite")
+    finally:
+        connection.close()
+
+    assert first > 0
+    assert second == 0

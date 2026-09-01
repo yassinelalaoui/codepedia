@@ -132,3 +132,41 @@ def test_inline_code_is_rewritten_but_fenced_blocks_are_left_verbatim():
     # element tree, so a `<pre><code>` is structurally out of reach.
     assert _fenced_blocks(with_links) == _fenced_blocks(without)
     assert all("symbol-ref" not in block for block in _fenced_blocks(with_links))
+
+
+def test_a_resolved_mention_reports_its_target_page():
+    """B3: the link this pass creates has to reach the manifest.
+
+    `linkedPageIds` was built only from `DocPage.links` - the links the
+    generator writes itself - so a page that mentioned `BaseThing` in a summary
+    was never regenerated when the page holding `BaseThing` was removed, and the
+    link it had rendered kept pointing at a deleted file.
+    """
+    sink: set[str] = set()
+    render_page_html(
+        title="t",
+        content_markdown="# M\n\nCalls `BaseThing.run` on start.\n",
+        output_path_html="modules/other-1.html",
+        symbol_lookup=build_symbol_lookup(_index(BASE_THING_RUN_ON_A_PAGE)),
+        reference_sink=sink,
+    )
+    assert sink == {"module:gamma"}
+
+
+def test_a_self_link_records_no_cross_page_dependency():
+    sink: set[str] = set()
+    render_page_html(
+        title="t",
+        content_markdown="# M\n\nSee `BaseThing.run`.\n",
+        output_path_html="modules/gamma-1.html",
+        symbol_lookup=build_symbol_lookup(_index(BASE_THING_RUN_ON_A_PAGE)),
+        reference_sink=sink,
+    )
+    assert sink == set()
+
+
+BASE_THING_RUN_ON_A_PAGE = SearchIndexEntry(
+    name="BaseThing.run", kind="method", symbolId="fn-run",
+    filePath="src/pkg/gamma.py", pageUrl="modules/gamma-1.html#basething-run",
+    pageId="module:gamma",
+)

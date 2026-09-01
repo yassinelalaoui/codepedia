@@ -50,7 +50,7 @@ _Summary pending — this {{ 'document' if is_prose else 'module' }} has not bee
 
 {% if classes %}
 {% for class, methods in classes %}
-### {{ class.name | mdesc }} {: #{{ class.id }} }
+### {{ class.name | mdesc }} {: #{{ anchors[class.id] }} data-symbol-id="{{ class.id }}" }
 
 {% if class.parentClass %}Inherits from `{{ class.parentClass }}`.
 
@@ -74,9 +74,9 @@ _Summary pending — this {{ 'section' if is_prose else 'class' }} has not been 
 {% if methods %}
 {% for method in methods %}
 {% if is_prose %}
-#### {{ method.name | mdesc }} {: #{{ method.id }} }
+#### {{ method.name | mdesc }} {: #{{ anchors[method.id] }} data-symbol-id="{{ method.id }}" }
 {% else %}
-#### {{ class.name | mdesc }}.{{ method.name | mdesc }}({{ method.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if method.returnType %} -> {{ method.returnType | mdesc }}{% endif %} {: #{{ method.id }} }
+#### {{ class.name | mdesc }}.{{ method.name | mdesc }}({{ method.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if method.returnType %} -> {{ method.returnType | mdesc }}{% endif %} {: #{{ anchors[method.id] }} data-symbol-id="{{ method.id }}" }
 {% endif %}
 
 {% if method.docstring %}{{ method.docstring }}
@@ -113,9 +113,9 @@ _No classes in this module._
 {% if functions %}
 {% for function in functions %}
 {% if is_prose %}
-### {{ function.name | mdesc }} {: #{{ function.id }} }
+### {{ function.name | mdesc }} {: #{{ anchors[function.id] }} data-symbol-id="{{ function.id }}" }
 {% else %}
-### {{ function.name | mdesc }}({{ function.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if function.returnType %} -> {{ function.returnType | mdesc }}{% endif %} {: #{{ function.id }} }
+### {{ function.name | mdesc }}({{ function.parameters | map(attribute='name') | map('mdesc') | join(', ') }}){% if function.returnType %} -> {{ function.returnType | mdesc }}{% endif %} {: #{{ anchors[function.id] }} data-symbol-id="{{ function.id }}" }
 {% endif %}
 
 {% if function.docstring %}{{ function.docstring }}

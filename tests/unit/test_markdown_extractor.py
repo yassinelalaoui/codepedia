@@ -150,3 +150,19 @@ def test_a_document_whose_only_headings_are_past_the_cap_is_all_intro(tmp_path: 
     assert inventory.classes == ()
     assert inventory.functions == ()
     assert "Deep prose." in inventory.module.docstring
+
+
+def test_a_section_and_a_subsection_of_the_same_name_get_distinct_ids(tmp_path: Path):
+    """The ordinal counts per kind, so these two do not share a counter.
+
+    A `##` and a `###` both named "Install" are different symbols, and each is
+    the first of its kind - which means adding one never renumbers the other.
+    """
+    inventory = _inventory(tmp_path, "# Doc\n\n## Install\n\nOne.\n\n### Install\n\nTwo.\n")
+    section = inventory.classes[0]
+    subsection = inventory.functions[0]
+
+    assert section.name == subsection.name == "Install"
+    assert section.id != subsection.id
+    assert section.id.startswith("class_")
+    assert subsection.id.startswith("function_")
