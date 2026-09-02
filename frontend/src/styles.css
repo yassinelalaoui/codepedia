@@ -104,7 +104,12 @@ h1, h2, h3, h4 { text-wrap: balance; font-weight: 600; letter-spacing: -0.01em; 
 .shell {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr) 384px;
-  min-height: 100vh;
+  /* Exactly the window, not "at least" it. With `min-height` the document
+     itself scrolled, so the chat column stretched to the height of the whole
+     page and its composer sat at the bottom of the *document* rather than the
+     bottom of the *screen* - the defect this feature exists to fix. */
+  height: 100vh;
+  overflow: hidden;
   align-items: stretch;
 }
 
@@ -228,9 +233,11 @@ summary.nav-link.section::before {
   background: var(--accent-soft-bg);
 }
 
-/* Smooth anchor jumps, honouring the reader's motion preference. */
+/* Smooth anchor jumps, honouring the reader's motion preference.
+   On `.main`, not `html`: `html` no longer scrolls, so the preference would
+   apply to nothing and be silently lost rather than loudly broken. */
 @media (prefers-reduced-motion: no-preference) {
-  html { scroll-behavior: smooth; }
+  .main { scroll-behavior: smooth; }
 }
 
 /* Main content */
@@ -239,6 +246,12 @@ summary.nav-link.section::before {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* The content scrolls here now that the document does not. */
+  overflow-y: auto;
+  /* So a heading reached by an anchor is not flush against the top edge.
+     `scrollIntoView` honours this, which is why the fragment handler in
+     main.tsx does no offset arithmetic of its own. */
+  scroll-padding-top: 24px;
 }
 .content-col { max-width: 720px; width: 100%; flex: 1; }
 .content-col h1 { font-size: 27px; letter-spacing: -0.02em; }
@@ -604,6 +617,12 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
 #wiki-chat-root {
   background: var(--surface);
   border-left: 1px solid var(--border);
+  /* `height` bounds the column; `min-height: 0` is what lets the flex child
+     inside it actually scroll. A grid item defaults to `min-height: auto`,
+     which refuses to shrink below its content, so without this a long
+     conversation pushes the column past the window and the composer leaves
+     the screen again - the original bug in a subtler form. */
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -655,12 +674,20 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
   text-align: center;
 }
 
+/* The scroll container is always rendered, whether the conversation is empty
+   or not, so the ref and the scroll listener are stable for the panel's
+   lifetime. `min-height: 0` for the same reason as on #wiki-chat-root. */
+.wiki-chat-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
 .wiki-chat-messages {
   list-style: none;
   margin: 0;
   padding: 18px;
-  flex: 1;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -750,23 +777,108 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
   .wiki-chat-indicator-dot { animation: none; opacity: 0.7; }
 }
 
-.wiki-chat-panel form { padding: 14px 18px 16px; border-top: 1px solid var(--border); flex: none; }
-.wiki-chat-panel input[type="text"] {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 12px;
-  font-size: 13.5px;
+/* Offered only when the reader has scrolled away from the newest message, so
+   arriving content is announced rather than yanking their view. */
+.wiki-chat-jump-latest {
+  flex: none;
+  align-self: center;
+  margin: 0 0 8px;
+  padding: 5px 12px;
+  background: var(--accent-soft-bg);
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 999px;
+  color: var(--accent);
   font-family: var(--font-ui);
-  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.wiki-chat-jump-latest:hover { border-color: var(--accent); }
+
+.wiki-chat-panel form { padding: 14px 18px 16px; border-top: 1px solid var(--border); flex: none; }
+.wiki-chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
+  padding: 4px 4px 4px 12px;
 }
-.wiki-chat-panel input[type="text"]::placeholder { color: var(--ink-faint); }
-.wiki-chat-panel input[type="text"]:focus { outline: none; border-color: var(--accent); }
-.wiki-chat-panel input[type="text"]:disabled { opacity: 0.6; }
+.wiki-chat-composer:focus-within { border-color: var(--accent); }
+.wiki-chat-panel textarea {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 0;
+  border: none;
+  background: none;
+  resize: none;
+  font-size: 13.5px;
+  font-family: var(--font-ui);
+  line-height: 20px;
+  color: var(--ink);
+}
+.wiki-chat-panel textarea::placeholder { color: var(--ink-faint); }
+.wiki-chat-panel textarea:focus { outline: none; }
+.wiki-chat-panel textarea:disabled { opacity: 0.6; }
+.wiki-chat-send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.wiki-chat-send:disabled { opacity: 0.4; cursor: default; }
 
+/* Hidden while the chat is docked; the media query below reveals it.
+   Declared BEFORE that media query on purpose: both selectors have the same
+   specificity, so whichever comes last wins - with this rule after the query,
+   `display: none` silently beat `display: inline-flex` and the toggle never
+   appeared at any width. Caught in a browser; no jsdom test can see it. */
+.wiki-chat-drawer-toggle {
+  display: none;
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 41;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: var(--shadow-2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Narrow windows: the chat used to vanish entirely (`display: none`), with
+   nothing telling the reader it still existed. It now docks behind a toggle. */
 @media (max-width: 1180px) {
   .shell { grid-template-columns: 240px minmax(0, 1fr); }
-  #wiki-chat-root { display: none; }
+  #wiki-chat-root {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(384px, 100vw);
+    z-index: 40;
+    box-shadow: var(--shadow-2);
+    transform: translateX(100%);
+    transition: transform 160ms ease;
+  }
+  #wiki-chat-root.is-open { transform: translateX(0); }
+  .wiki-chat-drawer-toggle { display: inline-flex; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #wiki-chat-root { transition: none; }
 }

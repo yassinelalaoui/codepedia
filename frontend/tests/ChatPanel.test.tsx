@@ -647,3 +647,307 @@ describe("ChatPanel", () => {
     });
   });
 });
+
+/** jsdom reports 0 for both, so anything depending on scroll geometry has to
+ * supply it. Defined rather than assigned: they are read-only accessors. */
+function defineScrollGeometry(
+  element: Element,
+  { scrollHeight, clientHeight }: { scrollHeight: number; clientHeight: number },
+): void {
+  Object.defineProperty(element, "scrollHeight", { value: scrollHeight, configurable: true });
+  Object.defineProperty(element, "clientHeight", { value: clientHeight, configurable: true });
+}
+
+function scrollContainer(): HTMLElement {
+  const container = document.querySelector<HTMLElement>(".wiki-chat-scroll");
+  if (!container) throw new Error("no .wiki-chat-scroll container was rendered");
+  return container;
+}
+
+async function composer(): Promise<HTMLTextAreaElement> {
+  return (await screen.findByLabelText(
+    "Ask a question about this repository",
+  )) as HTMLTextAreaElement;
+}
+
+describe("ChatPanel scroll behaviour (035)", () => {
+  beforeEach(() => {
+    _resetSearchIndexCacheForTests();
+    window.history.pushState({}, "", "/");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders one stable scroll container even with no messages", async () => {
+    installFetchRouter({});
+    render(<ChatPanel />);
+    await composer();
+
+    // The list itself is still conditional; the container never is, which is
+    // what makes the ref and the scroll listener stable from first render.
+    expect(scrollContainer()).toBeInTheDocument();
+    expect(document.querySelector(".wiki-chat-messages")).toBeNull();
+  });
+
+  it("follows the newest message while pinned to the bottom", async () => {
+    installFetchRouter({
+      ask: () =>
+        sseAskResponse(["An "], { answer: "An answer", citedSymbolIds: [], citedFilePaths: [] }),
+    });
+    render(<ChatPanel />);
+    await composer();
+    // Geometry must exist *before* the message arrives: the auto-scroll runs in
+    // a layout effect keyed on the message list, and jsdom reports scrollHeight
+    // as 0 until it is defined. In a browser the geometry is simply always real.
+    const container = scrollContainer();
+    defineScrollGeometry(container, { scrollHeight: 900, clientHeight: 300 });
+
+    await askQuestionThroughUi("what is this");
+
+    await waitFor(() => expect(container.scrollTop).toBe(900));
+  });
+
+  it("does not move the view when the reader has scrolled away", async () => {
+    installFetchRouter({
+      ask: () =>
+        sseAskResponse(["more "], { answer: "more text", citedSymbolIds: [], citedFilePaths: [] }),
+    });
+    render(<ChatPanel />);
+    await askQuestionThroughUi("first");
+
+    const container = scrollContainer();
+    defineScrollGeometry(container, { scrollHeight: 900, clientHeight: 300 });
+    // 500px from the bottom, far beyond the 40px tolerance.
+    container.scrollTop = 100;
+    fireEvent.scroll(container);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeInTheDocument(),
+    );
+    expect(container.scrollTop).toBe(100);
+  });
+
+  it("treats a container that does not overflow as pinned", async () => {
+    installFetchRouter({});
+    render(<ChatPanel />);
+    await composer();
+
+    const container = scrollContainer();
+    defineScrollGeometry(container, { scrollHeight: 200, clientHeight: 400 });
+    fireEvent.scroll(container);
+
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).not.toBeInTheDocument();
+  });
+
+  it("offers a jump affordance only once the reader has scrolled away", async () => {
+    installFetchRouter({});
+    render(<ChatPanel />);
+    await composer();
+    const container = scrollContainer();
+
+    defineScrollGeometry(container, { scrollHeight: 900, clientHeight: 300 });
+    container.scrollTop = 0;
+    fireEvent.scroll(container);
+    const jump = await screen.findByRole("button", { name: /jump to latest/i });
+
+    fireEvent.click(jump);
+
+    expect(container.scrollTop).toBe(900);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /jump to latest/i })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("returns to the newest message when a question is sent from a scrolled-up view", async () => {
+    installFetchRouter({
+      ask: () => sseAskResponse(["ok"], { answer: "ok", citedSymbolIds: [], citedFilePaths: [] }),
+    });
+    render(<ChatPanel />);
+    await askQuestionThroughUi("first");
+
+    const container = scrollContainer();
+    defineScrollGeometry(container, { scrollHeight: 900, clientHeight: 300 });
+    container.scrollTop = 0;
+    fireEvent.scroll(container);
+    await screen.findByRole("button", { name: /jump to latest/i });
+
+    await askQuestionThroughUi("second");
+
+    // Sending is deliberate: unlike an answer merely arriving, it re-pins.
+    await waitFor(() => expect(container.scrollTop).toBe(900));
+  });
+});
+
+describe("ChatPanel composer (035)", () => {
+  beforeEach(() => {
+    _resetSearchIndexCacheForTests();
+    window.history.pushState({}, "", "/");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is a textarea keeping the original accessible label", async () => {
+    installFetchRouter({});
+    render(<ChatPanel />);
+
+    expect((await composer()).tagName).toBe("TEXTAREA");
+  });
+
+  it("sends on Enter and suppresses the newline", async () => {
+    let asked = 0;
+    installFetchRouter({
+      ask: () => {
+        asked += 1;
+        return sseAskResponse(["hi"], { answer: "hi", citedSymbolIds: [], citedFilePaths: [] });
+      },
+    });
+    render(<ChatPanel />);
+    const box = await composer();
+    fireEvent.change(box, { target: { value: "a question" } });
+
+    // fireEvent returns false when a handler called preventDefault. Without it
+    // the question is sent *and* a newline lands in the box just cleared.
+    const notPrevented = fireEvent.keyDown(box, { key: "Enter" });
+
+    expect(notPrevented).toBe(false);
+    await waitFor(() => expect(asked).toBe(1));
+  });
+
+  it("inserts a newline on Shift+Enter without sending", async () => {
+    let asked = 0;
+    installFetchRouter({
+      ask: () => {
+        asked += 1;
+        return sseAskResponse(["hi"], { answer: "hi", citedSymbolIds: [], citedFilePaths: [] });
+      },
+    });
+    render(<ChatPanel />);
+    const box = await composer();
+    fireEvent.change(box, { target: { value: "line one" } });
+
+    const notPrevented = fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+
+    expect(notPrevented).toBe(true);
+    expect(asked).toBe(0);
+  });
+
+  it("sends from the send button", async () => {
+    let asked = 0;
+    installFetchRouter({
+      ask: () => {
+        asked += 1;
+        return sseAskResponse(["hi"], { answer: "hi", citedSymbolIds: [], citedFilePaths: [] });
+      },
+    });
+    render(<ChatPanel />);
+    const box = await composer();
+    fireEvent.change(box, { target: { value: "a question" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+
+    await waitFor(() => expect(asked).toBe(1));
+  });
+
+  it("never sends a whitespace-only question, by any route", async () => {
+    let asked = 0;
+    installFetchRouter({
+      ask: () => {
+        asked += 1;
+        return sseAskResponse(["hi"], { answer: "hi", citedSymbolIds: [], citedFilePaths: [] });
+      },
+    });
+    render(<ChatPanel />);
+    const box = await composer();
+    fireEvent.change(box, { target: { value: "   " } });
+
+    fireEvent.keyDown(box, { key: "Enter" });
+    fireEvent.submit(box.closest("form")!);
+
+    expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+    expect(asked).toBe(0);
+  });
+
+  it("clears the box after a send", async () => {
+    installFetchRouter({
+      ask: () => sseAskResponse(["hi"], { answer: "hi", citedSymbolIds: [], citedFilePaths: [] }),
+    });
+    render(<ChatPanel />);
+    await askQuestionThroughUi("a question");
+
+    await waitFor(async () => expect((await composer()).value).toBe(""));
+  });
+
+  it("stays disabled while a question is pending", async () => {
+    installFetchRouter({
+      ask: () => sseAskResponse(["hi"], { answer: "hi", citedSymbolIds: [], citedFilePaths: [] }),
+    });
+    render(<ChatPanel />);
+    const box = await composer();
+    fireEvent.change(box, { target: { value: "a question" } });
+    fireEvent.submit(box.closest("form")!);
+
+    expect(box).toBeDisabled();
+    await waitFor(() => expect(box).not.toBeDisabled());
+  });
+});
+
+describe("ChatPanel narrow-window drawer (035)", () => {
+  beforeEach(() => {
+    _resetSearchIndexCacheForTests();
+    window.history.pushState({}, "", "/");
+    // The panel reflects its open state onto the server-rendered root, which
+    // the Jinja layout emits and React does not own.
+    const root = document.createElement("div");
+    root.id = "wiki-chat-root";
+    document.body.appendChild(root);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.getElementById("wiki-chat-root")?.remove();
+  });
+
+  function toggle(): HTMLButtonElement {
+    return screen.getByRole("button", {
+      name: /ask about this repository|close chat/i,
+    }) as HTMLButtonElement;
+  }
+
+  it("reports its open state to assistive technology", async () => {
+    installFetchRouter({});
+    render(<ChatPanel />);
+    await composer();
+
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("marks the server-rendered root open so the CSS can reveal it", async () => {
+    installFetchRouter({});
+    render(<ChatPanel />);
+    await composer();
+
+    fireEvent.click(toggle());
+
+    await waitFor(() =>
+      expect(document.getElementById("wiki-chat-root")!.classList.contains("is-open")).toBe(true),
+    );
+  });
+
+  it("closes on Escape and returns focus to the toggle", async () => {
+    installFetchRouter({});
+    render(<ChatPanel />);
+    await composer();
+    fireEvent.click(toggle());
+
+    fireEvent.keyDown(document.querySelector(".wiki-chat-panel")!, { key: "Escape" });
+
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(document.activeElement).toBe(toggle());
+  });
+});

@@ -5,6 +5,7 @@ import { ChatPanel } from "./components/ChatPanel";
 import { TocHighlighter } from "./components/TocHighlighter";
 import { captureApiTokenFromUrl } from "./lib/apiToken";
 import { enhanceDiagrams } from "./lib/diagramViewport";
+import { installFragmentScrolling } from "./lib/fragmentScroll";
 import "./styles.css";
 
 // Before anything mounts: ChatPanel fires a history request on its first
@@ -32,3 +33,8 @@ document.addEventListener("wiki:mermaid-rendered", () => {
   enhanceDiagrams();
 });
 enhanceDiagrams();
+
+// Fragment links need help now that page content scrolls inside `.main` rather
+// than as the document; see lib/fragmentScroll.ts for why the initial page load
+// is the case that actually breaks.
+installFragmentScrolling();
