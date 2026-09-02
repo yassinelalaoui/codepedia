@@ -42,6 +42,18 @@ SCHEMA_STATEMENTS = (
         PRIMARY KEY (repository_id, section_key)
     )
     """,
+    # Which templates produced the pages currently on disk. Page content hashes
+    # answer "did this page's *inputs* change"; they cannot answer "did the
+    # renderer change", because a template is not a source file and appears in no
+    # impact set. Without this row, editing the shared layout left every already
+    # written page stale and nothing marked it - see `template_fingerprint`.
+    """
+    CREATE TABLE IF NOT EXISTS doc_render_state (
+        repository_id TEXT PRIMARY KEY,
+        template_fingerprint TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
 )
 
 
@@ -210,6 +222,41 @@ class DocPageManifestStore:
                         description,
                         datetime.now(timezone.utc).isoformat(),
                     ),
+                )
+
+    def load_template_fingerprint(self, repository_id: str) -> str | None:
+        """The template fingerprint the pages on disk were rendered with.
+
+        `None` means "unknown", which is deliberately *not* the same as
+        "unchanged": a wiki generated before this was tracked has pages whose
+        renderer cannot be identified, so the caller must treat it as stale and
+        rebuild once. That single rebuild is what repairs an existing wiki.
+        """
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT template_fingerprint FROM doc_render_state WHERE repository_id = ?",
+                (repository_id,),
+            ).fetchone()
+            return row["template_fingerprint"] if row is not None else None
+
+    def save_template_fingerprint(self, repository_id: str, fingerprint: str) -> None:
+        """Record the fingerprint - only after a pass that rewrote every page.
+
+        Saving it after a partial pass would claim the whole wiki had been
+        rendered by these templates when only some of it had, and the pages left
+        behind would never be revisited.
+        """
+        with self._connection() as connection:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO doc_render_state (repository_id, template_fingerprint, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(repository_id) DO UPDATE SET
+                        template_fingerprint = excluded.template_fingerprint,
+                        updated_at = excluded.updated_at
+                    """,
+                    (repository_id, fingerprint, datetime.now(timezone.utc).isoformat()),
                 )
 
     def delete_entries(self, page_ids: Iterable[str]) -> None:

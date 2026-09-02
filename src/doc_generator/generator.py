@@ -16,7 +16,7 @@ from .entry_point_diagram import build_entry_point_call_sequence, build_method_c
 from .html_render import render_page_html
 from .impact import compute_regeneration_impact
 from .manifest_store import DocPageManifestStore
-from .markdown_render import render_markdown_template
+from .markdown_render import render_markdown_template, template_fingerprint
 from .mermaid_diagram import (
     ClassDiagramSource,
     build_class_diagram_mermaid_source,
@@ -737,7 +737,23 @@ class DocGenerator:
         selection = self._ensure_sections()
 
         previous_entries = self.manifestStore.list_entries(self.repositoryId)
-        run_incremental = incremental and len(previous_entries) > 0
+
+        # A template edit changes what *every* page should contain, but a
+        # template is not a source file: it carries no symbol and appears in no
+        # dependency edge, so `compute_regeneration_impact` returns an empty
+        # impact set for it. Left unchecked, editing the shared layout produced a
+        # wiki where some pages had the new shell and some the old, decided only
+        # by which source files happened to change afterwards.
+        #
+        # An unknown fingerprint counts as stale, not as unchanged: a wiki
+        # generated before this was tracked has pages whose renderer cannot be
+        # identified, so it rebuilds once and is correct from then on.
+        current_template_fingerprint = template_fingerprint()
+        templates_changed = (
+            self.manifestStore.load_template_fingerprint(self.repositoryId)
+            != current_template_fingerprint
+        )
+        run_incremental = incremental and len(previous_entries) > 0 and not templates_changed
 
         target_page_ids: set[str] | None = None
         if run_incremental:
@@ -854,7 +870,11 @@ class DocGenerator:
                 self._writer.write_page(diagram_page)
                 pages.append(diagram_page)
 
-        if pages:
+        # Ensured whenever a wiki exists, not only when a page was written this
+        # run. These are byte-compared copies, so the cost of checking is a read;
+        # the cost of *not* checking was a rebuilt bundle that never reached an
+        # output directory because no source file had changed that run.
+        if pages or previous_entries:
             # Every page's shared HTML layout references the vendored Mermaid
             # script (research.md Decision 7), not just diagram pages, so the
             # asset must be ensured whenever any page is written this run.
@@ -863,6 +883,12 @@ class DocGenerator:
             # and the search index it and the chat panel both depend on.
             self._writer.ensure_wiki_ui_assets()
             self._writer.write_search_index(self._search_index or build_search_index(bundle, self.repositoryRoot))
+
+        # Only after a pass that rewrote every page. Recording it after a partial
+        # pass would claim the whole wiki had been rendered by these templates
+        # when only part of it had, and the rest would never be revisited.
+        if target_page_ids is None:
+            self.manifestStore.save_template_fingerprint(self.repositoryId, current_template_fingerprint)
 
         return DocumentationSet(repositoryId=self.repositoryId, outputRoot=str(self.outputRoot), pages=tuple(pages))
 
