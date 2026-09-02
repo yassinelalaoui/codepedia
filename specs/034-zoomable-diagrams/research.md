@@ -48,10 +48,21 @@ re-run.
 event from a `.finally()`.
 
 **Verified**: `mermaid.run` exists in the vendored 10.9.8 build and accepts both
-options — `grep -o "suppressErrors" src/doc_generator/assets/mermaid.min.js`
-returns matches, and the default selector is present as
-`querySelector:".mermaid"`. Mermaid marks handled elements with
-`data-processed`, confirmed by `grep -o "data-processed"`.
+options. Mermaid marks handled elements with `data-processed`, confirmed by
+`grep -o "data-processed"`.
+
+**Correction (found in a browser, after this decision was written).** The
+original text here read the grep hit `querySelector:".mermaid"` as proof that
+`run()` defaults the selector on every path. It does not: that default applies
+only when `run()` is called with **no arguments**. Passing any options object
+drops it and the call rejects with `"Nodes and querySelector are both
+undefined"` — which `suppressErrors: true` then swallows, so every diagram stays
+raw fence text and nothing is logged. The call must therefore be
+`mermaid.run({ querySelector: '.mermaid', suppressErrors: true })`.
+
+The methodological lesson, worth more than the fix: grepping a minified bundle
+for a string tells you the string exists, not which code path uses it. That
+inference shipped in commit 8d6057e and was caught only by loading a page.
 
 **Rationale**:
 
@@ -182,7 +193,7 @@ against FR-024 and FR-001 taken together.
 | API | jsdom 25 | Consequence |
 | --- | --- | --- |
 | `PointerEvent` | `undefined` | Tests cannot construct one. |
-| `Element.setPointerCapture` | `undefined` | Cannot be called unguarded. |
+| `Element.setPointerCapture` | `undefined` | Must not be used at all - see 2 below. |
 | `window.matchMedia` | `undefined` | Cannot be called unguarded. |
 | `ResizeObserver` | `undefined` | Cannot be called unguarded. |
 | `getBoundingClientRect()` | all zeros | Zoom/fit math needs stubbed rects. |
@@ -194,10 +205,17 @@ against FR-024 and FR-001 taken together.
    `new MouseEvent("pointerdown", { clientX, clientY, bubbles: true })` — listeners
    key on the type string, and `MouseEvent` carries the coordinates the handler
    reads. No polyfill, no production compromise.
-2. **`setPointerCapture` is feature-guarded**, with a `window`-level
-   `pointermove`/`pointerup` fallback. That fallback is not test scaffolding: it
-   is also what makes the "drag released outside the viewport" edge case end
-   cleanly.
+2. **`setPointerCapture` is not used at all.** *(Revised after browser testing -
+   the original decision here was to feature-guard it, and that was wrong.)*
+   Pointer capture retargets every subsequent pointer event **and the click that
+   follows** to the capturing element, so Mermaid's `<a>` node links stop
+   navigating entirely - the exact regression FR-010 forbids. Because jsdom
+   leaves `setPointerCapture` undefined, the `typeof` guard skipped the path in
+   every test, so no browser-less test could ever have caught it; it was found
+   only by driving Chrome. Drag movement and release are tracked with
+   `window`-level `pointermove`/`pointerup` listeners, which also handle the
+   "drag released outside the viewport" edge case. A source-level regression
+   guard in `diagramViewport.test.ts` now asserts the call cannot return.
 3. **`prefers-reduced-motion` is handled in CSS only** (`@media (prefers-reduced-motion: reduce)`),
    never through `matchMedia` in JS. Satisfies FR-020 with no JS branch and
    nothing to stub.

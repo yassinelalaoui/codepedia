@@ -362,24 +362,26 @@ function installPanAndClickHandling(
     originY = event.clientY;
     lastX = event.clientX;
     lastY = event.clientY;
-    // jsdom defines neither of these, and an old browser may not either. The
-    // window-level fallback below is not merely a stand-in: it is also what ends
-    // a drag cleanly when the pointer is released outside the viewport.
-    const target = viewport as HTMLElement & { setPointerCapture?: (id: number) => void };
-    const pointerId = (event as MouseEvent & { pointerId?: number }).pointerId;
-    if (typeof target.setPointerCapture === "function" && typeof pointerId === "number") {
-      try {
-        target.setPointerCapture(pointerId);
-      } catch {
-        // A pointer id the browser no longer recognises; the fallback covers it.
-      }
-    }
+    // Deliberately NO `setPointerCapture` here.
+    //
+    // Capturing the pointer on the viewport retargets every subsequent pointer
+    // event *and the click that follows* to the capturing element. Mermaid's
+    // node links are real `<a>` elements inside the SVG, so capture means the
+    // anchor never receives the click and no diagram node ever navigates -
+    // precisely the regression this module exists to avoid. It was found in a
+    // real browser; no jsdom test could have caught it, because jsdom does not
+    // define `setPointerCapture` at all and skipped the whole path.
+    //
+    // The window-level listeners below do the only job capture was wanted for:
+    // continuing and cleanly ending a drag whose pointer leaves the viewport.
     window.addEventListener("pointermove", onWindowMove);
     window.addEventListener("pointerup", onWindowUp);
   });
 
-  viewport.addEventListener("pointermove", onMove);
-  viewport.addEventListener("pointerup", endGesture);
+  // Movement and release are tracked on `window` only, never also on the
+  // viewport: a pointermove inside the viewport bubbles to both, and handling it
+  // twice worked only by accident (the second pass computes a zero delta because
+  // the first already advanced `lastX`/`lastY`). One listener, one delta.
   viewport.addEventListener("pointercancel", endGesture);
 
   viewport.addEventListener(

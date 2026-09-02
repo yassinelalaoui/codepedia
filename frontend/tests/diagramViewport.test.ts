@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BUTTON_ZOOM_STEP,
@@ -487,3 +488,26 @@ describe("US4 - keyboard and assistive technology", () => {
   });
 });
 
+
+/**
+ * A source-level guard, not a behavioural test - deliberately.
+ *
+ * `setPointerCapture` on the viewport retargets every subsequent pointer event
+ * *and the click that follows* to the capturing element, so Mermaid's `<a>` node
+ * links stop navigating entirely. That shipped once and no test here caught it:
+ * jsdom does not define `setPointerCapture`, so the `typeof` guard around it
+ * skipped the whole path in every run, in every browser-less test that could
+ * ever be written against this module.
+ *
+ * The behaviour is verified for real against Chrome (see quickstart.md § 3a).
+ * This assertion exists only so the call cannot quietly come back.
+ */
+describe("regression guard - pointer capture", () => {
+  it("never captures the pointer, which would swallow diagram link clicks", async () => {
+    // Path relative to the vitest root (frontend/); `import.meta.url` is
+    // rewritten by the dev server under jsdom and is not a file: URL here.
+    const source = await readFile("src/lib/diagramViewport.ts", "utf8");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(code).not.toMatch(/setPointerCapture/);
+  });
+});

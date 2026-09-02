@@ -111,3 +111,9 @@ def test_mermaid_bootstrap_awaits_run_instead_of_start_on_load(tmp_path):
     assert "mermaid.run(" in html
     assert "suppressErrors" in html
     assert "wiki:mermaid-rendered" in html
+    # Mermaid 10 applies its own '.mermaid' default only when `run()` is called
+    # with no arguments; passing any options object drops it and the call
+    # rejects with "Nodes and querySelector are both undefined". `suppressErrors`
+    # then swallows that, so every diagram silently stays raw fence text with no
+    # error reported anywhere. This shipped once - keep it pinned.
+    assert "querySelector: '.mermaid'" in html

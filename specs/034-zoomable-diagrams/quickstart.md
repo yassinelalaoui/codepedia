@@ -3,8 +3,9 @@
 **Feature**: 034-zoomable-diagrams | **Date**: 2026-09-01
 
 How to prove this feature works end to end. Two of the acceptance criteria
-(SC-003, SC-004) explicitly cannot be settled in a headless DOM, so the manual
-pass in section 3 is part of the validation, not an optional extra.
+(SC-003, SC-004) cannot be settled in a headless DOM, so the real-browser pass
+in section 3a is part of the validation, not an optional extra. It is automated
+against headless Chrome; section 3b lists what still needs human eyes.
 
 ## Prerequisites
 
@@ -65,11 +66,13 @@ pytest --basetemp="$SCRATCH/pytest" -p no:cacheprovider
 (`--basetemp` into the scratchpad and `-p no:cacheprovider` avoid ~17 spurious
 `PermissionError`s on this machine.)
 
-Expected: the full suite green. Measured on 2026-09-01 during implementation:
-**668 passed, 0 failed**. An earlier note in this repository claimed
-`test_config_before_any_provider_reachable_still_reports_without_failing` fails
-here as a known baseline; it does not, and treating a failure there as expected
-would mask a real regression.
+Expected: 667 green plus one known flake.
+`tests/integration/test_cli.py::test_config_before_any_provider_reachable_still_reports_without_failing`
+performs a **live Groq availability check**, so it passes when Groq is
+unreachable and fails when Groq answers. Both outcomes were observed on
+2026-09-01 with no code change between runs. Identify it by the failure text
+naming `groq:...: available`; any other failure is real. It is the only
+non-deterministic test in the suite.
 
 Specifically:
 
@@ -84,7 +87,41 @@ Specifically:
 
 ---
 
-## 3. Manual: on a real generated wiki
+## 3a. Automated: real browser (Chrome via DevTools Protocol)
+
+jsdom cannot run Mermaid, so the interactions that matter most are unverifiable
+in the unit suite. They are verified instead by driving headless Chrome over CDP
+against a generated wiki loaded from `file://` - the real deployment mode.
+
+```bash
+# generate a wiki, then:
+chrome --headless=new --disable-gpu --remote-debugging-port=9333        --user-data-dir=<tmp> about:blank &
+node final.mjs "file:///<abs-path>/demo-wiki/diagrams/<a-dependency-diagram>.html"
+```
+
+The harness lives in the session scratchpad rather than the repo (it is a
+verification aid, not a shipped test). Three lessons from building it, each of
+which produced a *false* result before being fixed:
+
+1. **Do not append a cache-busting query to a `file://` URL** - it changes how
+   the page's own scripts resolve and reports the bundle as absent.
+2. **Start a drag inside the viewport.** A `pointerdown` outside it never reaches
+   the handler, so the drag silently no-ops - and still "passes" a
+   does-not-navigate check, for entirely the wrong reason.
+3. **Scroll the diagram into view first.** CDP dispatches at window coordinates;
+   on a section page the diagram sits below the fold, so every synthetic mouse
+   event lands somewhere else and four checks fail for no product reason.
+
+Also: `python -m http.server` truncates the 3.3 MB Mermaid bundle on Windows
+(456 KB of 491 KB after ~19 s). Use `file://`, or a threaded server.
+
+**Result, 2026-09-01: 17/17 on both click-target surfaces** - a module dependency
+diagram and a section internal-dependency diagram. Measured cursor-anchor drift
+under wheel zoom: 0.44 px and 0.57 px.
+
+---
+
+## 3b. Manual: on a real generated wiki
 
 Automated tests cannot answer whether Mermaid's own anchor still navigates under
 a transformed ancestor. This section is required.

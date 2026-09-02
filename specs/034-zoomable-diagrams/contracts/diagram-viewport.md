@@ -90,9 +90,12 @@ action.
 The module MUST NOT call any of the following unguarded, because jsdom 25 — the
 test environment — defines none of them:
 
-- `Element.setPointerCapture` / `releasePointerCapture`: feature-guard, and fall
-  back to `window`-level `pointermove`/`pointerup` listeners. The fallback also
-  satisfies the "drag released outside the viewport" edge case.
+- `Element.setPointerCapture` / `releasePointerCapture`: **MUST NOT be used**,
+  guarded or otherwise. Capture retargets the following `click` to the capturing
+  element, so Mermaid's `<a>` node links stop navigating (FR-010). Use
+  `window`-level `pointermove`/`pointerup` listeners instead, which also satisfy
+  the "drag released outside the viewport" edge case. Pinned by a source-level
+  assertion, because jsdom cannot detect the regression behaviourally.
 - `window.matchMedia`: MUST NOT be called at all. `prefers-reduced-motion` is
   handled purely in CSS (FR-020).
 - `ResizeObserver`: MUST NOT be used.
@@ -119,7 +122,7 @@ Replaces the current lines 67-71.
 <script>
   if (window.mermaid) {
     mermaid.initialize({ startOnLoad: false });
-    mermaid.run({ suppressErrors: true }).finally(function () {
+    mermaid.run({ querySelector: '.mermaid', suppressErrors: true }).finally(function () {
       document.dispatchEvent(new CustomEvent('wiki:mermaid-rendered'));
     });
   }
@@ -131,8 +134,17 @@ Expected behavior:
 - `startOnLoad` MUST be `false`. Left `true`, Mermaid draws on `DOMContentLoaded`
   and marks every element `data-processed`, so the later `run()` finds nothing
   and never signals (research Decision 2).
+- `querySelector: '.mermaid'` MUST be passed **explicitly**. Mermaid 10 applies
+  its own default only when `run()` is called with no arguments at all; passing
+  any options object drops it, and the call rejects with `"Nodes and
+  querySelector are both undefined"`. Combined with `suppressErrors` that
+  rejection is silent, so **every diagram on every page stays raw fence text with
+  no error reported anywhere**. This shipped once (commit 8d6057e) and was found
+  only by opening a generated page.
 - `suppressErrors: true` MUST be set, so one unparseable diagram does not abort
-  the batch (FR-016).
+  the batch (FR-016). Note the trade-off it carries: it also hides the failure
+  above, so the Python test asserting the `querySelector` argument is the only
+  automated guard.
 - The dispatch MUST be in `.finally()`, not `.then()`, so the enhancer still runs
   when `run()` rejects (FR-016).
 - This block MUST remain in the layout's own inline script and MUST NOT move into

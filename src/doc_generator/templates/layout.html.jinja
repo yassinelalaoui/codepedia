@@ -73,8 +73,13 @@
   // the batch rejects. Deliberately inline rather than inside wiki-ui.js: a
   // bundle that fails to load must cost the zoom, never the diagram itself.
   if (window.mermaid) {
+    // `querySelector` MUST be passed explicitly. Mermaid 10's `run()` only
+    // applies its own '.mermaid' default when called with no arguments at all;
+    // passing any options object drops it and the call rejects with "Nodes and
+    // querySelector are both undefined" - which `suppressErrors` then swallows,
+    // leaving every diagram on the page as raw fence text and no error anywhere.
     mermaid.initialize({ startOnLoad: false });
-    mermaid.run({ suppressErrors: true }).finally(function () {
+    mermaid.run({ querySelector: '.mermaid', suppressErrors: true }).finally(function () {
       document.dispatchEvent(new CustomEvent('wiki:mermaid-rendered'));
     });
   }
