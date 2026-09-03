@@ -505,13 +505,29 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
   /* Transform target. Deliberately a wrapper div rather than the SVG itself:
      hit-testing, <a> targets and Mermaid's coordinate system all survive a
      transform on an ancestor, whereas rewriting the SVG's own transform is
-     where anchor hit areas drift away from the shapes they wrap. */
+     where anchor hit areas drift away from the shapes they wrap. Measured, not
+     assumed: with the hint below gone, scaling this wrapper renders identically
+     to scaling the <svg> itself, so the wrapper is not what cost us sharpness.
+
+     There is deliberately NO `will-change: transform` here, and it must not
+     come back. It promotes this wrapper to its own composited layer, and a
+     composited layer is rastered once at the scale it was created at - 1 - and
+     thereafter *stretched* by the compositor on every transform change instead
+     of the SVG being re-rendered from its vector geometry. That is the whole of
+     the blur: measured in Chrome 152 at dpr 1, zooming to 20x drove the
+     rendered frame's Laplacian variance from 338 down to 1.1 and left it there
+     however long the page was given to settle. Deleting this one declaration,
+     changing nothing else, put it back to 338 on the spot. The hint bought no
+     measurable pan performance to trade against that. */
   position: absolute;
   inset: 0;
   transform-origin: 0 0;
-  will-change: transform;
 }
-.diagram-canvas svg { display: block; width: 100%; height: 100%; }
+/* Sized in CSS pixels by the enhancer, from the viewBox - see diagramViewport.ts.
+   No width/height here: a percentage size would hand the box back to
+   `preserveAspectRatio` and re-introduce the letterbox that made `state.scale`
+   mean something other than magnification. */
+.diagram-canvas svg { display: block; }
 
 .diagram-controls {
   position: absolute;

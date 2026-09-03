@@ -193,6 +193,20 @@ function enhancedDiagram(rect: Partial<DOMRect> = { width: 400, height: 300 }): 
   return pre;
 }
 
+/**
+ * The view `reset` restores: the 800x600 viewBox of `buildDiagram` contained in
+ * the 400x300 viewport of `enhancedDiagram`, so scale 0.5, and no centring
+ * offset because those two aspect ratios match.
+ *
+ * Not the identity transform, and deliberately so. The SVG is sized one CSS
+ * pixel per viewBox unit, which is what makes `state.scale` a true magnification
+ * factor; the whole-diagram view is therefore a computed fit rather than
+ * `scale(1)`. It is recomputed from the live viewport on every reset rather than
+ * replayed from a snapshot, so a reader who resets after the window changed size
+ * gets a view that fits the window they actually have.
+ */
+const FITTED_VIEW = "translate(0px, 0px) scale(0.5)";
+
 function controlOf(pre: Element, label: string): HTMLButtonElement {
   const button = pre.querySelector<HTMLButtonElement>(`.diagram-controls button[aria-label="${label}"]`);
   if (!button) throw new Error(`no control labelled "${label}"`);
@@ -265,18 +279,18 @@ describe("US1 - zoom and pan", () => {
     expect(offsetOf(pre)).toEqual({ x: 50, y: 0 });
   });
 
-  it("restores the exact load-time view on reset", () => {
+  it("restores the fitted load-time view on reset", () => {
     const pre = enhancedDiagram();
     const viewport = viewportOf(pre);
     fireWheel(viewport, -240, 60, 60);
     firePointer(viewport, "pointerdown", 10, 10);
     firePointer(viewport, "pointermove", 90, 70);
     firePointer(viewport, "pointerup", 90, 70);
-    expect(canvasOf(pre).style.transform).not.toBe("translate(0px, 0px) scale(1)");
+    expect(canvasOf(pre).style.transform).not.toBe(FITTED_VIEW);
 
     controlOf(pre, "Reset view").click();
 
-    expect(canvasOf(pre).style.transform).toBe("translate(0px, 0px) scale(1)");
+    expect(canvasOf(pre).style.transform).toBe(FITTED_VIEW);
   });
 
   it("fits the diagram to the viewport width", () => {
@@ -308,7 +322,7 @@ describe("US1 - zoom and pan", () => {
 
     controlOf(pre, "Reset view").click();
 
-    expect(canvasOf(pre).style.transform).toBe("translate(0px, 0px) scale(1)");
+    expect(canvasOf(pre).style.transform).toBe(FITTED_VIEW);
   });
 });
 
@@ -469,7 +483,7 @@ describe("US4 - keyboard and assistive technology", () => {
     fireKey(viewport, "=");
     expect(scaleOf(pre)).toBeCloseTo(BUTTON_ZOOM_STEP, 5);
     fireKey(viewport, "0");
-    expect(canvasOf(pre).style.transform).toBe("translate(0px, 0px) scale(1)");
+    expect(canvasOf(pre).style.transform).toBe(FITTED_VIEW);
   });
 
   it("pans with the arrow keys without scrolling the page", () => {

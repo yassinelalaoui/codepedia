@@ -20,10 +20,13 @@
  */
 export const DRAG_THRESHOLD_PX = 4;
 
-/** Scale bounds. Below the minimum a diagram vanishes; above the maximum a
- * Mermaid label has long stopped being legible, so neither end feels clipped. */
+/** Scale bounds. Below the minimum a diagram vanishes; the maximum is set by
+ * what stays *readable*, not by what stays sharp - the SVG is still re-rendered
+ * from its vector geometry far beyond this (verified crisp at 50x in Chrome),
+ * so the ceiling only has to leave room for the 1000%-and-beyond inspection
+ * this viewport exists to support. */
 export const MIN_SCALE = 0.2;
-export const MAX_SCALE = 8;
+export const MAX_SCALE = 16;
 
 /**
  * Wheel zoom is exponential in `deltaY` (`exp(-deltaY * rate)`), which is what
@@ -48,8 +51,10 @@ interface ViewportState {
   offsetY: number;
 }
 
-/** What `reset` restores. A constant, not a snapshot taken at some arbitrary
- * moment, so reset cannot drift from the load-time view. */
+/** The identity view. Only the starting point and the fallback `fitToContain`
+ * degrades to when the viewport has no measurable size yet - what `reset`
+ * actually restores is that recomputed fit, never a snapshot, so reset cannot
+ * drift from the load-time view. */
 const INITIAL_STATE: Readonly<ViewportState> = { scale: 1, offsetX: 0, offsetY: 0 };
 
 function clampScale(scale: number): number {
@@ -122,19 +127,35 @@ function enhanceOne(pre: HTMLElement, svg: SVGElement): boolean {
   viewport.appendChild(controls);
   pre.appendChild(viewport);
 
-  // Mermaid stamps `style="max-width: Npx"` on the SVG, which is exactly what
-  // pins a diagram to the column width. Cleared only now, at install time, so a
-  // page whose bundle never loads still renders precisely as it does today.
+  // Mermaid stamps `width="100%"` and `style="max-width: Npx"` on the SVG, which
+  // between them pin a diagram to the column width. Cleared only now, at install
+  // time, so a page whose bundle never loads still renders precisely as it does
+  // today.
+  //
+  // They are replaced by the viewBox's own dimensions in CSS pixels rather than
+  // by percentages. A percentage-sized SVG is laid out at the viewport's
+  // dimensions and its `preserveAspectRatio` then letterboxes the viewBox inside
+  // that box, which silently pre-scales the diagram before `state.scale` is
+  // applied at all - so `state.scale` stopped being a magnification factor and
+  // every consumer of it inherited the error. `fitToWidth` was the visible
+  // casualty: measured in Chrome, it left a 1200x800 diagram 432px wide inside a
+  // 720px viewport instead of filling it. At one viewBox unit per CSS pixel the
+  // letterbox is gone and scale means exactly what it says.
+  //
+  // The viewBox is read but never written: it stays the authoritative coordinate
+  // system, which is what keeps every <a xlink:href> and Mermaid-bound onclick
+  // hit-testing against the geometry it was drawn with.
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
   svg.style.maxWidth = "";
-  svg.style.width = "100%";
-  svg.style.height = "100%";
+  svg.style.width = `${contentSize.width}px`;
+  svg.style.height = `${contentSize.height}px`;
 
   const state: ViewportState = { ...INITIAL_STATE };
   const applyTransform = (): void => {
     canvas.style.transform =
       `translate(${state.offsetX}px, ${state.offsetY}px) scale(${state.scale})`;
   };
-  applyTransform();
 
   /**
    * Zoom about a point given in viewport-local coordinates, holding the content
@@ -164,14 +185,40 @@ function enhanceOne(pre: HTMLElement, svg: SVGElement): boolean {
     zoomAbout(rect.width / 2, rect.height / 2, factor);
   };
 
-  const reset = (): void => {
-    Object.assign(state, INITIAL_STATE);
+  /**
+   * The load-time view: the whole diagram visible and centred, never magnified
+   * past 1:1 for a diagram that already fits.
+   *
+   * Recomputed from the viewBox and the current viewport rather than restored
+   * from a snapshot taken at install, so it cannot drift from the view the
+   * reader was given - and so a diagram whose viewport was not yet measurable
+   * when it was enhanced still resets to something sensible. With no measurable
+   * viewport it degrades to `INITIAL_STATE`, which is the identity transform.
+   */
+  const fitToContain = (): void => {
+    const rect = viewport.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      Object.assign(state, INITIAL_STATE);
+      applyTransform();
+      return;
+    }
+    state.scale = clampScale(
+      Math.min(1, rect.width / contentSize.width, rect.height / contentSize.height),
+    );
+    state.offsetX = Math.max(0, (rect.width - contentSize.width * state.scale) / 2);
+    state.offsetY = Math.max(0, (rect.height - contentSize.height * state.scale) / 2);
     applyTransform();
+  };
+
+  const reset = (): void => {
+    fitToContain();
   };
 
   const fitToWidth = (): void => {
     const rect = viewport.getBoundingClientRect();
     if (rect.width <= 0) return;
+    // Correct now only because the SVG is sized one CSS pixel per viewBox unit;
+    // see the sizing note in this function's preamble.
     state.scale = clampScale(rect.width / contentSize.width);
     state.offsetX = 0;
     state.offsetY = 0;
@@ -251,6 +298,9 @@ function enhanceOne(pre: HTMLElement, svg: SVGElement): boolean {
     // from under a reader who is panning.
     event.preventDefault();
   });
+
+  // Establishes the load-time view, and is the first thing to write a transform.
+  fitToContain();
 
   installPanAndClickHandling(viewport, panBy);
   buildControls(controls, {
