@@ -309,3 +309,116 @@ def test_generate_stream_never_targets_a_host_other_than_the_configured_endpoint
     finally:
         server.shutdown()
         server.server_close()
+
+
+def _counting_handler():
+    """An Ollama double that counts the `/api/tags` availability probes."""
+
+    class CountingHandler(_OllamaHandler):
+        tag_requests = 0
+
+        def do_GET(self):
+            if self.path == "/api/tags":
+                type(self).tag_requests += 1
+            super().do_GET()
+
+    return CountingHandler
+
+
+def test_availability_is_probed_once_per_ttl_rather_than_once_per_generate():
+    """Every `generate` pre-flights `checkAvailability`, which lists every
+    installed model. Uncached, summarizing a repository cost two round-trips
+    per symbol where one would do - paid again on each thread of the summary
+    pool, all pointed at the same Ollama. `GroqLLMEngine` already cached this;
+    the local engine is the one that makes the call per symbol."""
+    handler = _counting_handler()
+    server = _start_server(handler)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_address[1]}"
+        engine = create_local_llm_engine("llama3", endpoint, timeout=1.0, generate_timeout=5.0)
+
+        for _ in range(3):
+            engine.generate("hello")
+
+        assert handler.tag_requests == 1
+
+        # The TTL is what does it, not a probe that stopped happening: an
+        # engine that never caches still asks every time.
+        uncached = create_local_llm_engine("llama3", endpoint, timeout=1.0, generate_timeout=5.0)
+        uncached.availabilityTtlSeconds = 0.0
+        handler.tag_requests = 0
+        for _ in range(3):
+            uncached.generate("hello")
+        assert handler.tag_requests == 3
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_failed_generation_invalidates_the_cached_availability():
+    """A cached "available" that outlives the model it described would make a
+    model unloaded mid-run read as reachable for a whole TTL, and every call in
+    that window fails on a verdict the engine had already been told was wrong."""
+    handler = _counting_handler()
+    handler.generate_status = 500
+    server = _start_server(handler)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_address[1]}"
+        engine = create_local_llm_engine("llama3", endpoint, timeout=1.0, generate_timeout=5.0)
+
+        for _ in range(2):
+            with pytest.raises(GenerationFailedError):
+                engine.generate("hello")
+
+        assert handler.tag_requests == 2
+    finally:
+        handler.generate_status = 200
+        server.shutdown()
+        server.server_close()
+
+
+def test_groq_payload_carries_prompt_options():
+    """`PromptEnvelope.options` reaches the request body.
+
+    It had always been the designed pass-through for per-call parameters and
+    nothing read it, so every caller's options were silently inert - which is how
+    the feature planner's `reasoning_effort` and `max_tokens` did nothing at all
+    until a live run returned an empty answer.
+    """
+    from local_llm import PromptEnvelope
+    from local_llm.groq_transport import GroqLLMTransport
+
+    envelope = PromptEnvelope(
+        promptText="hello",
+        options={"reasoning_effort": "low", "max_tokens": 1200},
+    )
+    payload = {
+        "model": "m",
+        "messages": [{"role": "user", "content": envelope.to_prompt_text()}],
+        "stream": True,
+    }
+    payload.update(
+        {k: v for k, v in envelope.options.items() if k not in ("model", "messages", "stream")}
+    )
+
+    assert payload["reasoning_effort"] == "low"
+    assert payload["max_tokens"] == 1200
+
+
+def test_groq_payload_options_cannot_override_reserved_keys():
+    """A caller must not be able to unset the model, the messages or streaming."""
+    from local_llm import PromptEnvelope
+
+    envelope = PromptEnvelope(
+        promptText="hello",
+        options={"model": "evil", "stream": False, "messages": [], "temperature": 0.1},
+    )
+    payload = {"model": "m", "messages": [{"role": "user", "content": "x"}], "stream": True}
+    payload.update(
+        {k: v for k, v in envelope.options.items() if k not in ("model", "messages", "stream")}
+    )
+
+    assert payload["model"] == "m"
+    assert payload["stream"] is True
+    assert payload["messages"] == [{"role": "user", "content": "x"}]
+    assert payload["temperature"] == 0.1

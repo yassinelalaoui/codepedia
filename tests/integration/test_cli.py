@@ -795,3 +795,70 @@ def test_a_rerun_of_index_over_unchanged_code_summarizes_nothing(tmp_path, cli_h
     second = run_index(root, config=_local_config())
     second.vectorIndex.close()
     assert symbol_summary_calls() == 0
+
+
+def test_a_full_index_starts_from_the_previous_runs_page_manifest(tmp_path):
+    """The same move as the ledger above, for the manifest's own two caches.
+
+    A full `index` builds into an empty staging directory, so both of these
+    started blank on every run:
+
+    - `doc_feature_plans`, the only thing standing between an unchanged
+      repository and paying the model to name the feature set it just named;
+    - `doc_pages`, which `_redirect_superseded_pages` reads as
+      `previous_entries`. Blank, it finds nothing superseded and records no
+      alias, so a feature whose anchor module moved leaves its published URL
+      dead - on the one code path that could never notice, because supersession
+      is found by comparing a run against the one before it.
+
+    Asserted through the store rather than by diffing files, so that a change
+    to how the manifest is carried across (a copy today, a table-by-table merge
+    if pruning ever needs it) keeps the test honest.
+    """
+    from cli import paths
+    from cli.index_command import _carry_forward_doc_manifest
+    from doc_generator import open_doc_manifest_store
+    from doc_generator.models import PageManifestEntry
+
+    previous_state_dir = tmp_path / "previous"
+    staging_dir = tmp_path / "staging"
+    previous_state_dir.mkdir()
+    staging_dir.mkdir()
+
+    repository_id = "repo::/x"
+    entry = PageManifestEntry(
+        pageId="feature::alpha",
+        kind="feature",
+        sourceSymbolIds=("alpha",),
+        contentHash="hash",
+        outputPathMarkdown="features/alpha.md",
+        outputPathHtml="features/alpha.html",
+        lastGeneratedAt="2026-01-01T00:00:00+00:00",
+    )
+    previous = open_doc_manifest_store(paths.doc_manifest_db_path(previous_state_dir))
+    previous.save_entry(repository_id, entry)
+    previous.save_feature_plan(repository_id, "plan-key", [{"title": "Alpha", "members": ["c0"]}])
+
+    assert _carry_forward_doc_manifest(staging_dir, previous_state_dir) is True
+
+    carried = open_doc_manifest_store(paths.doc_manifest_db_path(staging_dir))
+    assert [item.pageId for item in carried.list_entries(repository_id)] == ["feature::alpha"]
+    assert carried.load_feature_plan(repository_id, "plan-key") == [{"title": "Alpha", "members": ["c0"]}]
+
+
+def test_a_full_index_survives_a_previous_state_dir_with_no_manifest(tmp_path):
+    """A first-ever index has no previous state at all, and a run interrupted
+    before the manifest existed leaves a directory without one. Neither is a
+    reason to fail the run - both just cost it the plan call."""
+    from cli import paths
+    from cli.index_command import _carry_forward_doc_manifest
+
+    staging_dir = tmp_path / "staging"
+    staging_dir.mkdir()
+    empty_previous = tmp_path / "previous"
+    empty_previous.mkdir()
+
+    assert _carry_forward_doc_manifest(staging_dir, None) is False
+    assert _carry_forward_doc_manifest(staging_dir, empty_previous) is False
+    assert not paths.doc_manifest_db_path(staging_dir).exists()
+

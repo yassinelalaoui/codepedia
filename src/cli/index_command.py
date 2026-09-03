@@ -331,6 +331,11 @@ def _run_pipeline(
         graph = DependencyGraph.build_from_inventories(inventories, id=graph_id, sourceFile=str(root))
         graph.save(paths.graph_db_path(state_dir))
 
+    # Before the store is opened, not after: everything this seeds is read
+    # during the first generation pass, and `open_doc_manifest_store` would
+    # create an empty database in its place.
+    _carry_forward_doc_manifest(state_dir, previous_state_dir)
+
     manifest_store = open_doc_manifest_store(paths.doc_manifest_db_path(state_dir))
     doc_generator = DocGenerator(
         metadataStore=metadata_store,
@@ -384,6 +389,53 @@ def _run_pipeline(
                 typer.echo(f"  reused {cache.hits} embedding(s) from cache, computed {cache.misses}")
         finally:
             vector_index.close()
+
+
+def _carry_forward_doc_manifest(state_dir: Path, previous_state_dir: Path | None) -> bool:
+    """Seed this run's page manifest from the index it is about to replace.
+
+    Same two rules as `_carry_forward_summary_ledger`: copied file to file
+    before anything opens either side, so no connection is held on the
+    directory the run will later rename over; and no failure here may fail the
+    run, because a missing or unreadable prior manifest means "pay for the plan
+    again", never "refuse to index".
+
+    A full `index` always builds into an empty staging directory, so without
+    this it starts with an empty manifest - and two different things are lost,
+    only one of which is speed:
+
+    - `doc_feature_plans` caches `FeaturePlanner`'s single call against the
+      repository's structure. Empty, an unchanged repository pays the model
+      again to name the same feature set it named last time.
+    - `doc_pages` is what `_redirect_superseded_pages` reads as
+      `previous_entries`. Empty, it finds nothing superseded and records no
+      alias, so a feature whose anchor module moved leaves its previously
+      published URL dead. That is precisely the failure the alias table exists
+      to prevent, on the one code path that could never see it - the anchors
+      that move are found by comparing two runs, and a full index had no
+      previous run to compare against.
+
+    The whole database is copied rather than a chosen few tables: `doc_features`
+    is what makes a renamed feature detectable, and `doc_page_aliases` is the
+    accumulated record of every address already published, so dropping either
+    reintroduces half the defect. Rows describing pages that no longer exist are
+    the ones supersession has to see; `writer.remove_page` already tolerates an
+    entry whose file is gone.
+    """
+    if previous_state_dir is None:
+        return False
+    previous_db = paths.doc_manifest_db_path(previous_state_dir)
+    if not previous_db.exists():
+        return False
+    try:
+        # `_checkpoint_state_dir` folds every `-wal` back into its database
+        # before the rename that publishes it, so the published file is
+        # self-contained and the sidecars need no copying.
+        shutil.copy2(previous_db, paths.doc_manifest_db_path(state_dir))
+    except OSError:  # noqa: BLE001 - a stale prior manifest must never fail a fresh run
+        return False
+    typer.echo("  carried the previous index's page manifest forward")
+    return True
 
 
 def _carry_forward_summary_ledger(state_dir: Path, previous_state_dir: Path | None) -> int:
