@@ -176,7 +176,24 @@ def build_feature_plan_prompt(
         promptText=prompt_text,
         systemPrompt=SYSTEM_PROMPT,
         context=(f"candidateCount={len(candidates)}",),
-        options={"max_tokens": MAX_PLAN_RESPONSE_TOKENS},
+        options={
+            "max_tokens": MAX_PLAN_RESPONSE_TOKENS,
+            # Suppress the reasoning channel. Measured against
+            # `openai/gpt-oss-20b`, the model this project is configured with:
+            # left at its default, the planning prompt produced 7,941 characters
+            # of reasoning, hit `finish_reason: length`, and returned **no
+            # content at all** - a rejected plan that looks exactly like an
+            # unreachable provider. With this set, 60 characters of reasoning
+            # and a complete answer.
+            #
+            # It is also what makes the token budget above true rather than
+            # aspirational: reasoning tokens count, and an unsuppressed run
+            # emitted more of them than the entire per-minute allowance.
+            #
+            # Providers that do not recognise the key ignore it; this is a
+            # request parameter, not a second route to a model.
+            "reasoning_effort": "low",
+        },
     )
 
 

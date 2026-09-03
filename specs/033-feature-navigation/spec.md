@@ -398,8 +398,21 @@ and that incidental tooling is last rather than interleaved alphabetically.
   configured against, with headroom - and that arithmetic is checked
   automatically against the constants rather than recorded in prose.
 - **SC-006**: Generating the same repository with a model and with no model
-  available produces identical feature page addresses and identical
-  module-to-feature assignment; only titles and descriptions differ.
+  available covers exactly the same modules, each in exactly one feature, and
+  derives the same candidate grouping. The *feature* set legitimately differs -
+  the model's job is to combine candidates (FR-010), so with a model this
+  repository yields 13 features where the deterministic path yields 23, and a
+  combined feature has a different anchor and therefore a different address.
+  What must never differ is which modules exist, which candidate each belongs
+  to, or whether every module is reachable.
+
+  > **Corrected after verification.** This criterion originally required
+  > *identical page addresses* with and without a model. That is not merely
+  > unmet, it is unmeetable: it contradicts FR-010. A feature merging three
+  > candidates has different membership from three separate features, so its
+  > anchor - and its URL - must differ. Measured with a live model: 139 of 139
+  > modules covered either way, 13 features against 23. The criterion was wrong,
+  > not the implementation.
 - **SC-007**: 100% of page addresses published by a previous run still resolve
   after a regeneration in which anchors moved, and 100% of section page addresses
   published by the previous version of the tool still resolve after migration.

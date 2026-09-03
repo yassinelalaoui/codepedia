@@ -161,3 +161,101 @@ def test_moving_a_page_onto_itself_is_a_no_op(tmp_path):
 
     assert generator.recordPageMove(oldPageId=page_id, newPageId=page_id, title="Indexing") is False
     assert generator.manifestStore.list_aliases(generator.repositoryId) == ()
+
+
+def test_a_real_anchor_move_across_two_runs_leaves_a_redirect(tmp_path):
+    """The end-to-end case the mechanism was built for, driven by real imports.
+
+    This is the test that was missing. `recordPageMove` was unit-tested and the
+    alias table was unit-tested, but nothing asserted that the *generator* calls
+    them when an anchor actually moves - so it did not, and the previously
+    published URL simply died. Found by regenerating a real wiki twice.
+
+    Two things it pins that the unit tests cannot:
+
+    1. the generator invokes the redirect path on an ordinary run, not only
+       while migrating a legacy manifest;
+    2. the old output paths come from the `previous_entries` snapshot, because
+       the removal pass has already deleted that manifest row by the time
+       feature pages are written on an incremental run.
+    """
+    from dependency_graph import DependencyGraph
+    from parser_engine import SourceFile, extract_symbols
+    from repository_metadata import RepositoryMetadataStore, compute_content_hash
+
+    root = tmp_path / "repo" / "app"
+    root.mkdir(parents=True)
+    #  cli -> core -> util,  extra -> core   =>  anchor is `core`
+    (root / "cli.py").write_text(
+        '"""CLI."""\n\nfrom .core import core_run\n\n\ndef main() -> int:\n    return core_run()\n',
+        encoding="utf-8",
+    )
+    (root / "core.py").write_text(
+        '"""Core."""\n\nfrom .util import helper\n\n\ndef core_run() -> int:\n    return helper()\n',
+        encoding="utf-8",
+    )
+    (root / "util.py").write_text('"""Util."""\n\n\ndef helper() -> int:\n    return 1\n', encoding="utf-8")
+    (root / "extra.py").write_text(
+        '"""Extra."""\n\nfrom .core import core_run\n\n\ndef _e() -> int:\n    return core_run()\n',
+        encoding="utf-8",
+    )
+    repo_root = tmp_path / "repo"
+
+    def index(db_name: str):
+        paths = sorted(repo_root.rglob("*.py"))
+        inventories = [extract_symbols(SourceFile(path=p, language="python")) for p in paths]
+        graph = DependencyGraph.build_from_inventories(inventories, sourceFile=str(repo_root))
+        store = RepositoryMetadataStore(tmp_path / db_name)
+        store.ensure_repository(repo_root, detected_languages=("python",))
+        for inventory in inventories:
+            path = Path(inventory.sourceFile)
+            store.store_inventory(
+                repository_root=repo_root,
+                source_file=SourceFile(path=path, language="python"),
+                inventory=inventory,
+                content_hash=compute_content_hash(path),
+            )
+        return store, graph
+
+    store, graph = index("meta1.sqlite")
+    generator = DocGenerator(
+        metadataStore=store,
+        dependencyGraph=graph,
+        manifestStore=open_doc_manifest_store(tmp_path / "manifest.sqlite"),
+        outputRoot=tmp_path / "docs",
+        repositoryRoot=repo_root,
+    )
+    first = generator.generateRepositoryDocumentation(repo_root, incremental=False)
+    published = [p.outputPathHtml for p in first.pages if p.kind == "feature"]
+    assert published, "run 1 must publish at least one feature page"
+
+    #  cli -> util, core -> util, extra -> util  =>  anchor becomes `util`
+    (root / "cli.py").write_text(
+        '"""CLI."""\n\nfrom .util import helper\n\n\ndef main() -> int:\n    return helper()\n',
+        encoding="utf-8",
+    )
+    (root / "extra.py").write_text(
+        '"""Extra."""\n\nfrom .util import helper\n\n\ndef _e() -> int:\n    return helper()\n',
+        encoding="utf-8",
+    )
+    store2, graph2 = index("meta2.sqlite")
+    generator.metadataStore, generator.dependencyGraph = store2, graph2
+    generator._bundle = None
+    generator._features = None
+    second = generator.generateRepositoryDocumentation(
+        repo_root,
+        incremental=True,
+        changedPaths=[str(root / "cli.py"), str(root / "extra.py")],
+    )
+    current = {p.outputPathHtml for p in second.pages if p.kind == "feature"}
+
+    moved = [path for path in published if path not in current]
+    assert moved, "the fixture must actually move an anchor, or this proves nothing"
+
+    for path in moved:
+        stub = generator.outputRoot / path
+        assert stub.exists(), f"{path} died instead of redirecting"
+        body = stub.read_text(encoding="utf-8")
+        assert 'http-equiv="refresh"' in body
+        target = body.split("url=")[1].split('"')[0]
+        assert (stub.parent / target).exists(), "the redirect points at a page that is not there"

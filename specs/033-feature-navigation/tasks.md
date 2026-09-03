@@ -238,13 +238,13 @@ a check that asserted a call was made rather than that a reader arrived
 somewhere.
 
 - [x] T070 [US2] quickstart § 2.2 — generate with `featurePlanner=None` into a scratch directory and verify **by reading the generated files**: `features/*.html` exists, `sections/` does not, and the member-link count across all feature pages equals the module-page count (SC-003)
-- [ ] T071 [US4] quickstart § 2.3 — generate with a live Groq key, diff the `features/*.html` filename set against T070's. **Identical filenames or the model influenced structure** (SC-006). Then regenerate unchanged and confirm zero planning calls (SC-004)
-- [ ] T072 [US4] While doing T071, confirm the model was actually consulted — check the provider log or assert `isPlanned` is `True` on at least one feature. An unreachable model and a silently rejected call both produce a wiki with plain titles; do not infer success from the wiki having built
-- [ ] T073 [US3] quickstart § 2.4 — move an anchor, regenerate **incrementally**, open the recorded URL, and `ls` the old path to confirm the removal pass did not delete it
-- [ ] T074 [US3] quickstart § 2.5 — stash, generate with `main`'s code, unstash, regenerate over the same output directory and manifest, confirm the old `sections/*.html` resolves. Do this **last**, and commit nothing in between
-- [ ] T075 [US1] quickstart § 3.1 — read the sidebar of the wiki from T071 and judge whether a newcomer could name three things this repository does. "Doc Generator", "Chat", "CLI" is the failure mode: that is the directory tree with a model's blessing, which is the defect this feature exists to remove (SC-001)
-- [ ] T076 [US5] quickstart § 3.2 — if the ordering looks arbitrary, check whether *every* feature came back with the default `subsystem` kind. The repair table permits that and no test would flag it
-- [ ] T077 [US3] quickstart § 3.4 — open a redirect stub and confirm a reader can tell they were moved and where to
+- [x] T071 [US4] quickstart § 2.3 — generate with a live Groq key, diff the `features/*.html` filename set against T070's. **Identical filenames or the model influenced structure** (SC-006). Then regenerate unchanged and confirm zero planning calls (SC-004)
+- [x] T072 [US4] While doing T071, confirm the model was actually consulted — check the provider log or assert `isPlanned` is `True` on at least one feature. An unreachable model and a silently rejected call both produce a wiki with plain titles; do not infer success from the wiki having built
+- [x] T073 [US3] quickstart § 2.4 — move an anchor, regenerate **incrementally**, open the recorded URL, and `ls` the old path to confirm the removal pass did not delete it
+- [x] T074 [US3] quickstart § 2.5 — stash, generate with `main`'s code, unstash, regenerate over the same output directory and manifest, confirm the old `sections/*.html` resolves. Do this **last**, and commit nothing in between
+- [x] T075 [US1] quickstart § 3.1 — read the sidebar of the wiki from T071 and judge whether a newcomer could name three things this repository does. "Doc Generator", "Chat", "CLI" is the failure mode: that is the directory tree with a model's blessing, which is the defect this feature exists to remove (SC-001)
+- [x] T076 [US5] quickstart § 3.2 — if the ordering looks arbitrary, check whether *every* feature came back with the default `subsystem` kind. The repair table permits that and no test would flag it
+- [x] T077 [US3] quickstart § 3.4 — open a redirect stub and confirm a reader can tell they were moved and where to
 
 ---
 
@@ -308,3 +308,61 @@ title alone and T067, T076 are cut. Everything else is load-bearing.
 - Mutation-check the four assertions listed in quickstart § 1 (T018, T030, T046,
   T047). Two vacuous tests were caught this way in feature 034.
 - `[P]` = different file, no dependency on incomplete work.
+
+
+---
+
+## Verification record (T070-T077)
+
+Run against this repository with the probe harness in the session scratchpad.
+
+| Check | Result |
+| --- | --- |
+| T070 no-model wiki | **PASS** - 139/139 modules linked, 139/139 in search, no module links in any sidebar |
+| T071 with/without a model | **PASS** - 139/139 modules covered both ways; one call then zero |
+| T072 model really answered | **PASS** - 13/13 features model-named |
+| T073 anchor move | **PASS after a fix** - initially DEAD; see below |
+| T074 migration from pre-033 | **PASS** - `sections/app-*.html` redirects to `features/core-*.html` |
+| T075 SC-001 | **PASS** - see the sidebar below |
+
+### Four defects the real-wiki checks found that the suite did not
+
+1. **`page_slug` collided.** Its suffix was the last eight alphanumeric characters
+   of the entity id - which for a module key is the filename. 10 slugs claimed by
+   more than one module; **24 of 139 module pages silently overwritten by a
+   namesake**. Links resolved; the content behind them belonged to another
+   module. Now `sha1(key)[:8]`.
+2. **An anchor move left a dead URL.** `recordPageMove` was written, unit-tested
+   and never called for an anchor move - the wiring was deferred from A2 to A4 and
+   then only the section migration was wired. Redirects now run on every pass, and
+   take the old paths from the pre-removal snapshot because the removal pass has
+   already deleted the manifest row by then.
+3. **The migration repeated forever.** The migrating run is non-incremental, so
+   `removedPageIds` never cleared the `kind="section"` rows; every later run
+   re-migrated and rebuilt the whole wiki.
+4. **The model returned nothing, silently.** `openai/gpt-oss-20b` is a reasoning
+   model: on the 4,139-character planning prompt it spent 7,941 characters of
+   reasoning, hit `finish_reason: length` and emitted **zero content**. The call
+   succeeded, the plan was rejected, the wiki fell back to plain titles -
+   indistinguishable from having no provider. `PromptEnvelope.options` was never
+   read by the transport, so the planner's `max_tokens` was inert. Fixed by
+   passing options through and setting `reasoning_effort: "low"`: 60 characters
+   of reasoning, 3,342 of content. Raising `max_tokens` instead also works but
+   emits ~15,800 characters of reasoning - more than the whole per-minute budget.
+
+### SC-001: the sidebar, with a model
+
+```
+[capability] Repository Scanning        [capability] Embedding Engine
+[capability] Repository Metadata        [capability] Dependency Graphing
+[capability] Repo Watcher               [capability] Local LLM
+[capability] Feature Validation         [capability] Provider Routing
+[capability] Chat Interface             [capability] Documentation Generator
+[capability] Feature Planning           [capability] Parsing Engine
+[capability] Reindex Pipeline           [tooling   ] Command Line Tooling
+```
+
+A newcomer can name what this repository does from that list. Compare the
+deterministic fallback - `dependency_graph - graph`, `cli - main`,
+`repository_metadata - models` - which is the directory tree again. **SC-001 is
+met only with a model**, and the fallback is honest rather than good.

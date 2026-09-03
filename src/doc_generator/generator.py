@@ -875,8 +875,14 @@ class DocGenerator:
 
         # After the feature pages exist, never before: a redirect written ahead
         # of its destination would point at a page that had not been created yet.
-        if migrating_from_sections:
-            self._migrate_section_pages(previous_entries, features)
+        #
+        # Unconditional, and that is the point. This was briefly guarded by
+        # `migrating_from_sections`, which meant an anchor moving between two
+        # ordinary runs left the previously published URL dead - no alias, no
+        # stub, file removed. The whole alias mechanism existed and was tested,
+        # and nothing called it for the case it was built for. Only regenerating
+        # a real wiki twice found that.
+        self._redirect_superseded_pages(previous_entries, features)
 
         self.manifestStore.save_feature_titles(
             self.repositoryId, {feature.key: feature.title for feature in features}
@@ -987,66 +993,84 @@ class DocGenerator:
             )
         return self._features
 
-    def _migrate_section_pages(
+    def _redirect_superseded_pages(
         self, previous_entries: Iterable[PageManifestEntry], features: Sequence[Feature]
     ) -> None:
-        """Convert a wiki built by the previous navigation scheme, once.
+        """Keep every address this wiki has published alive.
 
-        Every published `sections/*.html` address has to keep working. A section
-        page's stored `sourceSymbolIds` **are** its member module keys - the
-        generator passed `contentSymbolIds=section.moduleKeys` - so the feature
-        that inherited most of those modules is computable, and that is where the
-        old address is pointed.
+        Covers the two ways a grouping page's identity changes, because they are
+        the same problem and were briefly solved only once:
 
-        A plurality rather than a majority: a section's modules routinely split
+        1. **An anchor moved.** A feature is keyed on its most internally
+           connected member, so one new import edge re-identifies it and its URL
+           changes. Measured on this repository, six of eleven anchors are one
+           edge away from that, so it is the ordinary outcome of a refactor.
+        2. **A wiki built by the previous scheme** is being migrated, and every
+           published `sections/*.html` address has to keep working.
+
+        Both are answered the same way. A grouping page's stored
+        `sourceSymbolIds` **are** its member module keys, so the feature that
+        inherited most of them is computable, and that is where the old address
+        is pointed.
+
+        A plurality rather than a majority: a group's modules routinely split
         across two or three features, so requiring more than half would leave
         most old addresses unresolved for no benefit. Ties break on the feature
-        key so two runs migrate identically.
+        key so two runs redirect identically.
         """
         feature_by_module_key = {
             member.moduleKey: feature for feature in features for member in feature.members
         }
-        migrated_page_ids: list[str] = []
+        features_by_key = {feature.key: feature for feature in features}
+        current_page_ids = {links.feature_page_id(feature.key) for feature in features}
+        superseded_page_ids: list[str] = []
 
         for entry in previous_entries:
-            if entry.kind != "section":
+            if entry.kind == "feature" and entry.pageId in current_page_ids:
+                continue  # still published at the same address
+            if entry.kind not in ("section", "feature"):
                 continue
-            migrated_page_ids.append(entry.pageId)
+            superseded_page_ids.append(entry.pageId)
+
             tally: Counter[str] = Counter()
             for symbol_id in entry.sourceSymbolIds:
                 feature = feature_by_module_key.get(symbol_id)
                 if feature is not None:
                     tally[feature.key] += 1
             if not tally:
-                # Every module this section held is gone. There is nothing to
-                # redirect *to*, so the page is left to the ordinary removal
-                # pass rather than pointed somewhere arbitrary.
+                # Every module this page held is gone. There is nothing to
+                # redirect *to*, so it is left to the ordinary removal pass
+                # rather than pointed somewhere arbitrary.
                 continue
             best_key = min(tally.items(), key=lambda item: (-item[1], item[0]))[0]
-            target = next(feature for feature in features if feature.key == best_key)
+            target = features_by_key[best_key]
             self.recordPageMove(
                 oldPageId=entry.pageId,
                 newPageId=links.feature_page_id(target.key),
                 title=target.title,
+                oldPaths=(entry.outputPathMarkdown, entry.outputPathHtml),
             )
 
         # Drop the manifest rows now that every address has been redirected -
         # the *rows*, never the files, which are the stubs just written.
         #
-        # This is what makes the migration happen once. The migrating run is
+        # This is what makes a migration happen once. A migrating run is
         # deliberately non-incremental, so `impact.removedPageIds` is never
         # computed and nothing else would ever clear these rows: every later run
         # would find `kind="section"` again, migrate again, and rebuild the whole
         # wiki. The incremental guarantee (FR-029) would be lost permanently, and
         # nothing would report it - the wiki would simply always be slow.
-        self.manifestStore.delete_entries(migrated_page_ids)
-
-        # Only after every redirect is in place: these rows are the previous
-        # scheme's cached names, and leaving them behind lets an old section
-        # title surface in a feature's sidebar entry.
+        self.manifestStore.delete_entries(superseded_page_ids)
         self.manifestStore.drop_section_narrations(self.repositoryId)
 
-    def recordPageMove(self, *, oldPageId: str, newPageId: str, title: str) -> bool:
+    def recordPageMove(
+        self,
+        *,
+        oldPageId: str,
+        newPageId: str,
+        title: str,
+        oldPaths: tuple[str, str] | None = None,
+    ) -> bool:
         """Keep an address alive after the page behind it has been re-identified.
 
         Called whenever a page's *identity* changes while the content it
@@ -1054,12 +1078,19 @@ class DocGenerator:
         page migrating to the feature that absorbed it. Records the alias and
         leaves a redirect stub at the old address.
 
-        Returns `False` and does nothing when the old page is not in the
-        manifest: there is no address to keep alive, so there is nothing to
-        redirect. Returns `False` too when the destination is not there yet,
-        because a stub pointing at a page that was never written is worse than
-        no stub at all - it turns a dead link into a dead link that claims to be
-        a redirect.
+        `oldPaths` supplies the old address when the manifest no longer can.
+        On an incremental run the removal pass has already deleted that row by
+        the time the redirect is written - `impact.removedPageIds` runs near the
+        top of the pass and feature pages are written near the bottom - so
+        looking the old entry up here found nothing and silently recorded no
+        alias. The caller holds `previous_entries`, a snapshot taken *before* any
+        removal, and passes the paths from it.
+
+        Returns `False` and does nothing when the old address cannot be
+        determined at all: there is then nothing to keep alive. Returns `False`
+        too when the destination is not there yet, because a stub pointing at a
+        page that was never written is worse than no stub at all - it turns a
+        dead link into a dead link that claims to be a redirect.
 
         Order matters: the alias is recorded **before** the stub is written, so
         that a run interrupted between the two leaves a protected path with no
@@ -1068,20 +1099,24 @@ class DocGenerator:
         """
         if oldPageId == newPageId:
             return False
-        old_entry = self.manifestStore.load_entry(oldPageId)
+        if oldPaths is None:
+            old_entry = self.manifestStore.load_entry(oldPageId)
+            if old_entry is None:
+                return False
+            oldPaths = (old_entry.outputPathMarkdown, old_entry.outputPathHtml)
         new_entry = self.manifestStore.load_entry(newPageId)
-        if old_entry is None or new_entry is None:
+        if new_entry is None or not all(oldPaths):
             return False
 
         self.manifestStore.record_alias(
             self.repositoryId,
             old_page_id=oldPageId,
             new_page_id=newPageId,
-            old_output_path_markdown=old_entry.outputPathMarkdown,
-            old_output_path_html=old_entry.outputPathHtml,
+            old_output_path_markdown=oldPaths[0],
+            old_output_path_html=oldPaths[1],
         )
         self._writer.write_redirect_stub(
-            old_paths=(old_entry.outputPathMarkdown, old_entry.outputPathHtml),
+            old_paths=oldPaths,
             new_paths=(new_entry.outputPathMarkdown, new_entry.outputPathHtml),
             title=title,
         )

@@ -430,3 +430,22 @@ def test_a_failed_call_is_not_cached(tmp_path: Path):
 )
 def test_target_feature_count_is_clamped(modules, expected):
     assert target_feature_count(modules) == expected
+
+
+def test_the_prompt_suppresses_the_reasoning_channel():
+    """Measured against the model this project is configured with.
+
+    `openai/gpt-oss-20b` is a reasoning model. Left at its default it spent
+    7,941 characters of reasoning on this prompt, hit `finish_reason: length`,
+    and returned **zero characters of content** - a rejected plan that looks
+    exactly like an unreachable provider, which is the one failure shape this
+    project keeps shipping.
+
+    It is also a budget requirement, not only a correctness one: the unsuppressed
+    run emitted more reasoning tokens than the entire per-minute allowance the
+    prompt is sized against, so `test_worst_case_call_fits_the_provider_budget`
+    is only true while this holds.
+    """
+    envelope = build_feature_plan_prompt(assign_handles(_candidates(2)), _evidence(2))
+
+    assert envelope.options.get("reasoning_effort") == "low"

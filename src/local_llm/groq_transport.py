@@ -122,6 +122,33 @@ class GroqLLMTransport:
                 modelName=model_name,
             )
         payload = {"model": model_name, "messages": _build_messages(prompt), "stream": True}
+        # `PromptEnvelope.options` has always been the generic pass-through for
+        # per-call request parameters; nothing read it until now, which made
+        # every caller's options silently inert.
+        #
+        # This is not cosmetic. `openai/gpt-oss-20b` is a reasoning model: given
+        # the feature planner's ~4,100-character prompt it spent its whole output
+        # budget on the reasoning channel and returned `finish_reason: length`
+        # with **zero characters of content**. The call succeeded, the caller saw
+        # an empty answer, and the wiki quietly fell back to unnamed features -
+        # indistinguishable from having no provider at all. Measured: 7,941
+        # characters of reasoning, 0 of content.
+        #
+        # `reasoning_effort: "low"` cuts that to 60 characters of reasoning and
+        # 3,342 of content. Raising `max_tokens` instead also works but emits
+        # ~15,800 characters of reasoning, which alone exceeds the per-minute
+        # token budget the planner is designed around - so the option that fixes
+        # it and the option that fits the budget are the same one.
+        #
+        # Reserved keys are never overridden, so a caller cannot accidentally
+        # unset the model, the messages or streaming.
+        payload.update(
+            {
+                key: value
+                for key, value in prompt.options.items()
+                if key not in ("model", "messages", "stream")
+            }
+        )
         headers = {"Authorization": f"Bearer {api_key}"}
         try:
             async with httpx.AsyncClient(timeout=self.generateTimeout) as client:
