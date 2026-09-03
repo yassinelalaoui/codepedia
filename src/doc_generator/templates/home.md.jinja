@@ -12,11 +12,11 @@
 
 This repository has {{ architecture_summary.moduleCount }} documented module{{ '' if architecture_summary.moduleCount == 1 else 's' }}, {{ architecture_summary.classCount }} class{{ '' if architecture_summary.classCount == 1 else 'es' }}, and {{ architecture_summary.functionCount }} top-level function{{ '' if architecture_summary.functionCount == 1 else 's' }}{% if architecture_summary.documentCount %}, alongside {{ architecture_summary.documentCount }} documentation page{{ '' if architecture_summary.documentCount == 1 else 's' }}{% endif %}.
 
-{% if section_entries %}
-| Section | Modules |
+{% if feature_entries %}
+| Feature | Modules |
 | --- | --- |
-{% for entry in section_entries %}
-| [{{ entry.section.title | mdesc }}]({{ entry.sectionLink.relativePath if entry.sectionLink else '#' }}) | {{ entry.section.members | length }} |
+{% for entry in feature_entries %}
+| [{{ entry.feature.title | mdesc }}]({{ entry.featureLink.relativePath if entry.featureLink else '#' }}) | {{ entry.feature.members | length }} |
 {% endfor %}
 
 {% endif %}
@@ -34,15 +34,15 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 [View the repository use-case diagram]({{ use_case_diagram_link.relativePath }}){: .diagram-link }
 
 {% endif %}
-## Sections
+## Features
 
-{% if section_entries %}
-{% for entry in section_entries %}
-- [{{ entry.section.title | mdesc }}]({{ entry.sectionLink.relativePath if entry.sectionLink else '#' }}){% if entry.section.description %} — {{ entry.section.description.split() | join(' ') | mdesc }}{% endif +%}
+{% if feature_entries %}
+{% for entry in feature_entries %}
+- [{{ entry.feature.title | mdesc }}]({{ entry.featureLink.relativePath if entry.featureLink else '#' }}){% if entry.feature.description %} — {{ entry.feature.description.split() | join(' ') | mdesc }}{% endif +%}
 {% endfor %}
 {: .module-list }
 {% else %}
-_No sections derived yet._
+_No features derived yet._
 {% endif %}
 
 ## Modules

@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 import typer
 from dependency_graph import DependencyGraph
-from doc_generator import DocGenerator, SectionNarrator, open_doc_manifest_store
+from doc_generator import DocGenerator, FeaturePlanner, open_doc_manifest_store
 from parser_engine import SourceFile, extract_symbols
 from provider_routing import FailoverExecutor, PathFailoverLog, build_stage_executor
 from reindex_pipeline import EmbeddingCache
@@ -338,11 +338,12 @@ def _run_pipeline(
         manifestStore=manifest_store,
         outputRoot=paths.docs_output_dir(state_dir),
         repositoryRoot=root,
-        # One call per section, not per page, and cached in the manifest store
-        # against the section's membership - so an unchanged section is never
-        # narrated twice, and a repository indexed with no provider reachable
-        # still gets its sections, just under their directory-derived names.
-        sectionNarrator=SectionNarrator(llm_engine, cache=manifest_store),
+        # One call for the whole feature set, not one per feature, and cached
+        # in the manifest store against the repository's structure - so
+        # regenerating an unchanged repository consults no model at all, and a
+        # repository indexed with no provider reachable still gets the same
+        # features at the same addresses, just under plainer names.
+        featurePlanner=FeaturePlanner(llm_engine, cache=manifest_store),
     )
 
     with _stage(Stage.GENERATING_DOCS_STRUCTURE):

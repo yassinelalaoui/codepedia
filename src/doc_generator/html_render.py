@@ -89,11 +89,16 @@ def _build_page_toc(toc_tokens: Sequence[dict[str, Any]]) -> list[dict[str, Any]
     return sections
 
 
-# The sidebar's navigation tree, as `doc_generator` hands it over: every entry
+# The sidebar's navigation list, as `doc_generator` hands it over: every entry
 # carries the target page's *own* output path, and `render_page_html` turns each
 # into a link relative to whatever page is currently being rendered.
-NavModule = tuple[str, str, str]  # (module name, its page's output_path_html, its stable key)
-NavSection = tuple[str, str, str, Sequence[NavModule]]  # (title, output_path_html, key, modules)
+#
+# Flat, and with no members. The sidebar used to render a section/module tree;
+# it now lists features only, which is what lets it stay readable on a
+# repository with more modules than fit on a screen. A module's doors are its
+# feature page, which lists every member without truncation, and the search
+# index, which carries one entry per module.
+NavFeature = tuple[str, str, str]  # (title, its page's output_path_html, its stable key)
 
 
 def render_page_html(
@@ -101,9 +106,8 @@ def render_page_html(
     title: str,
     content_markdown: str,
     output_path_html: str,
-    nav_sections: Sequence[NavSection] = (),
-    active_module_key: str = "",
-    active_section_key: str = "",
+    nav_features: Sequence[NavFeature] = (),
+    active_feature_key: str = "",
     symbol_lookup: SymbolLookup | None = None,
     current_file_path: str = "",
     commit_sha: str = "",
@@ -148,36 +152,19 @@ def render_page_html(
     search_index_href = relative_output_link(
         from_output_path=output_path_html, to_output_path=SEARCH_INDEX_OUTPUT_PATH
     )
-    # The persistent sidebar's navigation tree (contracts/wiki-ui-shell.md) -
+    # The persistent sidebar's navigation list (contracts/wiki-ui-shell.md) -
     # every page passes its own `output_path_html` so each link is relative to
     # wherever this particular page ends up on disk (diagram pages sit one
     # directory deeper than module pages, etc.), mirroring how home_href/
     # diagrams_href are already computed above.
-    #
-    # A section is marked `expanded` when the page being rendered belongs to it,
-    # which the template turns into `<details open>`. Collapsing the rest keeps a
-    # large repository's sidebar navigable, and `<details>` does it with no
-    # JavaScript at all - the same degradation rule the section rail follows.
-    nav_entries = []
-    for section_title, section_html, section_key, modules in nav_sections:
-        module_entries = [
-            {
-                "name": name,
-                "href": relative_output_link(from_output_path=output_path_html, to_output_path=module_html) or ".",
-                "active": module_key == active_module_key,
-            }
-            for name, module_html, module_key in modules
-        ]
-        nav_entries.append(
-            {
-                "title": section_title,
-                "href": relative_output_link(from_output_path=output_path_html, to_output_path=section_html) or ".",
-                "active": section_key == active_section_key,
-                "expanded": section_key == active_section_key
-                or any(entry["active"] for entry in module_entries),
-                "modules": module_entries,
-            }
-        )
+    nav_entries = [
+        {
+            "title": feature_title,
+            "href": relative_output_link(from_output_path=output_path_html, to_output_path=feature_html) or ".",
+            "active": feature_key == active_feature_key,
+        }
+        for feature_title, feature_html, feature_key in nav_features
+    ]
     return render_html_template(
         "layout.html.jinja",
         title=title,
@@ -188,7 +175,7 @@ def render_page_html(
         ui_script_href=ui_script_href,
         ui_style_href=ui_style_href,
         search_index_href=search_index_href,
-        nav_sections=nav_entries,
+        nav_features=nav_entries,
         page_toc=page_toc,
         is_diagrams_page=output_path_html == DIAGRAMS_INDEX_OUTPUT_HTML,
         generated_at=datetime.now(timezone.utc).isoformat(),

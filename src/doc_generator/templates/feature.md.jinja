@@ -1,0 +1,53 @@
+# {{ feature.title | mdesc }}
+
+- Kind: {{ feature.kind }}
+- Modules: {{ feature.members | length }}
+{: .repo-meta }
+
+## About this feature
+
+{% if feature.description %}
+{{ feature.description }}
+{% if feature.isPlanned %}
+{: .ai-generated }
+{% endif %}
+{% else %}
+_This feature groups the {{ feature.members | length }} module{{ '' if feature.members | length == 1 else 's' }} below, derived from the repository's entry points and the imports between them. No description has been generated for it yet._
+{% endif %}
+
+## Modules in this feature
+
+{% if member_entries %}
+{% for entry in member_entries %}
+- [{{ entry.member.name | mdesc }}]({{ entry.moduleLink.relativePath if entry.moduleLink else '#' }}){% if entry.member.docstring %} — {{ entry.member.docstring | replace('
+', ' ') | mdesc }}{% elif entry.member.generatedSummary %} — {{ entry.member.generatedSummary | replace('
+', ' ') | mdesc }}{% endif +%}
+{% endfor %}
+{: .module-list }
+{% else %}
+_No modules in this feature._
+{% endif %}
+
+## Internal dependencies
+
+{% if feature_diagram_source and feature.internalEdges %}
+```mermaid
+{{ feature_diagram_source.sourceText }}
+```
+
+{% if feature_diagram_source.omittedModuleCount %}
+_{{ feature_diagram_source.omittedModuleCount }} less-connected module{{ '' if feature_diagram_source.omittedModuleCount == 1 else 's' }} omitted from this diagram; every module is listed above._
+{% endif %}
+{% else %}
+_The modules in this feature do not import one another._
+{% endif %}
+
+## Related features
+
+{% if neighbor_links %}
+{% for link in neighbor_links %}
+- [{{ link.label | mdesc }}]({{ link.relativePath }}){: .related-chip }
+{% endfor %}
+{% else %}
+_This feature does not exchange imports with any other feature._
+{% endif %}

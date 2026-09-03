@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from doc_generator import DocGenerator, open_doc_manifest_store
@@ -44,16 +45,23 @@ def test_full_generation_produces_accurate_pages_with_zero_broken_links(tmp_path
     # 1 home + 3 modules + 3 diagrams + 1 class diagram + 3 entry-point sequence
     # diagrams (alpha_entry, Child.run, shared_value - beta_helper is called by
     # both alpha_entry and Child.run, so it does not itself qualify) + 1
-    # repository-wide use-case diagram + 1 diagrams-index page + 1 section page
-    # (the fixture repository is flat, so its three modules form a single
-    # section rooted at the repository directory).
-    assert len(doc_set.pages) == 14
-    section_pages = [page for page in doc_set.pages if page.kind == "section"]
-    assert len(section_pages) == 1
-    section_markdown = section_pages[0].contentMarkdown
-    assert "## Modules in this section" in section_markdown
+    # repository-wide use-case diagram + 1 diagrams-index page + 3 feature pages.
+    #
+    # 16, where the section scheme produced 14. The fixture is a flat directory,
+    # so directory clustering gave it exactly one section; the same three modules
+    # carry three entry points, so entry-point seeding gives three features. That
+    # difference is the feature, not a regression: grouping no longer collapses
+    # when a repository happens to keep its files in one folder.
+    assert len(doc_set.pages) == 16
+    feature_pages = [page for page in doc_set.pages if page.kind == "feature"]
+    assert len(feature_pages) == 3
+    listed_modules = {
+        name
+        for page in feature_pages
+        for name in re.findall(r"^- \[([^\]]+)\]\(", page.contentMarkdown, re.MULTILINE)
+    }
     for module_name in ("alpha", "beta", "gamma"):
-        assert f"[{module_name}](" in section_markdown
+        assert module_name in listed_modules, "every module must be listed on some feature page"
     home_page = next(page for page in doc_set.pages if page.kind == "home")
     assert "alpha" in home_page.contentMarkdown
     assert "beta" in home_page.contentMarkdown
@@ -146,12 +154,12 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
     # diagram refreshes too, for the same "any qualifying change" reason as
     # the class diagram (research.md Decision 6 of 023).
     #
-    # beta.py's owning section page also refreshes: unlike a module page, a
-    # section page embeds its members' docstrings and summaries, so a member's
+    # beta.py's owning feature page also refreshes: unlike a module page, a
+    # feature page embeds its members' docstrings and summaries, so a member's
     # change really does make it stale. Its *set* of members is unchanged, so
-    # the navigation tree keeps its shape and nothing else is dragged in.
+    # the navigation keeps its shape and nothing else is dragged in.
     regenerated_kinds = {page.kind for page in doc_set.pages}
-    assert regenerated_kinds == {"module", "section", "class-diagram", "sequence-diagram", "use-case-diagram"}
+    assert regenerated_kinds == {"module", "feature", "class-diagram", "sequence-diagram", "use-case-diagram"}
     assert len(doc_set.pages) == 6
     module_page = next(page for page in doc_set.pages if page.kind == "module")
     assert module_page.title == "beta"
@@ -162,12 +170,12 @@ def test_incremental_regeneration_touches_only_impacted_pages_and_keeps_links_va
     changed_paths = {path for path in before_mtimes if before_mtimes[path] != after_mtimes.get(path)}
     class_diagram_page = next(page for page in doc_set.pages if page.kind == "class-diagram")
     use_case_diagram_page = next(page for page in doc_set.pages if page.kind == "use-case-diagram")
-    section_page = next(page for page in doc_set.pages if page.kind == "section")
+    feature_pages = [page for page in doc_set.pages if page.kind == "feature"]
     expected_changed_paths = {
         output_root / "modules" / Path(module_page.outputPathMarkdown).name,
         output_root / "modules" / Path(module_page.outputPathHtml).name,
-        output_root / Path(section_page.outputPathMarkdown),
-        output_root / Path(section_page.outputPathHtml),
+        *(output_root / Path(page.outputPathMarkdown) for page in feature_pages),
+        *(output_root / Path(page.outputPathHtml) for page in feature_pages),
         output_root / Path(class_diagram_page.outputPathMarkdown),
         output_root / Path(class_diagram_page.outputPathHtml),
         output_root / Path(use_case_diagram_page.outputPathMarkdown),

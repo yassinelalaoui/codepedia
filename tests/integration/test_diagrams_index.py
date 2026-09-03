@@ -62,7 +62,7 @@ def test_diagrams_link_present_and_resolvable_from_every_page_kind(tmp_path):
     assert kinds_seen == {
         "home",
         "module",
-        "section",
+        "feature",
         "diagram",
         "class-diagram",
         "sequence-diagram",

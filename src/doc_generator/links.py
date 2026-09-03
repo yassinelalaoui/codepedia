@@ -22,7 +22,7 @@ USE_CASE_DIAGRAM_PAGE_ID = "diagram:use-case-overview"
 USE_CASE_DIAGRAM_OUTPUT_MARKDOWN = "diagrams/use-case-overview.md"
 USE_CASE_DIAGRAM_OUTPUT_HTML = "diagrams/use-case-overview.html"
 
-SECTION_PAGE_ID_PREFIX = "section:"
+FEATURE_PAGE_ID_PREFIX = "feature:"
 
 DIAGRAMS_INDEX_PAGE_ID = "diagrams-index"
 DIAGRAMS_INDEX_OUTPUT_MARKDOWN = "diagrams-index.md"
@@ -35,10 +35,6 @@ def module_page_id(module_id: str) -> str:
 
 def diagram_page_id(module_id: str) -> str:
     return f"diagram:{module_id}"
-
-
-def section_page_id(section_key: str) -> str:
-    return f"{SECTION_PAGE_ID_PREFIX}{section_key}"
 
 
 def class_diagram_page_id() -> str:
@@ -75,7 +71,26 @@ def slugify(name: str) -> str:
 
 
 def page_slug(name: str, entity_id: str) -> str:
-    suffix = re.sub(r"[^a-zA-Z0-9]+", "", entity_id)[-8:] or "0"
+    """A readable, unique file name for a page keyed on `entity_id`.
+
+    The suffix is a **hash** of the id, not its last eight characters. That
+    earlier rule looked like a disambiguator and was not one: a module key ends
+    in its own file path, so the last eight alphanumeric characters of
+    `.../src/chat/models.py` are `modelspy` - and so are those of
+    `.../src/doc_generator/models.py`, and of the nine other `models.py` files
+    in this repository.
+
+    Measured before the fix: **10 slugs were claimed by more than one module and
+    24 of 139 module pages were silently overwritten by a namesake.** The pages
+    existed, the links pointed at them, and the content behind them belonged to a
+    different module - which no link check could catch, because nothing was
+    broken, only wrong.
+
+    Feature navigation is what surfaced it: with modules out of the sidebar, a
+    feature page's member list is a module's main door, and a quarter of those
+    doors opened onto the wrong room.
+    """
+    suffix = hashlib.sha1(entity_id.encode("utf-8")).hexdigest()[:8]
     return f"{slugify(name)}-{suffix}"
 
 
@@ -157,23 +172,43 @@ def diagram_output_paths(slug: str) -> tuple[str, str]:
     return f"diagrams/{slug}.md", f"diagrams/{slug}.html"
 
 
-def section_slug(directory_path: str, section_key: str) -> str:
-    """A readable, stable file name for a section page.
+def feature_page_id(anchor_module_key: str) -> str:
+    return f"{FEATURE_PAGE_ID_PREFIX}{anchor_module_key}"
 
-    Built from the section's directory rather than its title: a title can be
-    rewritten by the narrator between runs, and keying the output file on it
-    would orphan the previous file and break every link pointing at it. The
-    hashed suffix disambiguates two sections carved out of the same directory,
-    which `page_slug`'s "last 8 characters of the id" rule cannot do for keys
-    that are paths.
+
+def anchor_module_name(anchor_module_key: str) -> str:
+    """The readable half of a feature's key.
+
+    A feature's key *is* a module key (`<repositoryId>::file::<path>`), so the
+    name is the path's stem - which is why `feature_slug` needs one argument
+    where the old `section_slug` needed two. A section key was
+    `directory#leadName`, and its readable half lived in the directory rather
+    than in the key itself.
     """
-    base = slugify(directory_path) if directory_path not in ("", ".") else "root"
-    suffix = hashlib.sha1(section_key.encode("utf-8")).hexdigest()[:8]
+    _prefix, separator, path = anchor_module_key.partition("::file::")
+    return PurePosixPath(path.replace("\\", "/")).stem if separator else anchor_module_key
+
+
+def feature_slug(anchor_module_key: str) -> str:
+    """A readable, stable file name for a feature page.
+
+    Built from the *anchor module*, never the title: the planner rewrites titles
+    between runs, and keying the output file on a title would orphan the previous
+    file and break every link pointing at it. The hashed suffix disambiguates two
+    features whose anchors share a module name - eleven files in this repository
+    are called `models.py`.
+
+    The anchor itself can still move between runs, which is what the alias table
+    and the redirect stubs exist for; measured, six of eleven anchors on this
+    repository are one import edge away from moving.
+    """
+    base = slugify(anchor_module_name(anchor_module_key)) or "feature"
+    suffix = hashlib.sha1(anchor_module_key.encode("utf-8")).hexdigest()[:8]
     return f"{base}-{suffix}"
 
 
-def section_output_paths(slug: str) -> tuple[str, str]:
-    return f"sections/{slug}.md", f"sections/{slug}.html"
+def feature_output_paths(slug: str) -> tuple[str, str]:
+    return f"features/{slug}.md", f"features/{slug}.html"
 
 
 def relative_output_link(*, from_output_path: str, to_output_path: str, anchor: str | None = None) -> str:

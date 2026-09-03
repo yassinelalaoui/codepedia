@@ -6,11 +6,11 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from sqlite_support import apply_write_pragmas
 
-from .models import PageManifestEntry
+from .models import PageAlias, PageManifestEntry
 
 SCHEMA_STATEMENTS = (
     """
@@ -27,10 +27,10 @@ SCHEMA_STATEMENTS = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_doc_pages_repository ON doc_pages(repository_id)",
-    # Section titles/descriptions are the one part of a section page that costs
-    # a model call, so they are cached against the membership that produced
-    # them: an unchanged section is never re-narrated, and a section whose
-    # members changed is narrated exactly once more.
+    # The previous navigation scheme's cached group names. Nothing writes this
+    # any more; it survives only so the migration in `generator` can find a
+    # legacy wiki and drop it. Removing the table outright would make an old
+    # database unreadable rather than upgradeable.
     """
     CREATE TABLE IF NOT EXISTS doc_section_narrations (
         repository_id TEXT NOT NULL,
@@ -52,6 +52,65 @@ SCHEMA_STATEMENTS = (
         repository_id TEXT PRIMARY KEY,
         template_fingerprint TEXT NOT NULL,
         updated_at TEXT NOT NULL
+    )
+    """,
+    # Addresses this wiki has published that now belong to a different page.
+    #
+    # A feature's page id is its anchor module's key, and an anchor is the most
+    # internally connected member - so a single new import edge can move it and
+    # change the page's URL. Measured on this repository: six of eleven groups
+    # are one edge away from a different anchor, one of them an exact tie. That
+    # makes a dead bookmark the ordinary outcome of a refactor rather than an
+    # edge case, and unlike most defects it cannot be repaired later: once the
+    # links are in issues and chat messages they cannot be recalled.
+    #
+    # `old_page_id` is the primary key because one address resolves to exactly
+    # one destination; a later move overwrites it, so a chain of moves collapses
+    # to its endpoint rather than needing to be walked.
+    """
+    CREATE TABLE IF NOT EXISTS doc_page_aliases (
+        repository_id TEXT NOT NULL,
+        old_page_id TEXT NOT NULL,
+        new_page_id TEXT NOT NULL,
+        old_output_path_markdown TEXT NOT NULL,
+        old_output_path_html TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY (repository_id, old_page_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_doc_page_aliases_repository ON doc_page_aliases(repository_id)",
+    # What each feature is currently *called*. Separate from the plan cache
+    # because a title is the output of repair, not of the model: a feature the
+    # planner never named still has one. `impact` compares these across runs,
+    # because a renamed feature changes the sidebar of every already-written page
+    # while moving no page id at all.
+    """
+    CREATE TABLE IF NOT EXISTS doc_features (
+        repository_id TEXT NOT NULL,
+        feature_key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        PRIMARY KEY (repository_id, feature_key)
+    )
+    """,
+    # The model's answer to "what features does this repository offer", cached
+    # against the repository *structure* that was described to it.
+    #
+    # `doc_generator` regenerates more than once per index - once for structure,
+    # once after summaries land - and again on every incremental run. Without
+    # this the one-call-per-plan budget would be spent on every pass over a
+    # repository that had not changed.
+    #
+    # What is stored is the model's raw answer, not the repaired feature set.
+    # Repair is deterministic and cheap, so re-running it on load costs nothing
+    # and means a change to the repair rules takes effect immediately instead of
+    # waiting for the cache to expire.
+    """
+    CREATE TABLE IF NOT EXISTS doc_feature_plans (
+        repository_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        plan_json TEXT NOT NULL,
+        generated_at TEXT NOT NULL,
+        PRIMARY KEY (repository_id)
     )
     """,
 )
@@ -163,65 +222,162 @@ class DocPageManifestStore:
             with connection:
                 connection.execute("DELETE FROM doc_pages WHERE page_id = ?", (page_id,))
 
-    def load_section_narration(
-        self, repository_id: str, section_key: str, membership_hash: str
-    ) -> tuple[str, str] | None:
-        """The cached (title, description) for this exact membership, if any.
-
-        A row whose `membership_hash` no longer matches is treated as absent
-        rather than returned stale - the section it described is not the section
-        being rendered.
-        """
-        with self._connection() as connection:
-            row = connection.execute(
-                """
-                SELECT title, description FROM doc_section_narrations
-                WHERE repository_id = ? AND section_key = ? AND membership_hash = ?
-                """,
-                (repository_id, section_key, membership_hash),
-            ).fetchone()
-            return (row["title"], row["description"]) if row is not None else None
-
-    def list_section_titles(self, repository_id: str) -> dict[str, str]:
-        """Every section's currently stored title, keyed by section key.
-
-        Unlike `load_section_narration` this ignores `membership_hash`: the
-        caller is asking what the sidebar *says today*, not whether a cached
-        narration may be reused. The two questions diverge exactly when a
-        section's membership changed, which is one of the cases the navigation
-        has to notice.
-        """
-        with self._connection() as connection:
-            rows = connection.execute(
-                "SELECT section_key, title FROM doc_section_narrations WHERE repository_id = ?",
-                (repository_id,),
-            ).fetchall()
-            return {row["section_key"]: row["title"] for row in rows}
-
-    def save_section_narration(
-        self, repository_id: str, section_key: str, membership_hash: str, *, title: str, description: str
+    def record_alias(
+        self,
+        repository_id: str,
+        *,
+        old_page_id: str,
+        new_page_id: str,
+        old_output_path_markdown: str,
+        old_output_path_html: str,
     ) -> None:
+        """Remember that `old_page_id`'s address now belongs to `new_page_id`.
+
+        Re-recording the same old address overwrites the destination, so a page
+        that moves twice leaves one alias pointing at where it ended up rather
+        than a chain nobody walks.
+        """
         with self._connection() as connection:
             with connection:
                 connection.execute(
                     """
-                    INSERT INTO doc_section_narrations (
-                        repository_id, section_key, membership_hash, title, description, generated_at
+                    INSERT INTO doc_page_aliases (
+                        repository_id, old_page_id, new_page_id,
+                        old_output_path_markdown, old_output_path_html, recorded_at
                     ) VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(repository_id, section_key) DO UPDATE SET
-                        membership_hash = excluded.membership_hash,
-                        title = excluded.title,
-                        description = excluded.description,
+                    ON CONFLICT(repository_id, old_page_id) DO UPDATE SET
+                        new_page_id = excluded.new_page_id,
+                        old_output_path_markdown = excluded.old_output_path_markdown,
+                        old_output_path_html = excluded.old_output_path_html,
+                        recorded_at = excluded.recorded_at
+                    """,
+                    (
+                        repository_id,
+                        old_page_id,
+                        new_page_id,
+                        old_output_path_markdown,
+                        old_output_path_html,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+
+    def list_aliases(self, repository_id: str) -> tuple[PageAlias, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM doc_page_aliases WHERE repository_id = ? ORDER BY old_page_id",
+                (repository_id,),
+            ).fetchall()
+            return tuple(
+                PageAlias(
+                    oldPageId=row["old_page_id"],
+                    newPageId=row["new_page_id"],
+                    oldOutputPathMarkdown=row["old_output_path_markdown"],
+                    oldOutputPathHtml=row["old_output_path_html"],
+                    recordedAt=row["recorded_at"],
+                )
+                for row in rows
+            )
+
+    def aliased_output_paths(self, repository_id: str) -> set[str]:
+        """Every output path a redirect stub currently occupies.
+
+        Read by `DocumentationWriter.remove_page` before it unlinks anything.
+        A set rather than the aliases themselves because the removal pass asks
+        one question - "is this file a redirect?" - and asking it per page over a
+        list would be quadratic on a wiki with many moves.
+        """
+        paths: set[str] = set()
+        for alias in self.list_aliases(repository_id):
+            paths.add(alias.oldOutputPathMarkdown)
+            paths.add(alias.oldOutputPathHtml)
+        paths.discard("")
+        return paths
+
+    def load_feature_plan(self, repository_id: str, plan_key: str) -> list[dict] | None:
+        """The cached plan for this exact repository structure, if any.
+
+        A row whose `plan_key` no longer matches is treated as absent rather than
+        returned stale - the repository it described is not the repository being
+        documented.
+        """
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT plan_json FROM doc_feature_plans WHERE repository_id = ? AND plan_key = ?",
+                (repository_id, plan_key),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["plan_json"])
+        except ValueError:
+            # A row written by an older shape, or truncated. Treated as a miss,
+            # which costs one call - never as a crash.
+            return None
+        return payload if isinstance(payload, list) else None
+
+    def save_feature_plan(self, repository_id: str, plan_key: str, features: Iterable[dict]) -> None:
+        with self._connection() as connection:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO doc_feature_plans (repository_id, plan_key, plan_json, generated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(repository_id) DO UPDATE SET
+                        plan_key = excluded.plan_key,
+                        plan_json = excluded.plan_json,
                         generated_at = excluded.generated_at
                     """,
                     (
                         repository_id,
-                        section_key,
-                        membership_hash,
-                        title,
-                        description,
+                        plan_key,
+                        json.dumps(list(features)),
                         datetime.now(timezone.utc).isoformat(),
                     ),
+                )
+
+    def list_feature_titles(self, repository_id: str) -> dict[str, str]:
+        """Every feature's currently stored title, keyed by feature key.
+
+        Read *before* this run's features are derived: the titles are overwritten
+        in place, so afterwards the previous names exist nowhere - and they are
+        what tells us whether every already-written page's sidebar went stale.
+        """
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT feature_key, title FROM doc_features WHERE repository_id = ?",
+                (repository_id,),
+            ).fetchall()
+            return {row["feature_key"]: row["title"] for row in rows}
+
+    def save_feature_titles(self, repository_id: str, titles: Mapping[str, str]) -> None:
+        """Replace this repository's feature titles wholesale.
+
+        A delete-then-insert rather than an upsert: a feature that no longer
+        exists must not leave its title behind, or the next run would compare
+        against a name nothing carries and regenerate the whole wiki forever.
+        """
+        with self._connection() as connection:
+            with connection:
+                connection.execute(
+                    "DELETE FROM doc_features WHERE repository_id = ?", (repository_id,)
+                )
+                connection.executemany(
+                    "INSERT INTO doc_features (repository_id, feature_key, title) VALUES (?, ?, ?)",
+                    [(repository_id, key, title) for key, title in sorted(titles.items())],
+                )
+
+    def drop_section_narrations(self, repository_id: str) -> None:
+        """Discard the previous navigation scheme's cached names.
+
+        Called once, by the migration that converts a `kind="section"` manifest.
+        Left behind, an old section title could surface in a feature's sidebar
+        entry - the two schemes keyed their cache differently, so nothing else
+        would notice the collision.
+        """
+        with self._connection() as connection:
+            with connection:
+                connection.execute(
+                    "DELETE FROM doc_section_narrations WHERE repository_id = ?", (repository_id,)
                 )
 
     def load_template_fingerprint(self, repository_id: str) -> str | None:

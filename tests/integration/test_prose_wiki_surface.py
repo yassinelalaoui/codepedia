@@ -118,18 +118,28 @@ def test_code_keeps_its_own_kinds(tmp_path):
 
 def test_a_prose_page_is_labelled_by_its_path_not_its_stem(tmp_path):
     # Documentation filenames repeat by convention: a repository of
-    # `specs/001-x/spec.md`, `specs/002-y/spec.md` would fill the sidebar with
-    # entries all reading "spec", whose URLs differ but whose labels do not.
+    # `specs/001-x/spec.md`, `specs/002-y/spec.md` would produce entries all
+    # reading "spec", whose URLs differ but whose labels do not.
+    #
+    # This used to also assert the label appeared in every page's sidebar. It no
+    # longer can, and that is by design rather than a regression: feature
+    # navigation removed the module tree from the sidebar (033 FR-024). The
+    # label still does the work it was introduced for - it names the page and it
+    # names the search result - so the assertion moved to where the label now
+    # lives rather than being dropped.
     _root, docs_root, doc_set = _generate(tmp_path)
 
     prose_page = next(page for page in doc_set.pages if page.title.endswith("architecture"))
     assert prose_page.title == "docs/architecture"
     assert any(page.title == "alpha" for page in doc_set.pages), "code keeps its stem"
 
-    module_html = next(
-        page.renderedHtml for page in doc_set.pages if page.kind == "module" and page.title == "alpha"
+    assert "docs/architecture" in prose_page.renderedHtml, "the page names itself by its path"
+
+    index = json.loads((docs_root / "assets" / "search-index.json").read_text(encoding="utf-8"))
+    document_names = {entry["name"] for entry in index["entries"] if entry["kind"] == "document"}
+    assert "docs/architecture" in document_names, (
+        "search is now one of a document's two doors, so its label has to be right there"
     )
-    assert "docs/architecture" in module_html, "the sidebar on every page carries the label"
 
 
 def test_prose_pages_do_not_inflate_the_home_page_counters(tmp_path):

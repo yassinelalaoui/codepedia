@@ -17,8 +17,10 @@
 {% if module.docstring %}{{ module.docstring }}
 
 {% endif %}
-{% if section_link %}
-[In section: {{ section_link.label | mdesc }}]({{ section_link.relativePath }}){: .section-link }
+{# `.section-link` is the chip's presentational class, kept as-is: renaming it
+   would mean rebuilding wiki-ui.css, and this feature is Python and Jinja only. #}
+{% if feature_link %}
+[In feature: {{ feature_link.label | mdesc }}]({{ feature_link.relativePath }}){: .section-link }
 
 {% endif %}
 ## Summary

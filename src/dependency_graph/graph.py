@@ -392,7 +392,18 @@ class DependencyGraph:
                         id=unresolved_id,
                         kind="file",
                         name=candidate,
-                        sourceFile=inventory.sourceFile,
+                        # **Empty, not the importing file's path.** An external
+                        # import does not live in the repository, so claiming it
+                        # lives in whichever file happened to mention it first is
+                        # simply false - and expensive: the node is created once
+                        # and reused by every later importer, so `__future__`
+                        # permanently carried `sourceFile=src/chat/budget.py`.
+                        # Consumers that map a node back to a module by path then
+                        # drew an import edge to `budget` from every one of the
+                        # 131 modules writing `from __future__ import
+                        # annotations`, giving it a degree of 131 out of 139
+                        # against a true degree of 4.
+                        sourceFile="",
                         symbolType="module",
                         metadata={"unresolved": True, "rawImport": text},
                     )
@@ -401,22 +412,108 @@ class DependencyGraph:
         return resolved
 
     def _resolve_file_candidate(self, candidate: str, source_file: str) -> DependencyNode | None:
+        """Which repository file, if any, an import names.
+
+        Resolution is **package-aware and refuses to guess**, in that order:
+
+        1. a relative import (`from .models import X`) resolves against the
+           importing file's own directory, and only there;
+        2. a dotted absolute import (`from doc_generator.models import X`) must
+           match that whole dotted tail of a file's path;
+        3. a bare name (`from beta import x`) resolves only when exactly one
+           file in the repository carries it.
+
+        Rule 3 is the one that matters. This used to match on the last path
+        segment alone and return the **first** node it happened to iterate over,
+        so in a repository with eleven files named `models.py` every
+        `from .models import …` anywhere in the tree resolved to whichever one
+        was inserted first. Measured on this repository before the fix:
+        `src/chat/models.py` collected 158 import edges and showed an undirected
+        module degree of 102, while the other ten `models.py` files had **no
+        incoming edges at all**. The dependency graph was not merely imprecise
+        there, it was wrong, and every consumer of import edges inherited it.
+
+        Refusing an ambiguous bare name loses a little reach and gains
+        correctness: an unresolved import becomes an external node, which is what
+        an import nobody can attribute actually is.
+        """
+        if candidate.startswith("."):
+            return self._resolve_relative_import(candidate, source_file)
+        if "." in candidate:
+            dotted = self._resolve_dotted_import(candidate, source_file)
+            if dotted is not None:
+                return dotted
+        return self._resolve_bare_import(candidate, source_file)
+
+    def _repository_file_nodes(self, source_file: str) -> list[DependencyNode]:
+        return [
+            node
+            for node in self.nodes.values()
+            if node.kind == "file"
+            and node.sourceFile
+            and node.sourceFile != source_file
+            and not node.metadata.get("unresolved")
+        ]
+
+    def _resolve_relative_import(self, candidate: str, source_file: str) -> DependencyNode | None:
+        """`.models`, `..store.sqlite_store` - resolved against the importer.
+
+        A relative import states its own location: one leading dot is the
+        importing file's package, each further dot one level up. That is the
+        whole point of the syntax, and reading it is what makes eleven
+        same-named modules distinguishable.
+        """
+        if not source_file:
+            return None
+        dots = len(candidate) - len(candidate.lstrip("."))
+        remainder = candidate[dots:].strip()
+        base = Path(source_file).parent
+        for _level in range(dots - 1):
+            base = base.parent
+
+        segments = [segment for segment in remainder.split(".") if segment]
+        target = base.joinpath(*segments) if segments else base
+        wanted = {
+            _normalize_path(str(target.with_suffix(".py"))),
+            _normalize_path(str(target / "__init__.py")),
+        }
+        for node in self._repository_file_nodes(source_file):
+            if _normalize_path(node.sourceFile) in wanted:
+                return node
+        return None
+
+    def _resolve_dotted_import(self, candidate: str, source_file: str) -> DependencyNode | None:
+        """`doc_generator.models` must match that whole tail, not just `models`."""
+        segments = [segment for segment in candidate.split(".") if segment]
+        if len(segments) < 2:
+            return None
+        tail = "/".join(segments)
+        matches = [
+            node
+            for node in self._repository_file_nodes(source_file)
+            if _matches_path_tail(node.sourceFile, tail)
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    def _resolve_bare_import(self, candidate: str, source_file: str) -> DependencyNode | None:
+        """A bare name resolves only when the repository holds exactly one.
+
+        Ambiguity returns `None` - an external node - rather than an arbitrary
+        pick. See `_resolve_file_candidate` for what arbitrary picking cost.
+        """
         normalized = _normalize_identifier(candidate)
         stem = _candidate_stem(candidate)
         path_stem = _candidate_path_stem(candidate)
-        for node in self.nodes.values():
-            if node.kind != "file":
-                continue
-            if node.sourceFile == source_file:
-                continue
+        wanted = {value for value in (normalized, stem, path_stem) if value}
+
+        matches: list[DependencyNode] = []
+        for node in self._repository_file_nodes(source_file):
             file_name = _normalize_identifier(node.name)
             file_stem = _candidate_path_stem(node.sourceFile)
-            if normalized in {file_name, file_stem}:
-                return node
-            if stem and stem in {file_name, file_stem}:
-                return node
-            if path_stem and path_stem in {file_name, file_stem}:
-                return node
+            if wanted & {file_name, file_stem}:
+                matches.append(node)
+        if len(matches) == 1:
+            return matches[0]
         return None
 
     def _resolve_symbol_target(self, candidate: str | None, *, symbol_type: str, source_file: str) -> str:
@@ -574,3 +671,18 @@ def _candidate_path_stem(value: str) -> str:
     if path.suffix:
         return path.stem
     return path.name.split(".")[-1]
+
+
+def _matches_path_tail(source_file: str, tail: str) -> bool:
+    """Does `source_file` end with the dotted import path `tail`?
+
+    `doc_generator/models` matches `.../src/doc_generator/models.py` and
+    `.../src/doc_generator/models/__init__.py`, but not `.../src/chat/models.py`
+    - which is the whole reason this exists rather than a last-segment compare.
+    """
+    normalized = _normalize_path(source_file)
+    without_suffix = normalized[:-3] if normalized.endswith(".py") else normalized
+    if without_suffix.endswith(f"/{tail}") or without_suffix == tail:
+        return True
+    package = f"{tail}/__init__"
+    return without_suffix.endswith(f"/{package}") or without_suffix == package

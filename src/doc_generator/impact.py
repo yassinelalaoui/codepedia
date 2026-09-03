@@ -10,7 +10,7 @@ from . import links
 from .entry_point_diagram import identify_entry_points
 from .manifest_store import PageManifestEntry
 from .models import EdgeId, RegenerationImpactSet
-from .sections import Section
+from .features.validate import Feature
 
 
 def compute_regeneration_impact(
@@ -21,11 +21,11 @@ def compute_regeneration_impact(
     changed_paths: Iterable[str | Path] = (),
     changed_symbol_ids: Iterable[str] = (),
     changed_dependency_edge_ids: Iterable[EdgeId] = (),
-    sections: Sequence[Section] = (),
-    previous_section_titles: Mapping[str, str] | None = None,
+    features: Sequence[Feature] = (),
+    previous_feature_titles: Mapping[str, str] | None = None,
 ) -> RegenerationImpactSet:
     entries = list(previous_entries)
-    previous_section_titles = previous_section_titles or {}
+    previous_feature_titles = previous_feature_titles or {}
     changed_path_strings = {_normalize(path) for path in changed_paths}
     changed_edges = list(changed_dependency_edge_ids)
 
@@ -77,19 +77,19 @@ def compute_regeneration_impact(
     for module_key in impacted_diagram_module_keys:
         impacted_page_ids.add(links.diagram_page_id(module_key))
 
-    # A section page lists its members with their docstrings and summaries, so
+    # A feature page lists its members with their docstrings and summaries, so
     # unlike a module page - which links to its neighbours by stable id/name and
     # is therefore untouched by what they contain - it really does go stale when
-    # a member changes. Membership is read from the freshly derived sections
+    # a member changes. Membership is read from the freshly derived features
     # rather than from the previous manifest, so a module that moved between
-    # sections invalidates both the section it left and the one it joined.
-    section_key_by_module_key = {
-        member.moduleKey: section.key for section in sections for member in section.members
+    # features invalidates both the feature it left and the one it joined.
+    feature_key_by_module_key = {
+        member.moduleKey: feature.key for feature in features for member in feature.members
     }
     for module_key in impacted_module_keys:
-        section_key = section_key_by_module_key.get(module_key)
-        if section_key:
-            impacted_page_ids.add(links.section_page_id(section_key))
+        feature_key = feature_key_by_module_key.get(module_key)
+        if feature_key:
+            impacted_page_ids.add(links.feature_page_id(feature_key))
 
     # The class diagram is repository-wide: which classes rank as "major" can
     # change from a single edit anywhere in the repository, so it always
@@ -118,7 +118,7 @@ def compute_regeneration_impact(
     if has_any_entry_point and (direct_symbol_ids or changed_edges):
         impacted_page_ids.add(links.use_case_diagram_page_id())
 
-    current_section_page_ids = {links.section_page_id(section.key) for section in sections}
+    current_feature_page_ids = {links.feature_page_id(feature.key) for feature in features}
     current_module_page_ids = {links.module_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_diagram_page_ids = {links.diagram_page_id(file_bundle.module.sourceFileId) for file_bundle in bundle.files}
     current_class_diagram_page_ids = {links.class_diagram_page_id()} if has_any_class else set()
@@ -127,7 +127,7 @@ def compute_regeneration_impact(
     # conditionally present like the class/use-case diagram pages), so its id
     # is unconditionally current - it must never appear in removedPageIds.
     current_page_ids = (
-        current_section_page_ids
+        current_feature_page_ids
         | current_module_page_ids
         | current_diagram_page_ids
         | current_class_diagram_page_ids
@@ -143,32 +143,35 @@ def compute_regeneration_impact(
     _add_referrers_of(impacted_page_ids, removed_page_ids, entries)
 
     previous_module_page_ids = {entry.pageId for entry in entries if entry.kind == "module"}
-    previous_section_page_ids = {entry.pageId for entry in entries if entry.kind == "section"}
+    previous_feature_page_ids = {entry.pageId for entry in entries if entry.kind == "feature"}
 
-    # The sidebar renders the whole section/module tree into *every* page, and
-    # the home page renders the same tree once more, so a page that is otherwise
-    # untouched still shows stale navigation once that tree changes. No per-page
-    # impact set can express that, hence a flag the generator answers by
-    # regenerating everything. Home and navigation go stale on exactly the same
-    # events, so this is one predicate feeding both - they used to be two
-    # literally identical expressions, which is how the title case below stayed
-    # missing from both at once.
+    # The sidebar renders the feature list into *every* page, and the home page
+    # renders the same list once more, so a page that is otherwise untouched
+    # still shows stale navigation once that list changes. No per-page impact set
+    # can express that, hence a flag the generator answers by regenerating
+    # everything. Home and navigation go stale on exactly the same events, so
+    # this is one predicate feeding both - they used to be two literally
+    # identical expressions, which is how the title case below stayed missing
+    # from both at once.
     #
-    # A section's *title* counts as a change to the tree even though no page id
-    # moves: the narrator rewrites titles between runs, and a renamed section
-    # would otherwise keep its old name in the sidebar of every page that did
-    # not happen to regenerate. It stays cheap because the tree only reshapes
-    # when files are added, removed or moved, or when a section is re-narrated -
-    # never when file contents change, which is the ordinary case the
-    # incremental path exists to make fast.
-    current_section_titles = {section.key: section.title for section in sections}
+    # A feature's *title* counts as a change even though no page id moves: the
+    # planner rewrites titles between runs, and a renamed feature would otherwise
+    # keep its old name in the sidebar of every page that did not happen to
+    # regenerate. It stays cheap because the list only reshapes when files are
+    # added, removed or moved, or when the plan changes - never when file
+    # contents change, which is the ordinary case the incremental path exists to
+    # make fast.
+    #
+    # The module page set still feeds this even though modules left the sidebar:
+    # the home page lists every module, so adding or removing one restyles it.
+    current_feature_titles = {feature.key: feature.title for feature in features}
     requires_tree_regeneration = (
         previous_module_page_ids != current_module_page_ids
-        or previous_section_page_ids != current_section_page_ids
-        # `.get(key, title)` reads a section with no stored title as unchanged:
-        # it is a section this run invented, so its page id is new and the set
+        or previous_feature_page_ids != current_feature_page_ids
+        # `.get(key, title)` reads a feature with no stored title as unchanged:
+        # it is a feature this run invented, so its page id is new and the set
         # comparison above has already caught it.
-        or any(previous_section_titles.get(key, title) != title for key, title in current_section_titles.items())
+        or any(previous_feature_titles.get(key, title) != title for key, title in current_feature_titles.items())
     )
 
     # The diagrams-index page (024, research.md Decision 6) reflects four

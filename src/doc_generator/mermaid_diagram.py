@@ -8,7 +8,7 @@ from dependency_graph import DiagramExport
 from . import links
 from .class_diagram import ClassDiagramSelection
 from .entry_point_diagram import SequenceDiagramSelection
-from .sections import Section
+from .features.validate import Feature
 from .use_case_diagram import UseCaseDiagramSelection
 
 
@@ -252,35 +252,35 @@ def build_use_case_diagram_mermaid_source(selection: UseCaseDiagramSelection) ->
 
 
 @dataclass(frozen=True, slots=True)
-class SectionDiagramSource:
+class FeatureDiagramSource:
     sourceText: str
     nodeIdMap: dict[str, str] = field(default_factory=dict)
     clickTargets: tuple[MermaidClickTarget, ...] = ()
     omittedModuleCount: int = 0
 
 
-# A section diagram is a map of one area, not of the repository: past this many
-# nodes a Mermaid flowchart stops being readable, and the per-module dependency
-# diagrams remain the place to see a single module's full neighbourhood.
-MAX_SECTION_DIAGRAM_MODULES = 24
+# A feature diagram is a map of one capability, not of the repository: past this
+# many nodes a Mermaid flowchart stops being readable, and the per-module
+# dependency diagrams remain the place to see a single module's neighbourhood.
+MAX_FEATURE_DIAGRAM_MODULES = 24
 
 
-def build_section_diagram_mermaid_source(
-    section: Section, *, section_output_path_html: str
-) -> SectionDiagramSource:
-    """Render one section's *internal* import structure as a Mermaid flowchart.
+def build_feature_diagram_mermaid_source(
+    feature: Feature, *, feature_output_path_html: str
+) -> FeatureDiagramSource:
+    """Render one feature's *internal* import structure as a Mermaid flowchart.
 
-    Only edges between two members are drawn. A section page answers "how does
-    this area hang together"; edges leaving the area are already listed as
-    neighbouring sections, and drawing them would make every section diagram a
+    Only edges between two members are drawn. A feature page answers "how does
+    this capability hang together"; edges leaving it are already listed as
+    neighbouring features, and drawing them would make every feature diagram a
     partial repository diagram.
 
-    When a section is larger than `MAX_SECTION_DIAGRAM_MODULES`, the most
+    When a feature is larger than `MAX_FEATURE_DIAGRAM_MODULES`, the most
     internally connected modules are kept - the ones that carry the area's
     shape - and the remainder is reported as `omittedModuleCount` rather than
     silently dropped.
     """
-    included, omitted_count = _select_section_diagram_members(section)
+    included, omitted_count = _select_feature_diagram_members(feature)
     included_keys = {member.moduleKey for member in included}
 
     node_id_map: dict[str, str] = {}
@@ -295,7 +295,7 @@ def build_section_diagram_mermaid_source(
         target_slug = links.page_slug(member.name, member.moduleKey)
         _, target_output_path_html = links.module_output_paths(target_slug)
         href = links.relative_output_link(
-            from_output_path=section_output_path_html,
+            from_output_path=feature_output_path_html,
             to_output_path=target_output_path_html,
         )
         click_targets.append(
@@ -306,7 +306,7 @@ def build_section_diagram_mermaid_source(
             )
         )
 
-    for source_key, target_key in section.internalEdges:
+    for source_key, target_key in feature.internalEdges:
         if source_key not in included_keys or target_key not in included_keys:
             continue
         lines.append(f"    {node_id_map[source_key]} ---|import| {node_id_map[target_key]}")
@@ -314,7 +314,7 @@ def build_section_diagram_mermaid_source(
     for click_target in click_targets:
         lines.append(f'    click {click_target.nodeId} href "{click_target.href}" "_self"')
 
-    return SectionDiagramSource(
+    return FeatureDiagramSource(
         sourceText="\n".join(lines),
         nodeIdMap=node_id_map,
         clickTargets=tuple(click_targets),
@@ -322,19 +322,19 @@ def build_section_diagram_mermaid_source(
     )
 
 
-def _select_section_diagram_members(section: Section):
-    members = section.members
-    if len(members) <= MAX_SECTION_DIAGRAM_MODULES:
+def _select_feature_diagram_members(feature: Feature):
+    members = feature.members
+    if len(members) <= MAX_FEATURE_DIAGRAM_MODULES:
         return members, 0
 
     degree: dict[str, int] = {member.moduleKey: 0 for member in members}
-    for source_key, target_key in section.internalEdges:
+    for source_key, target_key in feature.internalEdges:
         if source_key in degree:
             degree[source_key] += 1
         if target_key in degree:
             degree[target_key] += 1
 
     ranked = sorted(members, key=lambda member: (-degree[member.moduleKey], member.name, member.moduleKey))
-    kept = ranked[:MAX_SECTION_DIAGRAM_MODULES]
+    kept = ranked[:MAX_FEATURE_DIAGRAM_MODULES]
     included = tuple(sorted(kept, key=lambda member: (member.name, member.moduleKey)))
     return included, len(members) - len(included)

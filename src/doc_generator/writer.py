@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .links import relative_output_link
 from .manifest_store import DocPageManifestStore
 from .models import DocPage, PageManifestEntry
 from .search_index import SearchIndexDocument
@@ -104,11 +106,75 @@ class DocumentationWriter:
         destination.write_text(json.dumps(document.to_dict(), indent=2), encoding="utf-8")
         return destination
 
+    def write_redirect_stub(
+        self, *, old_paths: tuple[str, str], new_paths: tuple[str, str], title: str
+    ) -> tuple[Path, Path]:
+        """Leave something useful at an address that has moved.
+
+        Both halves matter. The `<meta http-equiv="refresh">` does the work for
+        most readers; the visible link is what a reader gets when the refresh is
+        blocked - by a browser setting, or by a viewer that renders the HTML
+        without executing it - and it is also the only part that tells them
+        *where* they were sent, which is a requirement rather than a nicety.
+
+        The target is a relative path, so the stub works over `file://` and makes
+        no network request of any kind (constitution 2.2).
+        """
+        old_markdown, old_html = old_paths
+        new_markdown, new_html = new_paths
+
+        html_target = relative_output_link(from_output_path=old_html, to_output_path=new_html)
+        markdown_target = relative_output_link(
+            from_output_path=old_markdown, to_output_path=new_markdown
+        )
+        safe_title = html.escape(title)
+
+        html_path = self._resolve_managed_path(old_html)
+        markdown_path = self._resolve_managed_path(old_markdown)
+        html_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+
+        html_path.write_text(
+            "<!DOCTYPE html>\n"
+            '<html lang="en">\n'
+            "<head>\n"
+            '  <meta charset="utf-8">\n'
+            f'  <meta http-equiv="refresh" content="0; url={html.escape(html_target)}">\n'
+            f'  <link rel="canonical" href="{html.escape(html_target)}">\n'
+            f"  <title>Moved to {safe_title}</title>\n"
+            "</head>\n"
+            "<body>\n"
+            f'  <p>This page has moved to <a href="{html.escape(html_target)}">{safe_title}</a>.</p>\n'
+            "</body>\n"
+            "</html>\n",
+            encoding="utf-8",
+        )
+        markdown_path.write_text(
+            f"This page has moved to [{title}]({markdown_target}).\n", encoding="utf-8"
+        )
+        return markdown_path, html_path
+
     def remove_page(self, page_id: str) -> None:
+        """Delete a page that no longer exists - unless it is now a redirect.
+
+        The alias check is not defensive. A feature's page id is its anchor
+        module's key, and an anchor moves whenever the most internally connected
+        member changes - measured, six of eleven groups on this repository are
+        one import edge away from that. So "the anchor moved, then an incremental
+        run computed removals" is the ordinary sequence, and without this guard
+        that run unlinks the exact file the freshly written redirect points at,
+        turning the alias table into a record of broken links.
+
+        The guard lives here rather than in the generator's removal loop so that
+        every caller of `remove_page` inherits it, including any added later.
+        """
         entry = self.manifestStore.load_entry(page_id)
         if entry is None:
             return
+        aliased_paths = self.manifestStore.aliased_output_paths(self.repositoryId)
         for relative in (entry.outputPathMarkdown, entry.outputPathHtml):
+            if relative in aliased_paths:
+                continue
             path = self._resolve_managed_path(relative)
             if path.exists():
                 path.unlink()

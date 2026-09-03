@@ -7,7 +7,7 @@ from typing import Any, Literal
 PageKind = Literal[
     "home",
     "module",
-    "section",
+    "feature",
     "diagram",
     "class-diagram",
     "sequence-diagram",
@@ -22,6 +22,27 @@ class PageLink:
     toPageId: str
     label: str
     relativePath: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class PageAlias:
+    """An address this wiki once published, and where it now leads.
+
+    Recorded whenever a page's identity moves under a reader's feet - most often
+    a feature whose anchor module changed. The old files stay on disk as
+    redirect stubs, which is why `DocumentationWriter.remove_page` has to consult
+    these before unlinking: without that, the first incremental run after a move
+    deletes the very file the redirect points at.
+    """
+
+    oldPageId: str
+    newPageId: str
+    oldOutputPathMarkdown: str = ""
+    oldOutputPathHtml: str = ""
+    recordedAt: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

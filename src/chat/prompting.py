@@ -48,7 +48,7 @@ def build_prompt_envelope(
 
     The budget is applied here rather than on `PromptEnvelope`, which is frozen
     and shared with `repository_metadata/summary_prompts.py` and
-    `doc_generator/section_narrator.py` - budgeting there would silently reshape
+    `doc_generator/features/planner.py` - budgeting there would silently reshape
     wiki generation too.
     """
     budgeted = fit_to_budget(
