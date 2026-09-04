@@ -161,9 +161,12 @@ def test_the_sidebar_lists_features_and_no_modules(tmp_path):
 
     doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
     page = next(p for p in doc_set.pages if p.kind == "module")
-    nav = page.renderedHtml.split('<div class="nav-label">Features</div>')[1].split("</nav>")[0]
+    # Matched on the semantic hook rather than the whole class attribute: the
+    # shell carries Tailwind utilities alongside `nav-label` / `nav-link`, so the
+    # attribute is no longer a fixed string, but the hooks themselves are stable.
+    nav = page.renderedHtml.split(">Features</div>")[1].split("</nav>")[0]
 
-    assert 'class="nav-link feature' in nav
+    assert re.search(r'class="nav-link[^"]*feature', nav)
     assert "features/" in nav
     assert "<details" not in nav, "the collapsible tree is gone"
     assert "modules/" not in nav, "a module link in the sidebar means the tree came back"
@@ -176,7 +179,9 @@ def test_every_page_kind_carries_the_feature_navigation(tmp_path):
     doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
 
     for page in doc_set.pages:
-        assert '<div class="nav-label">Features</div>' in page.renderedHtml, page.id
+        assert re.search(
+            r'class="nav-label[^"]*">Features</div>', page.renderedHtml
+        ), page.id
 
 
 def test_home_and_module_pages_are_wired_to_their_feature(tmp_path):

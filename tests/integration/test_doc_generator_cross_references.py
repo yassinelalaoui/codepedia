@@ -65,8 +65,11 @@ def test_every_generated_page_carries_the_toc_mount_container(tmp_path):
 def test_a_module_page_renders_its_section_rail(tmp_path):
     beta = _module_page(_generate(tmp_path), "beta")
 
-    assert 'class="nav-group page-toc"' in beta.renderedHtml
-    assert '<a class="page-toc-link" href="#classes">Classes</a>' in beta.renderedHtml
+    assert re.search(r'class="nav-group page-toc[^"]*"', beta.renderedHtml)
+    assert re.search(
+        r'class="page-toc-link[^"]*" href="#classes">Classes</a>',
+        beta.renderedHtml,
+    )
 
 
 def test_an_inline_reference_is_recorded_as_a_link_in_the_manifest(tmp_path):

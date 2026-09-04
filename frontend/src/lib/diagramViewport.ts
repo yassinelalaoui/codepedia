@@ -108,16 +108,60 @@ function enhanceOne(pre: HTMLElement, svg: SVGElement): boolean {
   if (!contentSize) return false;
 
   const viewport = document.createElement("div");
-  viewport.className = "diagram-viewport";
+  // `diagram-viewport` itself is not a style, it is the hook this module and the
+  // test suite query by; the utilities after it are the style. Same for the
+  // `is-expanded` / `is-grabbing` markers, which JavaScript toggles and which
+  // are therefore expressed as arbitrary variants rather than as utilities that
+  // would have to be added and removed by hand.
+  viewport.className = [
+    "diagram-viewport relative h-[460px] max-h-[70vh] overflow-hidden",
+    "bg-surface border border-line rounded-md",
+    // The viewport owns wheel and drag gestures; without `touch-none` the
+    // browser also scrolls the page and pans the diagram at the same time.
+    "touch-none cursor-grab [&.is-grabbing]:cursor-grabbing",
+    "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+    // Expanded is a presentation state of the page, not the Fullscreen API,
+    // which can be refused and behaves inconsistently over file://.
+    "[&.is-expanded]:fixed [&.is-expanded]:inset-0 [&.is-expanded]:z-50",
+    "[&.is-expanded]:h-auto [&.is-expanded]:max-h-none [&.is-expanded]:rounded-none",
+    // Opaque, so page content cannot show through behind the diagram.
+    "[&.is-expanded]:bg-page",
+  ].join(" ");
   viewport.tabIndex = 0;
   viewport.setAttribute("role", "group");
   viewport.setAttribute("aria-label", "Diagram viewport. Zoom and pan to read the diagram.");
 
   const canvas = document.createElement("div");
-  canvas.className = "diagram-canvas";
+  // Transform target. Deliberately a wrapper div rather than the SVG itself:
+  // hit-testing, <a> targets and Mermaid's coordinate system all survive a
+  // transform on an ancestor, whereas rewriting the SVG's own transform is where
+  // anchor hit areas drift away from the shapes they wrap. Measured, not
+  // assumed: scaling this wrapper renders identically to scaling the <svg>.
+  //
+  // NEVER give this element a will-change hint for the transform property. (The
+  // utility is not named literally anywhere in this file on purpose: Tailwind's
+  // scanner reads comments too, and naming it would emit the very rule this
+  // paragraph exists to keep out of the stylesheet.) It promotes this wrapper to its own
+  // composited layer, and a composited layer is rastered once at the scale it
+  // was created at - 1 - and thereafter *stretched* by the compositor on every
+  // transform change instead of the SVG being re-rendered from its vector
+  // geometry. That is the whole of the blur this viewport used to suffer:
+  // measured in Chrome 152 at dpr 1, zooming to 20x drove the rendered frame's
+  // Laplacian variance from 338 down to 1.1 and left it there however long the
+  // page was given to settle. Removing that one declaration, changing nothing
+  // else, put it back to 338 on the spot. It bought no measurable pan
+  // performance to trade against that.
+  //
+  // `[&>svg]:block` styles Mermaid's own <svg>, which nothing can put a class
+  // on; its width and height are set in pixels from the viewBox further down.
+  canvas.className = "diagram-canvas absolute inset-0 origin-top-left [&>svg]:block";
 
   const controls = document.createElement("div");
-  controls.className = "diagram-controls";
+  controls.className = [
+    "diagram-controls absolute top-2 right-2 flex gap-1 p-1",
+    "bg-[color-mix(in_srgb,var(--surface)_88%,transparent)]",
+    "border border-line rounded-sm shadow-1",
+  ].join(" ");
 
   // The SVG moves wholesale, with its internals untouched: every <a> Mermaid
   // emitted for a `click <node> href` directive has to survive byte for byte,
@@ -343,6 +387,14 @@ function buildControls(container: HTMLElement, actions: ControlActions): void {
     button.setAttribute("aria-label", definition.label);
     if (definition.action) button.dataset.action = definition.action;
     button.textContent = definition.glyph;
+    button.className = [
+      "inline-flex items-center justify-center size-[26px] p-0",
+      "border-0 bg-transparent rounded-sm cursor-pointer",
+      "text-ink-soft font-mono text-[13px] leading-none",
+      "transition-[background-color,color] duration-[120ms] motion-reduce:transition-none",
+      "hover:bg-sunken hover:text-ink",
+      "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1",
+    ].join(" ");
     button.addEventListener("click", (event) => {
       // The viewport's own capture-phase click handler must not see this as a
       // diagram click, and the page must not scroll to the button.

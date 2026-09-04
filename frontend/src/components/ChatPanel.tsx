@@ -291,17 +291,17 @@ export function ChatPanel() {
       <button
         type="button"
         ref={drawerToggleRef}
-        className="wiki-chat-drawer-toggle"
+        className="wiki-chat-drawer-toggle hidden max-dock:inline-flex fixed right-4 bottom-4 z-[41] items-center gap-1.5 py-[9px] px-3.5 border border-accent-line rounded-full bg-accent text-accent-ink shadow-2 font-ui text-[13px] cursor-pointer"
         aria-expanded={isDrawerOpen}
         onClick={() => setIsDrawerOpen((open) => !open)}
       >
         {isDrawerOpen ? "Close chat" : "Ask about this repository"}
       </button>
-    <div className="wiki-chat-panel" onKeyDown={handlePanelKeyDown}>
-      <div className="wiki-chat-panel-head">
-        <h2>Ask about this repository</h2>
-        <span className="wiki-chat-local-badge">
-          <span className="led" aria-hidden="true" />
+    <div className="wiki-chat-panel flex flex-col h-full min-h-0" onKeyDown={handlePanelKeyDown}>
+      <div className="wiki-chat-panel-head pt-4 px-[18px] pb-3.5 border-b border-line flex items-center justify-between flex-none">
+        <h2 className="text-[13.5px]">Ask about this repository</h2>
+        <span className="wiki-chat-local-badge inline-flex items-center gap-[5px] text-[10.5px] text-ink-faint font-mono">
+          <span className="led size-1.5 rounded-full bg-[#3fb27f] shadow-[0_0_0_2px_color-mix(in_srgb,#3fb27f_18%,transparent)] flex-none" aria-hidden="true" />
           Local only
         </span>
       </div>
@@ -309,20 +309,28 @@ export function ChatPanel() {
           used to be conditional, so a ref to it was null exactly when the first
           auto-scroll needed it, and the scroll listener had to be attached and
           torn down as the conversation appeared. */}
-      <div className="wiki-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
+      <div className="wiki-chat-scroll flex-1 min-h-0 overflow-y-auto flex flex-col" ref={scrollRef} onScroll={handleScroll}>
       {messages.length === 0 ? (
-        <p className="wiki-chat-empty">
+        <p className="wiki-chat-empty flex-1 flex items-center justify-center m-0 px-8 text-center text-ink-faint text-[13px] leading-[1.6]">
           Ask anything about this codebase — answers are grounded in the indexed code and cited.
         </p>
       ) : (
-      <ul className="wiki-chat-messages">
+      <ul className="wiki-chat-messages list-none m-0 p-[18px] flex flex-col gap-5">
         {messages.map((message, index) => (
-          <li key={index} className={`wiki-chat-message role-${message.role}`}>
+          <li
+            key={index}
+            className={[
+              `wiki-chat-message role-${message.role} text-[13.5px] leading-[1.65]`,
+              message.role === "user"
+                ? "self-end max-w-[88%] bg-sunken rounded-md py-2 px-3 font-medium"
+                : "",
+            ].join(" ")}
+          >
             {message.role === "assistant" && message.deliveryState === "awaiting-first-fragment" ? (
-              <span className="wiki-chat-indicator" role="status" aria-label="Generating an answer…">
-                <span className="wiki-chat-indicator-dot" />
-                <span className="wiki-chat-indicator-dot" />
-                <span className="wiki-chat-indicator-dot" />
+              <span className="wiki-chat-indicator inline-flex items-center gap-2 text-ink-faint text-[13px]" role="status" aria-label="Generating an answer…">
+                <span className="wiki-chat-indicator-dot size-[5px] rounded-full bg-ink-faint animate-chat-pulse motion-reduce:animate-none motion-reduce:opacity-70" />
+                <span className="wiki-chat-indicator-dot size-[5px] rounded-full bg-ink-faint animate-chat-pulse motion-reduce:animate-none motion-reduce:opacity-70 [animation-delay:0.15s]" />
+                <span className="wiki-chat-indicator-dot size-[5px] rounded-full bg-ink-faint animate-chat-pulse motion-reduce:animate-none motion-reduce:opacity-70 [animation-delay:0.3s]" />
                 Generating an answer…
               </span>
             ) : message.role === "assistant" ? (
@@ -337,10 +345,14 @@ export function ChatPanel() {
               <p>{message.content}</p>
             )}
             {message.role === "assistant" && (message.citedSymbolIds.length > 0 || message.citedFilePaths.length > 0) && (
-              <ul className="wiki-chat-citations">
+              <ul className="wiki-chat-citations list-none mt-2.5 mb-0 mx-0 p-0 flex flex-wrap gap-1.5 text-[12px]">
                 {resolveCitations(message, entries).map((citation, citationIndex) => (
-                  <li key={citationIndex}>
-                    {citation.pageUrl ? <a href={citation.pageUrl}>{citation.label}</a> : <span>{citation.label}</span>}
+                  <li key={citationIndex} className="m-0">
+                    {citation.pageUrl ? (
+                      <a href={citation.pageUrl} className="inline-block font-mono text-[12px] py-px px-[7px] rounded-sm bg-accent-soft border border-accent-line text-accent hover:no-underline hover:border-accent">{citation.label}</a>
+                    ) : (
+                      <span className="inline-block font-mono text-[12px] py-px px-[7px] rounded-sm text-ink-faint border border-line">{citation.label}</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -353,15 +365,15 @@ export function ChatPanel() {
       {!isPinned && (
         <button
           type="button"
-          className="wiki-chat-jump-latest"
+          className="wiki-chat-jump-latest flex-none self-center mt-0 mx-0 mb-2 py-[5px] px-3 bg-accent-soft border border-accent-line rounded-full text-accent font-ui text-[12px] cursor-pointer hover:border-accent"
           onClick={scrollToLatest}
         >
           Jump to latest
         </button>
       )}
-      {errorMessage && <p className="wiki-chat-error">{errorMessage}</p>}
-      <form onSubmit={handleSubmit}>
-        <div className="wiki-chat-composer">
+      {errorMessage && <p className="wiki-chat-error text-[#c4394a] text-[13px] px-[18px]">{errorMessage}</p>}
+      <form onSubmit={handleSubmit} className="pt-3.5 px-[18px] pb-4 border-t border-line flex-none">
+        <div className="wiki-chat-composer flex items-end gap-2 bg-surface border border-line-strong rounded-md p-1 pl-3 focus-within:border-accent">
           <textarea
             ref={composerRef}
             rows={1}
@@ -371,17 +383,18 @@ export function ChatPanel() {
             disabled={pending || historyLoadState === "loading"}
             onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={handleComposerKeyDown}
+            className="flex-1 min-w-0 box-border py-2 px-0 border-none bg-transparent resize-none text-[13.5px] font-ui leading-5 text-ink placeholder:text-ink-faint focus:outline-none disabled:opacity-60"
           />
           <button
             type="submit"
-            className="wiki-chat-send"
+            className="wiki-chat-send flex-none inline-flex items-center justify-center size-[30px] p-0 border-none rounded-sm bg-accent text-accent-ink cursor-pointer disabled:opacity-40 disabled:cursor-default"
             aria-label="Send question"
             disabled={pending || historyLoadState === "loading" || !question.trim()}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></svg>
           </button>
         </div>
-        <p className="wiki-chat-foot-note">Runs on this machine — nothing is sent anywhere else.</p>
+        <p className="wiki-chat-foot-note mt-2 mx-0 mb-0 text-[11px] text-ink-faint text-center">Runs on this machine — nothing is sent anywhere else.</p>
       </form>
     </div>
     </>

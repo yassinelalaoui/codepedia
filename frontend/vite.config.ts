@@ -2,13 +2,18 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // Builds a single classic (non-`type="module"`) IIFE bundle vendored into
 // doc_generator's assets, mirroring the Mermaid vendoring convention from
 // feature 013 (research.md Decision 2/8). `emptyOutDir: false` is required:
 // that directory already holds mermaid.min.js and must not be wiped.
 export default defineConfig(({ command }) => ({
-  plugins: [react()],
+  // Tailwind runs at build time and emits static CSS into wiki-ui.css. Nothing
+  // is fetched at runtime, which is what keeps constitution 2.2 (zero network
+  // exposure) intact and lets a generated wiki render fully offline over
+  // file:// - the same reason mermaid.min.js is vendored rather than CDN-loaded.
+  plugins: [react(), tailwindcss()],
   // Vite's automatic `process.env.NODE_ENV` replacement only applies to app
   // builds, not `build.lib` output - without this, the reference react-dom
   // makes to it survives into the browser bundle unresolved and crashes on

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from doc_generator.html_render import _build_page_toc, render_page_html
 
 MODULE_PAGE = """# beta
@@ -95,8 +97,14 @@ def test_rendered_page_links_each_rail_entry_to_its_heading_anchor():
         output_path_html="modules/beta.html",
     )
 
-    assert '<a class="page-toc-link" href="#summary">Summary</a>' in html
-    assert '<a class="page-toc-link child" href="#cls-child">Child</a>' in html
+    assert re.search(
+        r'class="page-toc-link[^"]*" href="#summary">Summary</a>',
+        html,
+    )
+    assert re.search(
+        r'class="page-toc-link[^"]*" href="#cls-child">Child</a>',
+        html,
+    )
 
 
 def test_a_signature_heading_is_not_double_escaped_in_the_rail():
@@ -107,5 +115,8 @@ def test_a_signature_heading_is_not_double_escaped_in_the_rail():
         output_path_html="modules/m.html",
     )
 
-    assert '<a class="page-toc-link child" href="#fx">f(x) -&gt; int</a>' in html
+    assert re.search(
+        r'class="page-toc-link[^"]*" href="#fx">f\(x\) -&gt; int</a>',
+        html,
+    )
     assert "-&amp;gt;" not in html

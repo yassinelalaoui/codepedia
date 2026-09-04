@@ -1,4 +1,29 @@
 /* ---------------------------------------------------------------------
+   Tailwind v4
+
+   Preflight is deliberately NOT imported. The layer list below pulls in the
+   theme and the utilities and stops there, because this stylesheet dresses two
+   populations of DOM: markup we author (the Jinja shell, the React panels, the
+   diagram viewport - all of which now carry utility classes) and markup we do
+   not (Markdown rendered to HTML by doc_generator, highlight.js token spans,
+   and Mermaid's SVG internals). Nothing can put a class on that second group,
+   so it is still styled by the element rules further down - and Preflight's
+   reset would strip the headings, lists and tables those rules depend on out
+   from under every generated wiki page.
+
+   `@source` is explicit rather than auto-detected: the class names for the page
+   shell live in the doc_generator Jinja templates, outside this Vite project
+   entirely, and would otherwise be invisible to the scanner and get tree-shaken
+   out of the build.
+   --------------------------------------------------------------------- */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "./";
+@source "../../src/doc_generator/templates/";
+
+/* ---------------------------------------------------------------------
    Design tokens
    No externally-loaded webfonts (constitution 2.2 - zero network exposure;
    the same reason mermaid.min.js is vendored rather than CDN-loaded). These
@@ -23,13 +48,13 @@
   --generated-bg: #fbf3e2;
   --generated-border: #ecd9ac;
   --code-bg: #f4f5f9;
-  --shadow-1: 0 1px 2px rgba(20, 24, 43, 0.05);
-  --shadow-2: 0 4px 16px rgba(20, 24, 43, 0.08);
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --font-ui: -apple-system, "Segoe UI", "Segoe UI Variable", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas, Menlo, monospace;
+  --wiki-shadow-1: 0 1px 2px rgba(20, 24, 43, 0.05);
+  --wiki-shadow-2: 0 4px 16px rgba(20, 24, 43, 0.08);
+  --wiki-radius-sm: 4px;
+  --wiki-radius-md: 8px;
+  --wiki-radius-lg: 12px;
+  --wiki-font-ui: -apple-system, "Segoe UI", "Segoe UI Variable", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --wiki-font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas, Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,8 +75,8 @@
     --generated-bg: #332a17;
     --generated-border: #574522;
     --code-bg: #20222d;
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --wiki-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --wiki-shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
 }
 :root[data-theme="dark"] {
@@ -71,20 +96,78 @@
   --generated-bg: #332a17;
   --generated-border: #574522;
   --code-bg: #20222d;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --wiki-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --wiki-shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+
+/* ---------------------------------------------------------------------
+   Design tokens -> Tailwind theme
+
+   `inline` matters here. Without it Tailwind emits its own --color-* variables
+   holding a *copy* of the token, and the dark-mode blocks above - which
+   redefine the tokens, not the copies - would stop reaching the utilities.
+   Inlined, `bg-surface` compiles to `background-color: var(--surface)` and
+   follows the theme switch for free.
+   --------------------------------------------------------------------- */
+@theme inline {
+  --color-page: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft-bg);
+  --color-accent-line: var(--accent-soft-border);
+  --color-generated-ink: var(--generated-ink);
+  --color-generated-bg: var(--generated-bg);
+  --color-generated-line: var(--generated-border);
+  --color-code: var(--code-bg);
+
+  --radius-sm: var(--wiki-radius-sm);
+  --radius-md: var(--wiki-radius-md);
+  --radius-lg: var(--wiki-radius-lg);
+
+  --shadow-1: var(--wiki-shadow-1);
+  --shadow-2: var(--wiki-shadow-2);
+
+  --font-ui: var(--wiki-font-ui);
+  --font-mono: var(--wiki-font-mono);
+
+  /* Below this width the chat stops being a docked column and becomes a
+     drawer behind a toggle. `max-dock:` is (width < 1181px) - the same
+     boundary the hand-written (max-width: 1180px) query used. */
+  --breakpoint-dock: 1181px;
+}
+
+@theme {
+  --animate-chat-pulse: wiki-chat-indicator-pulse 1.1s ease-in-out infinite;
+  @keyframes wiki-chat-indicator-pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
 }
 
 /* ---------------------------------------------------------------------
    Base
    --------------------------------------------------------------------- */
+/* These sit in @layer base, NOT unlayered. Unlayered CSS outranks every
+   cascade layer, so as plain rules they beat the utilities: `a { color: accent }`
+   silently overrode `text-ink-soft` on every sidebar link, turning the whole nav
+   accent-blue. Inside the layer the ordering declared at the top of this file -
+   theme, base, components, utilities - decides it, and the utility wins. */
+@layer base {
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-ui);
+  font-family: var(--wiki-font-ui);
   font-size: 14.5px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -95,165 +178,14 @@ a:focus-visible, button:focus-visible, input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-code { font-family: var(--font-mono); }
+code { font-family: var(--wiki-font-mono); }
 h1, h2, h3, h4 { text-wrap: balance; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
-
-/* ---------------------------------------------------------------------
-   App shell
-   --------------------------------------------------------------------- */
-.shell {
-  display: grid;
-  grid-template-columns: 264px minmax(0, 1fr) 384px;
-  /* Exactly the window, not "at least" it. With `min-height` the document
-     itself scrolled, so the chat column stretched to the height of the whole
-     page and its composer sat at the bottom of the *document* rather than the
-     bottom of the *screen* - the defect this feature exists to fix. */
-  height: 100vh;
-  overflow: hidden;
-  align-items: stretch;
 }
 
-/* Sidebar */
-.sidebar {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 20px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  overflow-y: auto;
-}
-.brand {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 0 6px;
-  color: var(--ink);
-}
-.brand:hover { text-decoration: none; }
-.brand-mark {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  background: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent-ink);
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 11px;
-  flex: none;
-}
-.brand-name { font-weight: 600; font-size: 14.5px; }
-
-.nav-group { display: flex; flex-direction: column; gap: 2px; }
-.nav-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  padding: 10px 8px 4px;
-}
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  color: var(--ink-soft);
-  font-size: 13.5px;
-}
-.nav-link:hover { background: var(--surface-sunken); text-decoration: none; color: var(--ink); }
-.nav-link.active { background: var(--accent-soft-bg); color: var(--accent); font-weight: 500; }
-.nav-icon { flex: none; opacity: 0.85; }
-.nav-link.module { font-family: var(--font-mono); font-size: 12.5px; padding-left: 20px; }
-
-/* Section tree - one collapsible group per derived section. `<details>` does
-   the collapsing natively, so the sidebar still expands and navigates with
-   JavaScript disabled and over file://, the same degradation rule the
-   "On this page" rail follows. */
-.nav-section { display: flex; flex-direction: column; gap: 2px; }
-.nav-section + .nav-section { margin-top: 2px; }
-summary.nav-link.section {
-  cursor: pointer;
-  font-weight: 500;
-  color: var(--ink);
-  list-style: none;
-  gap: 6px;
-}
-summary.nav-link.section::-webkit-details-marker { display: none; }
-/* Hand-drawn disclosure triangle: the native marker cannot be positioned
-   consistently once `summary` is a flex container. */
-summary.nav-link.section::before {
-  content: "";
-  flex: none;
-  width: 0;
-  height: 0;
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
-  opacity: 0.55;
-  transition: transform 120ms ease;
-}
-.nav-section[open] > summary.nav-link.section::before { transform: rotate(90deg); }
-@media (prefers-reduced-motion: reduce) {
-  summary.nav-link.section::before { transition: none; }
-}
-.nav-link.section-overview {
-  padding-left: 20px;
-  font-size: 12.5px;
-  color: var(--ink-faint);
-}
-
-/* "On this page" rail - the current page's own sections */
-.page-toc { gap: 0; }
-.page-toc-link {
-  display: block;
-  padding: 4px 8px;
-  border-left: 2px solid var(--border);
-  border-radius: 0;
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-.page-toc-link:hover { background: var(--surface-sunken); color: var(--ink); text-decoration: none; }
-.page-toc-link.child {
-  padding-left: 20px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--ink-faint);
-}
-.page-toc-link.active {
-  border-left-color: var(--accent);
-  color: var(--accent);
-  font-weight: 500;
-  background: var(--accent-soft-bg);
-}
-
-/* Smooth anchor jumps, honouring the reader's motion preference.
-   On `.main`, not `html`: `html` no longer scrolls, so the preference would
-   apply to nothing and be silently lost rather than loudly broken. */
-@media (prefers-reduced-motion: no-preference) {
-  .main { scroll-behavior: smooth; }
-}
-
-/* Main content */
-.main {
-  padding: 36px 44px 24px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  /* The content scrolls here now that the document does not. */
-  overflow-y: auto;
-  /* So a heading reached by an anchor is not flush against the top edge.
-     `scrollIntoView` honours this, which is why the fragment handler in
-     main.tsx does no offset arithmetic of its own. */
-  scroll-padding-top: 24px;
-}
-.content-col { max-width: 720px; width: 100%; flex: 1; }
+/* @layer components, for the same reason: these style Markdown output,
+   highlight.js spans and Mermaid internals - DOM no utility class can reach -
+   but must still yield to a utility on the rare element that carries both. */
+@layer components {
 .content-col h1 { font-size: 27px; letter-spacing: -0.02em; }
 .content-col h1 code { font-size: 23px; }
 .content-col h2 {
@@ -265,8 +197,8 @@ summary.nav-link.section::before {
   margin-top: 40px;
   margin-bottom: 14px;
 }
-.content-col h3 { font-size: 15px; font-family: var(--font-mono); margin-top: 22px; }
-.content-col h4 { font-size: 13px; font-family: var(--font-mono); font-weight: 500; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.content-col h3 { font-size: 15px; font-family: var(--wiki-font-mono); margin-top: 22px; }
+.content-col h4 { font-size: 13px; font-family: var(--wiki-font-mono); font-weight: 500; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .content-col > p:first-of-type { margin-top: 16px; }
 .content-col p { font-size: 14.5px; line-height: 1.72; margin: 10px 0 0; }
 .content-col ul, .content-col ol { padding-left: 22px; margin: 8px 0 0; font-size: 13.5px; color: var(--ink-soft); }
@@ -296,7 +228,7 @@ summary.nav-link.section::before {
   border-collapse: collapse;
   margin-top: 12px;
   font-size: 13.5px;
-  font-family: var(--font-mono);
+  font-family: var(--wiki-font-mono);
 }
 .content-col table th { text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); padding: 0 12px 8px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .content-col table td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--border); color: var(--ink-soft); }
@@ -316,7 +248,7 @@ ul:has(> li.module-list) li {
   font-size: 13.5px;
 }
 ul:has(> li.module-list) li:first-child { padding-top: 4px; }
-ul:has(> li.module-list) a:first-child { font-family: var(--font-mono); font-weight: 500; color: var(--ink); flex: none; }
+ul:has(> li.module-list) a:first-child { font-family: var(--wiki-font-mono); font-weight: 500; color: var(--ink); flex: none; }
 ul:has(> li.module-list) a:last-child { flex: none; color: var(--ink-faint); font-size: 12.5px; margin-left: auto; }
 ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
 
@@ -328,7 +260,7 @@ ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
   background: var(--generated-bg);
   border: 1px solid var(--generated-border);
   border-left: 3px solid var(--generated-ink);
-  border-radius: var(--radius-sm);
+  border-radius: var(--wiki-radius-sm);
   color: var(--ink);
 }
 .ai-generated::before {
@@ -356,17 +288,9 @@ ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
   border: 1px solid var(--generated-border);
   border-top: none;
   border-left: 3px solid var(--generated-ink);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  border-radius: 0 0 var(--wiki-radius-sm) var(--wiki-radius-sm);
   color: var(--ink-soft);
   font-size: 12.5px;
-}
-
-/* HEAD the wiki was generated from, in the page footer. */
-.site-footer .commit-sha {
-  font-family: var(--font-mono);
-  background: none;
-  padding: 0;
-  color: var(--ink-faint);
 }
 
 /* Inline symbol/file references resolved by doc_generator's treeprocessor.
@@ -377,7 +301,7 @@ ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
   background: var(--accent-soft-bg);
   border: 1px solid var(--accent-soft-border);
   color: var(--accent);
-  border-radius: var(--radius-sm);
+  border-radius: var(--wiki-radius-sm);
   padding: 0.1rem 0.35rem;
 }
 .content-col a.symbol-ref:hover > code { border-color: var(--accent); }
@@ -390,9 +314,9 @@ ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
   margin-top: 10px;
   padding: 6px 12px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--wiki-radius-md);
   font-size: 12.5px;
-  font-family: var(--font-mono);
+  font-family: var(--wiki-font-mono);
   color: var(--ink-soft);
   background: var(--surface);
 }
@@ -405,7 +329,7 @@ ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
   margin-top: 10px;
   padding: 4px 10px;
   border: 1px solid var(--accent-soft-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--wiki-radius-md);
   background: var(--accent-soft-bg);
   color: var(--accent);
   font-size: 12px;
@@ -414,12 +338,12 @@ ul:has(> li.module-list) a:last-child:hover { color: var(--accent); }
 
 .related-chip {
   display: inline-block;
-  font-family: var(--font-mono);
+  font-family: var(--wiki-font-mono);
   font-size: 12px;
   padding: 5px 10px;
   background: var(--surface-sunken);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--wiki-radius-sm);
   color: var(--ink-soft);
 }
 .related-chip:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
@@ -437,15 +361,15 @@ ul:has(> li.diag-grid) li { margin: 0; }
   flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--wiki-radius-lg);
   overflow: hidden;
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--wiki-shadow-1);
   padding: 0;
-  font-family: var(--font-mono);
+  font-family: var(--wiki-font-mono);
   font-size: 13px;
   color: var(--ink);
 }
-.diagram-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-2); text-decoration: none; }
+.diagram-card:hover { border-color: var(--border-strong); box-shadow: var(--wiki-shadow-2); text-decoration: none; }
 .diagram-card::before {
   content: "";
   display: block;
@@ -468,7 +392,7 @@ ul:has(> li.diag-grid) .diagram-card::before { margin: 0 -14px 12px; }
   border: 1px solid var(--border);
   padding: 13px 15px;
   overflow-x: auto;
-  border-radius: var(--radius-md);
+  border-radius: var(--wiki-radius-md);
   margin-top: 12px;
 }
 .content-col code { background: var(--surface-sunken); padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.92em; }
@@ -478,245 +402,16 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
 /* ---------------------------------------------------------------------
    Diagram viewport (034)
 
-   A rendered Mermaid diagram is scaled to the column and unreadable past a
-   handful of nodes, so `lib/diagramViewport.ts` wraps each one - after Mermaid
-   has drawn it - in a bounded, pan-and-zoom viewport. Everything below styles
-   DOM that only exists once that enhancer has run: a page whose bundle fails to
-   load keeps the plain `pre.mermaid` rule above and still renders and
-   navigates, just without zoom.
+   Now carried entirely by utility classes in lib/diagramViewport.ts, including
+   the `.is-expanded` and `.is-grabbing` state variants, which stay as marker
+   classes because JavaScript toggles them and the test suite asserts on them.
+   The reason this element must never be given a `will-change` utility is
+   recorded next to the class list there, where anyone editing it will see it.
    --------------------------------------------------------------------- */
-.diagram-viewport {
-  position: relative;
-  height: 460px;
-  max-height: 70vh;
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  /* The viewport owns wheel and drag gestures; without this the browser also
-     scrolls the page and pans the diagram at the same time. */
-  touch-action: none;
-  cursor: grab;
-}
-.diagram-viewport.is-grabbing { cursor: grabbing; }
-.diagram-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-.diagram-canvas {
-  /* Transform target. Deliberately a wrapper div rather than the SVG itself:
-     hit-testing, <a> targets and Mermaid's coordinate system all survive a
-     transform on an ancestor, whereas rewriting the SVG's own transform is
-     where anchor hit areas drift away from the shapes they wrap. Measured, not
-     assumed: with the hint below gone, scaling this wrapper renders identically
-     to scaling the <svg> itself, so the wrapper is not what cost us sharpness.
-
-     There is deliberately NO `will-change: transform` here, and it must not
-     come back. It promotes this wrapper to its own composited layer, and a
-     composited layer is rastered once at the scale it was created at - 1 - and
-     thereafter *stretched* by the compositor on every transform change instead
-     of the SVG being re-rendered from its vector geometry. That is the whole of
-     the blur: measured in Chrome 152 at dpr 1, zooming to 20x drove the
-     rendered frame's Laplacian variance from 338 down to 1.1 and left it there
-     however long the page was given to settle. Deleting this one declaration,
-     changing nothing else, put it back to 338 on the spot. The hint bought no
-     measurable pan performance to trade against that. */
-  position: absolute;
-  inset: 0;
-  transform-origin: 0 0;
-}
-/* Sized in CSS pixels by the enhancer, from the viewBox - see diagramViewport.ts.
-   No width/height here: a percentage size would hand the box back to
-   `preserveAspectRatio` and re-introduce the letterbox that made `state.scale`
-   mean something other than magnification. */
-.diagram-canvas svg { display: block; }
-
-.diagram-controls {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-1);
-}
-.diagram-controls button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-.diagram-controls button:hover { background: var(--surface-sunken); color: var(--ink); }
-.diagram-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-/* Expanded: a presentation state of the page, not the Fullscreen API, which can
-   be refused and behaves inconsistently for pages opened over file://. */
-.diagram-viewport.is-expanded {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  height: auto;
-  max-height: none;
-  border-radius: 0;
-  /* Opaque, so page content cannot show through behind the diagram. */
-  background: var(--bg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .diagram-controls button { transition: none; }
-}
-
-/* footer */
-.site-footer {
-  margin-top: auto;
-  padding: 24px 0 4px;
-  color: var(--ink-faint);
-  font-size: 11.5px;
-  max-width: 720px;
-}
-
-/* ---------------------------------------------------------------------
-   Search widget (mounted in the sidebar, above the nav groups)
-   --------------------------------------------------------------------- */
-.wiki-search-widget { display: flex; flex-direction: column; gap: 6px; }
-.wiki-search-widget input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 7px 10px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--ink);
-  font-size: 13px;
-  font-family: var(--font-ui);
-}
-.wiki-search-widget input::placeholder { color: var(--ink-faint); }
-.wiki-search-widget input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
-.wiki-search-results {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-2);
-  max-height: 280px;
-  overflow-y: auto;
-}
-.wiki-search-results li { padding: 0; }
-.wiki-search-results a {
-  display: block;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-}
-.wiki-search-results a:hover { background: var(--surface-sunken); text-decoration: none; }
-.wiki-search-meta { color: var(--ink-faint); font-size: 11.5px; font-family: var(--font-ui); padding: 4px 6px; }
 
 /* ---------------------------------------------------------------------
    Chat panel (docked right column)
    --------------------------------------------------------------------- */
-#wiki-chat-root {
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  /* `height` bounds the column; `min-height: 0` is what lets the flex child
-     inside it actually scroll. A grid item defaults to `min-height: auto`,
-     which refuses to shrink below its content, so without this a long
-     conversation pushes the column past the window and the composer leaves
-     the screen again - the original bug in a subtler form. */
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.wiki-chat-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.wiki-chat-panel-head {
-  padding: 16px 18px 14px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: none;
-}
-.wiki-chat-panel-head h2 { font-size: 13.5px; }
-.wiki-chat-local-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10.5px;
-  color: var(--ink-faint);
-  font-family: var(--font-mono);
-}
-.wiki-chat-local-badge .led {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #3fb27f;
-  box-shadow: 0 0 0 2px color-mix(in srgb, #3fb27f 18%, transparent);
-  flex: none;
-}
-
-.wiki-chat-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0 32px;
-  text-align: center;
-  color: var(--ink-faint);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.wiki-chat-foot-note {
-  margin: 8px 0 0;
-  font-size: 11px;
-  color: var(--ink-faint);
-  text-align: center;
-}
-
-/* The scroll container is always rendered, whether the conversation is empty
-   or not, so the ref and the scroll listener are stable for the panel's
-   lifetime. `min-height: 0` for the same reason as on #wiki-chat-root. */
-.wiki-chat-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-.wiki-chat-messages {
-  list-style: none;
-  margin: 0;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-.wiki-chat-message { font-size: 13.5px; line-height: 1.65; }
-.wiki-chat-message.role-user {
-  align-self: flex-end;
-  max-width: 88%;
-  background: var(--surface-sunken);
-  border-radius: var(--radius-md);
-  padding: 8px 12px;
-  font-weight: 500;
-}
 .wiki-chat-message.role-user p { margin: 0; }
 .wiki-chat-message.role-assistant p { margin: 8px 0 0; }
 .wiki-chat-message.role-assistant p:first-child { margin-top: 0; }
@@ -724,13 +419,13 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
 .wiki-chat-message pre {
   background: var(--code-bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--wiki-radius-md);
   padding: 11px 13px;
   overflow-x: auto;
   margin: 10px 0;
 }
 .wiki-chat-message code {
-  font-family: var(--font-mono);
+  font-family: var(--wiki-font-mono);
   background: var(--surface-sunken);
   padding: 0.1rem 0.3rem;
   border-radius: 3px;
@@ -744,157 +439,13 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
    styled distinctly from both plain inline code and prose links. */
 .wiki-chat-message p a[href]:has(> code),
 .wiki-chat-message a.wiki-chat-citation-link {
-  font-family: var(--font-mono);
+  font-family: var(--wiki-font-mono);
   font-size: 12px;
   padding: 1px 7px;
   background: var(--accent-soft-bg);
   border: 1px solid var(--accent-soft-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--wiki-radius-sm);
   color: var(--accent);
 }
 .wiki-chat-message p a[href]:has(> code):hover { text-decoration: none; border-color: var(--accent); }
-
-.wiki-chat-citations {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: 12px;
-}
-.wiki-chat-citations li { margin: 0; }
-.wiki-chat-citations a, .wiki-chat-citations span {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 1px 7px;
-  border-radius: var(--radius-sm);
-}
-.wiki-chat-citations a {
-  background: var(--accent-soft-bg);
-  border: 1px solid var(--accent-soft-border);
-  color: var(--accent);
-}
-.wiki-chat-citations a:hover { text-decoration: none; border-color: var(--accent); }
-.wiki-chat-citations span { color: var(--ink-faint); border: 1px solid var(--border); }
-
-.wiki-chat-error { color: #c4394a; font-size: 13px; padding: 0 18px; }
-
-.wiki-chat-indicator { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-faint); font-size: 13px; }
-.wiki-chat-indicator-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-faint); animation: wiki-chat-indicator-pulse 1.1s ease-in-out infinite; }
-.wiki-chat-indicator-dot:nth-child(2) { animation-delay: 0.15s; }
-.wiki-chat-indicator-dot:nth-child(3) { animation-delay: 0.3s; }
-@keyframes wiki-chat-indicator-pulse {
-  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-  40% { opacity: 1; transform: scale(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .wiki-chat-indicator-dot { animation: none; opacity: 0.7; }
-}
-
-/* Offered only when the reader has scrolled away from the newest message, so
-   arriving content is announced rather than yanking their view. */
-.wiki-chat-jump-latest {
-  flex: none;
-  align-self: center;
-  margin: 0 0 8px;
-  padding: 5px 12px;
-  background: var(--accent-soft-bg);
-  border: 1px solid var(--accent-soft-border);
-  border-radius: 999px;
-  color: var(--accent);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  cursor: pointer;
-}
-.wiki-chat-jump-latest:hover { border-color: var(--accent); }
-
-.wiki-chat-panel form { padding: 14px 18px 16px; border-top: 1px solid var(--border); flex: none; }
-.wiki-chat-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  padding: 4px 4px 4px 12px;
-}
-.wiki-chat-composer:focus-within { border-color: var(--accent); }
-.wiki-chat-panel textarea {
-  flex: 1;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: 8px 0;
-  border: none;
-  background: none;
-  resize: none;
-  font-size: 13.5px;
-  font-family: var(--font-ui);
-  line-height: 20px;
-  color: var(--ink);
-}
-.wiki-chat-panel textarea::placeholder { color: var(--ink-faint); }
-.wiki-chat-panel textarea:focus { outline: none; }
-.wiki-chat-panel textarea:disabled { opacity: 0.6; }
-.wiki-chat-send {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--accent-ink);
-  cursor: pointer;
-}
-.wiki-chat-send:disabled { opacity: 0.4; cursor: default; }
-
-/* Hidden while the chat is docked; the media query below reveals it.
-   Declared BEFORE that media query on purpose: both selectors have the same
-   specificity, so whichever comes last wins - with this rule after the query,
-   `display: none` silently beat `display: inline-flex` and the toggle never
-   appeared at any width. Caught in a browser; no jsdom test can see it. */
-.wiki-chat-drawer-toggle {
-  display: none;
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 41;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 14px;
-  border: 1px solid var(--accent-soft-border);
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  box-shadow: var(--shadow-2);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-/* Narrow windows: the chat used to vanish entirely (`display: none`), with
-   nothing telling the reader it still existed. It now docks behind a toggle. */
-@media (max-width: 1180px) {
-  .shell { grid-template-columns: 240px minmax(0, 1fr); }
-  #wiki-chat-root {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(384px, 100vw);
-    z-index: 40;
-    box-shadow: var(--shadow-2);
-    transform: translateX(100%);
-    transition: transform 160ms ease;
-  }
-  #wiki-chat-root.is-open { transform: translateX(0); }
-  .wiki-chat-drawer-toggle { display: inline-flex; }
-}
-@media (prefers-reduced-motion: reduce) {
-  #wiki-chat-root { transition: none; }
 }

@@ -7,58 +7,58 @@
 <link rel="stylesheet" href="{{ ui_style_href }}">
 </head>
 <body>
-<div class="shell">
-  <nav class="sidebar" aria-label="Repository navigation">
-    <a class="brand" href="{{ home_href }}">
-      <span class="brand-mark" aria-hidden="true">CP</span>
-      <span class="brand-name">codepedia</span>
+<div class="shell grid grid-cols-[264px_minmax(0,1fr)_384px] max-dock:grid-cols-[240px_minmax(0,1fr)] h-screen overflow-hidden items-stretch">
+  <nav class="sidebar bg-surface border-r border-line py-5 px-3.5 flex flex-col gap-[18px] overflow-y-auto" aria-label="Repository navigation">
+    <a class="brand flex items-baseline gap-2 px-1.5 text-ink hover:no-underline" href="{{ home_href }}">
+      <span class="brand-mark size-5 rounded-[5px] bg-accent inline-flex items-center justify-center text-accent-ink font-mono font-bold text-[11px] flex-none" aria-hidden="true">CP</span>
+      <span class="brand-name font-semibold text-[14.5px]">codepedia</span>
     </a>
     <div id="wiki-search-root"></div>
     <div id="wiki-toc-root"></div>
 {% if page_toc %}
-    <div class="nav-group page-toc">
-      <div class="nav-label">On this page</div>
+    <div class="nav-group page-toc flex flex-col gap-0">
+      <div class="nav-label text-[10.5px] font-semibold tracking-[0.06em] uppercase text-ink-faint pt-2.5 px-2 pb-1">On this page</div>
 {% for section in page_toc %}
-      <a class="page-toc-link" href="#{{ section.id }}">{{ section.name }}</a>
+      <a class="page-toc-link block py-1 px-2 border-l-2 border-line rounded-none text-ink-soft text-[12.5px] leading-[1.45] [overflow-wrap:anywhere] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:border-l-accent [&.active]:text-accent [&.active]:font-medium [&.active]:bg-accent-soft" href="#{{ section.id }}">{{ section.name }}</a>
 {% for child in section.children %}
-      <a class="page-toc-link child" href="#{{ child.id }}">{{ child.name }}</a>
+      <a class="page-toc-link block py-1 px-2 border-l-2 border-line rounded-none text-ink-soft text-[12.5px] leading-[1.45] [overflow-wrap:anywhere] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:border-l-accent [&.active]:text-accent [&.active]:font-medium [&.active]:bg-accent-soft child pl-5 font-mono text-[11.5px]" href="#{{ child.id }}">{{ child.name }}</a>
 {% endfor %}
 {% endfor %}
     </div>
 {% endif %}
-    <div class="nav-group">
-      <a class="nav-link" href="{{ home_href }}">
-        <svg class="nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>
+    <div class="nav-group flex flex-col gap-0.5">
+      <a class="nav-link flex items-center gap-2 py-1.5 px-2 rounded-sm text-ink-soft text-[13.5px] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:bg-accent-soft [&.active]:text-accent [&.active]:font-medium" href="{{ home_href }}">
+        <svg class="nav-icon flex-none opacity-85" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>
         Home
       </a>
-      <a class="nav-link{{ ' active' if is_diagrams_page else '' }}" href="{{ diagrams_href }}">
-        <svg class="nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <a class="nav-link flex items-center gap-2 py-1.5 px-2 rounded-sm text-ink-soft text-[13.5px] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:bg-accent-soft [&.active]:text-accent [&.active]:font-medium{{ ' active' if is_diagrams_page else '' }}" href="{{ diagrams_href }}">
+        <svg class="nav-icon flex-none opacity-85" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         Diagrams
       </a>
     </div>
     {% if nav_features %}
-    <div class="nav-group">
-      <div class="nav-label">Features</div>
+    <div class="nav-group flex flex-col gap-0.5">
+      <div class="nav-label text-[10.5px] font-semibold tracking-[0.06em] uppercase text-ink-faint pt-2.5 px-2 pb-1">Features</div>
       {# A flat list, not a <details> tree. The sidebar answers "what does this
          repository do"; every module is still reachable from its feature page,
          which lists all of them, and from search, which indexes all of them. #}
       {% for feature in nav_features %}
-      <a class="nav-link feature{{ ' active' if feature.active else '' }}" href="{{ feature.href }}">{{ feature.title }}</a>
+      <a class="nav-link flex items-center gap-2 py-1.5 px-2 rounded-sm text-ink-soft text-[13.5px] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:bg-accent-soft [&.active]:text-accent [&.active]:font-medium feature{{ ' active' if feature.active else '' }}" href="{{ feature.href }}">{{ feature.title }}</a>
       {% endfor %}
     </div>
     {% endif %}
   </nav>
 
-  <main class="main">
-    <div class="content-col">
+  <main class="main pt-9 px-11 pb-6 min-w-0 flex flex-col overflow-y-auto scroll-pt-6 motion-safe:scroll-smooth">
+    <div class="content-col max-w-[720px] w-full flex-1">
 {{ content_html | safe }}
     </div>
-    <footer class="site-footer">
-      <p>Generated locally by doc_generator on {{ generated_at }}{% if commit_sha %} · Commit <code class="commit-sha" title="{{ commit_sha }}">{{ commit_sha_short }}</code>{% endif %}.</p>
+    <footer class="site-footer mt-auto pt-6 pb-1 text-ink-faint text-[11.5px] max-w-[720px]">
+      <p>Generated locally by doc_generator on {{ generated_at }}{% if commit_sha %} · Commit <code class="commit-sha font-mono text-ink-faint" title="{{ commit_sha }}">{{ commit_sha_short }}</code>{% endif %}.</p>
     </footer>
   </main>
 
-  <div id="wiki-chat-root"></div>
+  <div id="wiki-chat-root" class="bg-surface border-l border-line h-full min-h-0 flex flex-col max-dock:fixed max-dock:inset-y-0 max-dock:right-0 max-dock:w-[min(384px,100vw)] max-dock:z-40 max-dock:shadow-2 max-dock:translate-x-full max-dock:transition-transform max-dock:duration-[160ms] max-dock:[&.is-open]:translate-x-0 motion-reduce:transition-none"></div>
 </div>
 <script src="{{ mermaid_script_href }}"></script>
 <script>
