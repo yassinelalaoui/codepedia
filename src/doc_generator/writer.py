@@ -26,6 +26,14 @@ WIKI_UI_CSS_SOURCE_PATH = Path(__file__).resolve().parent / "assets" / "wiki-ui.
 WIKI_UI_CSS_OUTPUT_PATH = "assets/wiki-ui.css"
 SEARCH_INDEX_OUTPUT_PATH = "assets/search-index.json"
 
+# Bundled with the tool and copied into every wiki, exactly like mermaid.min.js
+# above: a generated wiki must keep its tab icon when moved away from this
+# repository, and must never reference docs/brand/ (036 spec FR-016, FR-020,
+# FR-021). Copied rather than inlined as a data: URI because the .ico is ~5.5 KB,
+# which would otherwise be re-encoded into every page of the wiki.
+FAVICON_SOURCE_PATH = Path(__file__).resolve().parent / "assets" / "favicon.ico"
+FAVICON_OUTPUT_PATH = "assets/favicon.ico"
+
 
 @dataclass(slots=True)
 class DocumentationWriter:
@@ -81,6 +89,10 @@ class DocumentationWriter:
     def ensure_wiki_ui_assets(self) -> tuple[Path, Path]:
         js_destination = self._copy_if_changed(WIKI_UI_JS_SOURCE_PATH, WIKI_UI_JS_OUTPUT_PATH)
         css_destination = self._copy_if_changed(WIKI_UI_CSS_SOURCE_PATH, WIKI_UI_CSS_OUTPUT_PATH)
+        # The tab icon rides along with the bundle rather than getting its own
+        # ensure_* call: every caller that wants a usable wiki wants all three,
+        # and _copy_if_changed already makes a repeat run a no-op (036 FR-023).
+        self._copy_if_changed(FAVICON_SOURCE_PATH, FAVICON_OUTPUT_PATH)
         return js_destination, css_destination
 
     def _copy_if_changed(self, source_path: Path, output_relative: str) -> Path:

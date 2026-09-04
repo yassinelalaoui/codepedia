@@ -449,3 +449,57 @@ pre.mermaid { background: none; border: none; text-align: center; padding: 12px 
 }
 .wiki-chat-message p a[href]:has(> code):hover { text-decoration: none; border-color: var(--accent); }
 }
+
+/* ---------------------------------------------------------------------
+   Brand mark variants and print (036)
+
+   Both marks are inlined into the page shell by templates/_brand.html.jinja
+   and CSS picks one, so the swap needs no JavaScript: the right mark is
+   showing before wiki-ui.js parses, and stays right if it never loads
+   (spec FR-015). The three states mirror the palette's own selectors above
+   exactly - light default, OS-dark guarded on :not([data-theme="light"]),
+   then the pinned override - because a fourth shape here would drift out of
+   step with the tokens the first time either is edited.
+
+   In @layer components rather than unlayered: unlayered CSS outranks every
+   cascade layer, so a plain rule here would beat utilities on any element
+   carrying both.
+   --------------------------------------------------------------------- */
+@layer components {
+.brand-mark svg { width: 100%; height: 100%; display: block; }
+.brand-mark [data-brand-variant="dark"] { display: none; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand-mark [data-brand-variant="light"] { display: none; }
+  :root:not([data-theme="light"]) .brand-mark [data-brand-variant="dark"] { display: block; }
+}
+:root[data-theme="dark"] .brand-mark [data-brand-variant="light"] { display: none; }
+:root[data-theme="dark"] .brand-mark [data-brand-variant="dark"] { display: block; }
+
+/* A pinned light choice must win over an OS dark preference here too, or the
+   dark-background mark ends up on a light page (spec FR-006). */
+:root[data-theme="light"] .brand-mark [data-brand-variant="light"] { display: block; }
+:root[data-theme="light"] .brand-mark [data-brand-variant="dark"] { display: none; }
+}
+
+/* Print always uses the light palette, whatever is on screen (spec FR-026).
+   Token overrides rather than colour rules, so everything the palette already
+   defines follows automatically. Rearranging the page for print is explicitly
+   out of scope. In @layer base for the same cascade reason as above. */
+@layer base {
+@media print {
+  :root, :root[data-theme="dark"], :root[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-sunken: #f4f6fa;
+    --border: #dfe3ec;
+    --border-strong: #c3c9d8;
+    --ink: #14274a;
+    --ink-soft: #565b72;
+    --ink-faint: #6b7280;
+    --code-bg: #f7f8fb;
+  }
+  .brand-mark [data-brand-variant="dark"] { display: none; }
+  .brand-mark [data-brand-variant="light"] { display: block; }
+}
+}

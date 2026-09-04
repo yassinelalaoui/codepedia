@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import re
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from .html_sanitizer import SanitizeRawHtmlExtension
 from .links import DIAGRAMS_INDEX_OUTPUT_HTML, HOME_OUTPUT_HTML, relative_output_link
 from .markdown_render import render_html_template
 from .writer import (
+    FAVICON_OUTPUT_PATH,
     MERMAID_ASSET_OUTPUT_PATH,
     SEARCH_INDEX_OUTPUT_PATH,
     WIKI_UI_CSS_OUTPUT_PATH,
@@ -20,6 +22,28 @@ from .writer import (
 )
 
 _MARKDOWN_EXTENSIONS = ("tables", "fenced_code", "toc", "attr_list")
+
+
+def wiki_id(repository_id: str) -> str:
+    """A short, stable id for one generated wiki (036 data-model.md, WikiIdentity).
+
+    The theme preference is stored per wiki, and that is only possible because
+    of this value. Chrome reports `location.origin` as `file://` for *every*
+    local document regardless of directory, so every wiki opened from the
+    filesystem shares one `localStorage` (measured - 036 research.md §2). An
+    unscoped key would let any two wikis silently overwrite each other's theme,
+    which is spec FR-007's explicit prohibition.
+
+    Hashed rather than used raw: `repositoryId` is `repo::/abs/posix/path`, and
+    embedding an absolute filesystem path into every page would leak the
+    author's directory layout into an artifact meant to be shared. Same
+    construction as `cli.paths.state_id`, kept separate only because
+    `doc_generator` does not depend on `cli`.
+
+    Derived from the repository id rather than the output location, so moving or
+    renaming a generated wiki does not reset the reader's theme.
+    """
+    return hashlib.sha256(repository_id.encode("utf-8")).hexdigest()[:16]
 
 # python-markdown's fenced_code extension renders a ```mermaid fence as
 # <pre><code class="language-mermaid">...</code></pre>. Mermaid's default
@@ -111,6 +135,7 @@ def render_page_html(
     symbol_lookup: SymbolLookup | None = None,
     current_file_path: str = "",
     commit_sha: str = "",
+    repository_id: str = "",
     reference_sink: set[str] | None = None,
 ) -> str:
     # `reference_sink` is an out-parameter rather than a second return value:
@@ -152,6 +177,14 @@ def render_page_html(
     search_index_href = relative_output_link(
         from_output_path=output_path_html, to_output_path=SEARCH_INDEX_OUTPUT_PATH
     )
+    # Page-relative like every other asset href above, so the tab icon still
+    # resolves from a diagram page one directory deeper (036 spec FR-016). The
+    # .ico is copied into the wiki's own assets/ rather than referenced from
+    # docs/brand/, so a wiki moved away from this repository keeps its icon
+    # (FR-020, FR-021).
+    favicon_href = relative_output_link(
+        from_output_path=output_path_html, to_output_path=FAVICON_OUTPUT_PATH
+    )
     # The persistent sidebar's navigation list (contracts/wiki-ui-shell.md) -
     # every page passes its own `output_path_html` so each link is relative to
     # wherever this particular page ends up on disk (diagram pages sit one
@@ -175,6 +208,10 @@ def render_page_html(
         ui_script_href=ui_script_href,
         ui_style_href=ui_style_href,
         search_index_href=search_index_href,
+        favicon_href=favicon_href,
+        # Scopes the reader's stored theme to this wiki (036 contracts/
+        # wiki-theme-shell.md §1). Read by the pre-paint script in <head>.
+        wiki_id=wiki_id(repository_id),
         nav_features=nav_entries,
         page_toc=page_toc,
         is_diagrams_page=output_path_html == DIAGRAMS_INDEX_OUTPUT_HTML,

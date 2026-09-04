@@ -1,0 +1,83 @@
+{#
+  The Codepedia mark, inlined in both variants (036 spec FR-014, FR-015).
+
+  Both are emitted and CSS decides which is visible, rather than swapping an
+  `<img src>` from JavaScript. That buys three things at once:
+
+    * Nothing is fetched, so constitution 2.2 and FR-022 hold by construction -
+      there is no request to fail, block or leak.
+    * The swap works with no JavaScript at all, so the correct mark is showing
+      before `wiki-ui.js` parses, and stays correct if it never loads.
+    * An `<img>` cannot respond to a `data-theme` attribute on an ancestor,
+      which is what the theme actually sets.
+
+  Total cost is under 2 KB per page; the favicon, at ~5.5 KB, is copied into
+  assets/ instead for exactly that reason (research.md §3, §4).
+
+  Copied verbatim from docs/brand/codepedia-mark-{light,dark}.svg with three
+  edits, all required and none cosmetic:
+
+    * `role`, `aria-label` and `<title>` are stripped and the wrapper is
+      `aria-hidden="true"`. The brand slot already carries a *visible*
+      "codepedia" wordmark, and as published a screen reader would announce the
+      name twice (FR-019). The placeholder this replaces was already aria-hidden.
+    * `width`/`height` are dropped so the 24 px box sizes it. The published
+      files are 256 px square; the viewBox is what preserves the geometry.
+    * `xmlns` is dropped. An inline `<svg>` in an HTML document is put in the
+      SVG namespace by the HTML parser itself, so the attribute is redundant
+      here - it is only required in a standalone .svg file or in XHTML. It also
+      contains the literal `http://www.w3.org/2000/svg`, which trips the
+      zero-network guards in tests/integration/test_mermaid_diagram.py and
+      test_wiki_ui_assets.py. Those guards are blunt on purpose and worth
+      keeping that way, and a namespace declaration is never fetched, so
+      removing the redundant attribute is the correct fix rather than
+      loosening them.
+    * Nothing else. Fills stay exactly as published - #14274A / #FFFFFF and
+      their inverse - because the brand README forbids recolouring the lens, and
+      the two-tone contrast is what keeps the mark readable at this size
+      (FR-018). Do not "simplify" these to currentColor.
+
+  This file must stay a *.jinja file directly in this directory:
+  `template_fingerprint()` globs TEMPLATES_DIR non-recursively for *.jinja only,
+  so artwork moved to a subdirectory or a .svg sidecar would become invisible to
+  the staleness check, and editing it would leave every already-generated page
+  stale with no signal (research.md §6, contract invariant 7).
+#}
+<span class="brand-mark size-6 flex-none inline-flex items-center justify-center" aria-hidden="true">
+  <svg data-brand-variant="light" viewBox="0 0 256 256">
+    <path fill="#14274A"
+          d="M64 34 H136 A30 30 0 0 1 166 64 V117.15 A53 53 0 0 0 117.15 166 H64
+             A30 30 0 0 1 34 136 V64 A30 30 0 0 1 64 34 Z"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round">
+      <path d="M74 68 V126"/>
+      <path d="M74 102 C74 82 88 74 110 74"/>
+    </g>
+    <g fill="#FFFFFF">
+      <circle cx="74" cy="68" r="14"/>
+      <circle cx="74" cy="126" r="14"/>
+      <circle cx="122" cy="74" r="14"/>
+    </g>
+    <g fill="none" stroke="#3F73BC" stroke-linecap="round">
+      <circle cx="170" cy="170" r="40" stroke-width="14"/>
+      <path d="M198.3 198.3 L216 216" stroke-width="16"/>
+    </g>
+  </svg>
+  <svg data-brand-variant="dark" viewBox="0 0 256 256">
+    <path fill="#FFFFFF"
+          d="M64 34 H136 A30 30 0 0 1 166 64 V117.15 A53 53 0 0 0 117.15 166 H64
+             A30 30 0 0 1 34 136 V64 A30 30 0 0 1 64 34 Z"/>
+    <g fill="none" stroke="#14274A" stroke-width="11" stroke-linecap="round">
+      <path d="M74 68 V126"/>
+      <path d="M74 102 C74 82 88 74 110 74"/>
+    </g>
+    <g fill="#14274A">
+      <circle cx="74" cy="68" r="14"/>
+      <circle cx="74" cy="126" r="14"/>
+      <circle cx="122" cy="74" r="14"/>
+    </g>
+    <g fill="none" stroke="#8FB8EA" stroke-linecap="round">
+      <circle cx="170" cy="170" r="40" stroke-width="14"/>
+      <path d="M198.3 198.3 L216 216" stroke-width="16"/>
+    </g>
+  </svg>
+</span>

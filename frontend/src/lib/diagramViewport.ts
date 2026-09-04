@@ -505,3 +505,113 @@ function installPanAndClickHandling(
     true,
   );
 }
+
+/* ---------------------------------------------------------------------------
+   Re-drawing diagrams for a theme change (036 spec FR-013, FR-013a)
+   ------------------------------------------------------------------------- */
+
+/** The stashed fence text, put there by layout.html.jinja before the first
+ * `mermaid.run()` - which replaces the <pre>'s text content with the drawn SVG
+ * and so destroys the only copy of the source (036 research.md §5). */
+const SOURCE_ATTRIBUTE = "data-diagram-source";
+
+interface MermaidGlobal {
+  initialize: (config: Record<string, unknown>) => void;
+  render: (id: string, text: string) => Promise<{ svg: string }>;
+}
+
+function mermaidGlobal(): MermaidGlobal | null {
+  const candidate = (window as unknown as { mermaid?: MermaidGlobal }).mermaid;
+  return candidate && typeof candidate.render === "function" ? candidate : null;
+}
+
+let rerenderSequence = 0;
+
+/**
+ * Redraw every diagram in the newly selected theme.
+ *
+ * The reader's zoom and pan survive this **because nothing captures or restores
+ * them**. `{ scale, offsetX, offsetY }` lives in a closure in `enhanceOne` with
+ * no accessor, and is written to the canvas wrapper as a CSS transform. So the
+ * only safe move is to leave that wrapper exactly where it is and replace the
+ * `<svg>` inside it - tearing the viewport down and re-enhancing would reset the
+ * state to `INITIAL_STATE` and drop the reader wherever the diagram started
+ * (spec FR-013a).
+ *
+ * A diagram with no stashed source, or one Mermaid cannot re-render, is left
+ * exactly as it is: a diagram in the previous theme's colours is still readable,
+ * a blank space is not. One failure never aborts the batch, mirroring the
+ * `suppressErrors: true` posture of the initial render.
+ */
+export async function rerenderDiagramsForTheme(
+  theme: "light" | "dark",
+  root: ParentNode = document,
+): Promise<number> {
+  const mermaid = mermaidGlobal();
+  if (!mermaid) return 0;
+
+  try {
+    mermaid.initialize({ startOnLoad: false, theme: theme === "dark" ? "dark" : "default" });
+  } catch {
+    return 0;
+  }
+
+  const blocks = Array.from(root.querySelectorAll<HTMLElement>(`pre.mermaid[${SOURCE_ATTRIBUTE}]`));
+  const pass = ++rerenderSequence;
+  let redrawn = 0;
+
+  for (const pre of blocks) {
+    const source = pre.getAttribute(SOURCE_ATTRIBUTE);
+    if (!source || !source.trim()) continue;
+
+    const existing = pre.querySelector("svg");
+    if (!existing) continue;
+
+    let drawn: SVGElement | null = null;
+    try {
+      // Ids must be unique per render or Mermaid reuses cached definitions and
+      // the redraw silently keeps the old theme's colours.
+      const { svg } = await mermaid.render(`wiki-retheme-${pass}-${redrawn}`, source);
+      const holder = document.createElement("div");
+      holder.innerHTML = svg;
+      drawn = holder.querySelector("svg");
+    } catch {
+      // Left exactly as it was - see the doc comment.
+      continue;
+    }
+    if (!drawn) continue;
+
+    // Carry over the sizing `enhanceOne` applied. Mermaid stamps width="100%"
+    // and a max-width on every fresh render, and leaving those on a viewport
+    // child re-introduces the letterboxing that made `scale` stop meaning
+    // magnification - the defect the sizing comment in `enhanceOne` records.
+    drawn.removeAttribute("width");
+    drawn.removeAttribute("height");
+    (drawn as unknown as HTMLElement).style.maxWidth = "";
+    (drawn as unknown as HTMLElement).style.width = (existing as unknown as HTMLElement).style.width;
+    (drawn as unknown as HTMLElement).style.height = (existing as unknown as HTMLElement).style.height;
+
+    // The swap. `replaceWith` leaves the parent - the transformed canvas inside
+    // the viewport - untouched, which is the whole point.
+    existing.replaceWith(drawn);
+    redrawn += 1;
+  }
+
+  return redrawn;
+}
+
+/**
+ * Wire the redraw to the theme control.
+ *
+ * Separate from `rerenderDiagramsForTheme` so tests can drive the redraw
+ * directly without dispatching events, and so `main.tsx` reads as one line.
+ */
+export function installDiagramThemeSync(): () => void {
+  const onThemeChanged = (event: Event): void => {
+    const detail = (event as CustomEvent).detail as { theme?: "light" | "dark" } | undefined;
+    if (detail?.theme !== "light" && detail?.theme !== "dark") return;
+    void rerenderDiagramsForTheme(detail.theme);
+  };
+  document.addEventListener("wiki:theme-changed", onThemeChanged);
+  return () => document.removeEventListener("wiki:theme-changed", onThemeChanged);
+}

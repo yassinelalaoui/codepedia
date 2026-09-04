@@ -1130,6 +1130,10 @@ class DocGenerator:
         kind added later inherits it without anyone remembering to.
         """
         kwargs.setdefault("commit_sha", self._commit_sha())
+        # Same reasoning as commit_sha: stamped once here so the theme storage
+        # key is identical on every page of a wiki, and so a page kind added
+        # later inherits it (036 contracts/wiki-theme-shell.md §1).
+        kwargs.setdefault("repository_id", self.repositoryId)
         return render_page_html(**kwargs)
 
     def _commit_sha(self) -> str:

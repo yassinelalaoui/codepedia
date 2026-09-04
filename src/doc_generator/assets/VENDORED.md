@@ -12,3 +12,19 @@
 This file is bundled with the tool and copied into every generated
 documentation output's `assets/` folder so diagrams render with zero runtime
 network requests.
+# Bundled asset: favicon.ico
+
+- Source: this repository's own brand kit, `docs/brand/favicon.ico`
+- Version: tracked with the brand kit; see `docs/brand/README.md`
+- File: 16/32/48/64 px multi-resolution ICO
+- License: project-owned artwork, not third-party
+
+Copied verbatim rather than referenced, so a generated wiki keeps its tab icon
+when moved away from this repository (036 spec FR-020, FR-021). It is bundled
+here and copied into every generated wiki's `assets/` folder by
+`DocumentationWriter.ensure_wiki_ui_assets`, alongside `mermaid.min.js`, so the
+wiki still renders with zero runtime network requests (constitution 2.2).
+
+Unlike `mermaid.min.js` this is first-party artwork; it is listed here so the
+copy stays traceable to its source of truth in `docs/brand/`, which remains the
+only place the artwork is edited.

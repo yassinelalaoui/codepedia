@@ -4,15 +4,53 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}</title>
+<link rel="icon" href="{{ favicon_href }}">
+<script>
+  // Applies the reader's stored theme BEFORE first paint (036 spec FR-008).
+  //
+  // Deliberately inline, in <head>, with no src/defer/async: `wiki-ui.js` loads
+  // at the end of <body>, so a toggle implemented only in the bundle repaints
+  // after the document has already been painted, and a dark-theme reader gets a
+  // white flash on every single navigation.
+  //
+  // Publishes the storage key so `lib/theme.ts` reuses it rather than deriving
+  // its own - the key is scoped per wiki because Chrome reports
+  // `location.origin` as `file://` for every local document regardless of
+  // directory, so all wikis share one localStorage and an unscoped key lets any
+  // two wikis overwrite each other's theme (research.md §2, spec FR-007).
+  //
+  // Wrapped whole: this runs before anything else on the page, so a throw here
+  // would cost the reader the entire wiki. A refused localStorage (private
+  // browsing, locked-down profile) must degrade to the OS preference, not to a
+  // blank page (spec FR-010).
+  (function () {
+    var key = 'codepedia:theme:' + {{ wiki_id | tojson }};
+    window.__WIKI_THEME__ = { wikiId: {{ wiki_id | tojson }}, storageKey: key };
+    try {
+      var stored = window.localStorage.getItem(key);
+      // Only a pinned choice is stamped. "system", an unknown value and a
+      // missing key all leave the attribute absent, which is exactly what the
+      // stylesheet's `:root:not([data-theme="light"])` guard treats as "follow
+      // the OS" - and is the state a scripting-disabled reader already gets.
+      if (stored === 'light' || stored === 'dark') {
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+    } catch (e) {}
+  })();
+</script>
 <link rel="stylesheet" href="{{ ui_style_href }}">
 </head>
 <body>
 <div class="shell grid grid-cols-[264px_minmax(0,1fr)_384px] max-dock:grid-cols-[240px_minmax(0,1fr)] h-screen overflow-hidden items-stretch">
   <nav class="sidebar bg-surface border-r border-line py-5 px-3.5 flex flex-col gap-[18px] overflow-y-auto" aria-label="Repository navigation">
-    <a class="brand flex items-baseline gap-2 px-1.5 text-ink hover:no-underline" href="{{ home_href }}">
-      <span class="brand-mark size-5 rounded-[5px] bg-accent inline-flex items-center justify-center text-accent-ink font-mono font-bold text-[11px] flex-none" aria-hidden="true">CP</span>
+    {# items-center, not items-baseline: the slot now holds a 24 px SVG rather
+       than a text span, and an SVG has no baseline to align the wordmark to -
+       baseline alignment drops the mark below the text (036 T034). #}
+    <a class="brand flex items-center gap-2 px-1.5 text-ink hover:no-underline" href="{{ home_href }}">
+{% include "_brand.html.jinja" %}
       <span class="brand-name font-semibold text-[14.5px]">codepedia</span>
     </a>
+    <div id="wiki-theme-root"></div>
     <div id="wiki-search-root"></div>
     <div id="wiki-toc-root"></div>
 {% if page_toc %}
@@ -69,13 +107,36 @@
   // batch, and the dispatch sits in `finally` so the enhancer still runs when
   // the batch rejects. Deliberately inline rather than inside wiki-ui.js: a
   // bundle that fails to load must cost the zoom, never the diagram itself.
+  // Stash each diagram's source BEFORE rendering (036 spec FR-013).
+  // `mermaid.run()` replaces the <pre>'s text content with the drawn SVG, so
+  // once it has run the source is gone from the DOM and a re-render for a theme
+  // change has nothing left to work from. This is a precondition, not an
+  // optimisation. Inline here rather than in the bundle for the same reason the
+  // block below is: it has to happen even if wiki-ui.js never loads, and it has
+  // to happen before this render, not after it.
+  (function () {
+    var blocks = document.querySelectorAll('pre.mermaid');
+    for (var i = 0; i < blocks.length; i++) {
+      if (!blocks[i].hasAttribute('data-diagram-source')) {
+        blocks[i].setAttribute('data-diagram-source', blocks[i].textContent);
+      }
+    }
+  })();
+
   if (window.mermaid) {
     // `querySelector` MUST be passed explicitly. Mermaid 10's `run()` only
     // applies its own '.mermaid' default when called with no arguments at all;
     // passing any options object drops it and the call rejects with "Nodes and
     // querySelector are both undefined" - which `suppressErrors` then swallows,
     // leaving every diagram on the page as raw fence text and no error anywhere.
-    mermaid.initialize({ startOnLoad: false });
+    // Seeded with the theme already in effect, so a dark-theme reader's first
+    // render is dark rather than being drawn light and corrected a moment later
+    // (036 spec FR-013). `data-theme` is absent for System, in which case the
+    // OS preference is the answer - the same resolution lib/theme.ts does.
+    var pinned = document.documentElement.getAttribute('data-theme');
+    var isDark = pinned === 'dark' || (pinned !== 'light'
+      && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default' });
     mermaid.run({ querySelector: '.mermaid', suppressErrors: true }).finally(function () {
       document.dispatchEvent(new CustomEvent('wiki:mermaid-rendered'));
     });

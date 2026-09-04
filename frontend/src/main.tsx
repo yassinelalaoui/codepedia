@@ -3,8 +3,9 @@ import { createRoot } from "react-dom/client";
 import { SearchWidget } from "./components/SearchWidget";
 import { ChatPanel } from "./components/ChatPanel";
 import { TocHighlighter } from "./components/TocHighlighter";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { captureApiTokenFromUrl } from "./lib/apiToken";
-import { enhanceDiagrams } from "./lib/diagramViewport";
+import { enhanceDiagrams, installDiagramThemeSync } from "./lib/diagramViewport";
 import { installFragmentScrolling } from "./lib/fragmentScroll";
 import "./styles.css";
 
@@ -18,6 +19,10 @@ function mount(elementId: string, node: ReactNode): void {
   createRoot(container).render(<StrictMode>{node}</StrictMode>);
 }
 
+// The theme is already applied by the inline script in layout.html.jinja's
+// <head> before this bundle parses (036 spec FR-008); this only renders the
+// control that changes it, and installs the OS-change listener (FR-005).
+mount("wiki-theme-root", <ThemeToggle />);
 mount("wiki-search-root", <SearchWidget />);
 mount("wiki-chat-root", <ChatPanel />);
 // Headless: the rail is server-rendered, this only tracks the active section.
@@ -33,6 +38,12 @@ document.addEventListener("wiki:mermaid-rendered", () => {
   enhanceDiagrams();
 });
 enhanceDiagrams();
+
+// A theme change repaints the page from CSS tokens, but a Mermaid SVG has its
+// colours baked in when it is drawn, so it has to be redrawn (036 spec FR-013).
+// The reader's zoom and pan survive because only the <svg> is swapped, never
+// the transformed wrapper holding that state (FR-013a).
+installDiagramThemeSync();
 
 // Fragment links need help now that page content scrolls inside `.main` rather
 // than as the document; see lib/fragmentScroll.ts for why the initial page load
