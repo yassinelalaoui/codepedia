@@ -1,0 +1,408 @@
+/* The launcher homepage's own styles (037).
+   ---------------------------------------------------------------------------
+   A separate file from styles.css on purpose. The two bundles are built from
+   one project so the homepage can share the wiki's theme tokens - which is what
+   makes spec FR-043's "part of the same product" reuse rather than a second
+   palette to keep in step - but nothing here belongs in a generated wiki, and
+   importing it only from hub.tsx keeps it out of wiki-ui.css entirely.
+
+   Everything below is expressed in the tokens styles.css already defines, so
+   light, OS-dark and pinned-dark all follow automatically with no colour
+   repeated here. The lockup swap follows exactly the pattern `.brand-mark`
+   established in 036: a default, an OS rule guarded on
+   `:not([data-theme="light"])`, then explicit `[data-theme]` rules so a
+   deliberate choice wins in both directions (spec FR-044). */
+
+.hub {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--wiki-font-ui);
+}
+
+.hub__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.hub__brand { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* Comfortably above the brand policy's 24px floor for the full mark, so the
+   wordmark stays legible (docs/brand/README.md). */
+.hub__lockup { height: 32px; width: auto; display: block; }
+.hub__lockup--dark { display: none; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hub__lockup--light { display: none; }
+  :root:not([data-theme="light"]) .hub__lockup--dark { display: block; }
+}
+:root[data-theme="dark"] .hub__lockup--light { display: none; }
+:root[data-theme="dark"] .hub__lockup--dark { display: block; }
+:root[data-theme="light"] .hub__lockup--light { display: block; }
+:root[data-theme="light"] .hub__lockup--dark { display: none; }
+
+.hub__main {
+  flex: 1;
+  width: 100%;
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 2.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.hub__error {
+  color: var(--ink);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--wiki-radius-md);
+  padding: 0.75rem 1rem;
+  margin: 0;
+}
+
+/* The index bar ---------------------------------------------------------- */
+
+.index-bar { display: flex; flex-direction: column; gap: 0.5rem; }
+.index-bar__label { font-size: 0.875rem; color: var(--ink-soft); font-weight: 600; }
+.index-bar__row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.index-bar__input {
+  flex: 1 1 22rem;
+  min-width: 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--wiki-radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--wiki-font-mono);
+  font-size: 0.9rem;
+}
+.index-bar__input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.index-bar__submit {
+  padding: 0.7rem 1.4rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--wiki-radius-md);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.index-bar__submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.index-bar__error {
+  color: var(--ink);
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--wiki-radius-sm);
+  padding: 0.6rem 0.9rem;
+  margin: 0;
+}
+.index-bar__busy { color: var(--ink-soft); margin: 0; font-size: 0.875rem; }
+
+/* Run progress ----------------------------------------------------------- */
+
+.run-progress {
+  border: 1px solid var(--border);
+  border-radius: var(--wiki-radius-lg);
+  background: var(--surface);
+  padding: 1.25rem;
+}
+.run-progress__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.run-progress__title { margin: 0; font-size: 1.1rem; }
+.run-progress__path {
+  margin: 0.15rem 0 0;
+  color: var(--ink-soft);
+  font-family: var(--wiki-font-mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.run-progress__stop {
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--wiki-radius-md);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  cursor: pointer;
+}
+.run-progress__catchup { margin: 0.75rem 0 0; color: var(--ink-soft); font-size: 0.875rem; }
+
+.run-progress__stages {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.run-stage {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--wiki-radius-sm);
+  color: var(--ink-faint);
+  font-size: 0.875rem;
+}
+.run-stage--running {
+  background: var(--accent-soft-bg);
+  border: 1px solid var(--accent-soft-border);
+  color: var(--ink);
+}
+.run-stage--done { color: var(--ink-soft); }
+.run-stage--failed {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  color: var(--ink);
+}
+.run-stage__label { font-weight: 500; }
+.run-stage__count { font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+.run-stage__elapsed { font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--ink-faint); }
+.run-stage__bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+  display: block;
+}
+.run-stage__bar-fill { display: block; height: 100%; background: var(--accent); }
+
+.run-progress__switches,
+.run-progress__notices { margin-top: 1rem; font-size: 0.8125rem; color: var(--ink-soft); }
+.run-progress__switches h3 { margin: 0 0 0.25rem; font-size: 0.8125rem; color: var(--ink); }
+.run-progress__switches ul,
+.run-progress__notices { padding-left: 1.1rem; margin: 0; }
+
+/* Run outcome ------------------------------------------------------------ */
+
+.run-outcome {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--wiki-radius-lg);
+  background: var(--surface);
+  padding: 1.25rem;
+}
+.run-outcome--succeeded { border-left-color: var(--accent); }
+.run-outcome--failed,
+.run-outcome--cancelled { border-left-color: var(--border-strong); }
+.run-outcome__title { margin: 0 0 0.35rem; font-size: 1.05rem; }
+.run-outcome__path {
+  margin: 0 0 0.75rem;
+  font-family: var(--wiki-font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.run-outcome__stage,
+.run-outcome__message { margin: 0 0 0.5rem; }
+.run-outcome__providers { margin: 0 0 0.75rem; font-size: 0.875rem; color: var(--ink-soft); }
+.run-outcome__providers ul {
+  margin: 0.2rem 0 0;
+  padding-left: 1.1rem;
+  font-family: var(--wiki-font-mono);
+}
+
+/* Spec FR-023: this sentence carries the whole meaning of a failed run - that
+   the ticked stages above it were thrown away - so it gets real emphasis
+   rather than being buried as a footnote. */
+.run-outcome__discarded {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--surface-sunken);
+  border-radius: var(--wiki-radius-sm);
+  color: var(--ink);
+  font-size: 0.875rem;
+}
+
+.run-outcome__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.run-outcome__actions button {
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--wiki-radius-md);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  cursor: pointer;
+}
+.run-outcome__open,
+.run-outcome__retry {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* History ---------------------------------------------------------------- */
+
+.history__title,
+.run-log__title { font-size: 1rem; margin: 0 0 0.6rem; color: var(--ink); }
+.history__empty { color: var(--ink-soft); margin: 0; }
+.history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.history__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--wiki-radius-md);
+  background: var(--surface);
+}
+.history__row--unavailable { opacity: 0.72; }
+.history__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.history__name { font-weight: 600; color: var(--ink); }
+.history__path {
+  font-family: var(--wiki-font-mono);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+.history__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.history__unavailable {
+  color: var(--ink);
+  background: var(--surface-sunken);
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+}
+
+.history-menu { position: relative; }
+.history-menu__trigger {
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  border-radius: var(--wiki-radius-sm);
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.history-menu__items {
+  position: absolute;
+  right: 0;
+  top: 2.3rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 10rem;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--wiki-radius-md);
+  box-shadow: var(--wiki-shadow-2);
+  overflow: hidden;
+}
+.history-menu__items button {
+  padding: 0.55rem 0.9rem;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+}
+.history-menu__items button:hover { background: var(--surface-sunken); }
+
+.history-properties,
+.history-confirm {
+  position: absolute;
+  right: 0;
+  top: 2.3rem;
+  z-index: 25;
+  width: min(26rem, 80vw);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--wiki-radius-md);
+  box-shadow: var(--wiki-shadow-2);
+  padding: 0.9rem;
+  font-size: 0.875rem;
+}
+.history-properties dl {
+  margin: 0 0 0.75rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+}
+.history-properties dt { color: var(--ink-soft); }
+.history-properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--wiki-font-mono);
+  font-size: 0.8rem;
+}
+.history-properties button,
+.history-confirm button {
+  padding: 0.4rem 0.9rem;
+  margin-right: 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--wiki-radius-sm);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+}
+.history-confirm p { margin: 0 0 0.75rem; }
+.history-confirm__yes {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Run log ---------------------------------------------------------------- */
+
+.run-log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.run-log__row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--wiki-radius-sm);
+}
+.run-log__outcome { min-width: 5.5rem; font-weight: 600; color: var(--ink); }
+.run-log__path { font-family: var(--wiki-font-mono); }
+.run-log__when { margin-left: auto; white-space: nowrap; }
