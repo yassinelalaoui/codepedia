@@ -22,6 +22,7 @@ from cli.errors import (
     ServerBindError,
     report_and_exit,
 )
+from cli.home_command import run_home
 from cli.index_command import run_index
 from cli.provider_command import run_provider_chain_set, run_provider_mode_full_local
 from cli.serve_command import run_serve
@@ -41,7 +42,7 @@ _AI_PIPELINE_ERRORS = (LocalLLMError, SummaryPipelineError, FailoverExhaustedErr
 # (contracts/cli-provider-commands.md) runs before all of these; `scan` and
 # `config --show` are read-only/static-analysis-only and are not gated
 # (spec FR-014).
-_DISCLOSURE_GATED_COMMANDS = {"index", "serve", "provider"}
+_DISCLOSURE_GATED_COMMANDS = {"index", "serve", "provider", "home"}
 
 app = typer.Typer(add_completion=False, help="Turn a local code repository into a browsable documentation wiki.")
 provider_app = typer.Typer(add_completion=False, help="Manage per-stage AI provider chains and the full-local switch.")
@@ -49,6 +50,9 @@ app.add_typer(provider_app, name="provider")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
+# Deliberately not `serve`'s port: a hub and a directly-run `serve` should not
+# collide by default (contracts/home-command.md).
+DEFAULT_HOME_PORT = 8100
 
 
 def _version_callback(show_version: bool) -> None:
@@ -129,6 +133,18 @@ def serve(
         ServerBindError,
         *_AI_PIPELINE_ERRORS,
     ) as exc:
+        report_and_exit(exc)
+
+
+@app.command("home")
+def home(
+    host: str = typer.Option(DEFAULT_HOST, "--host", help="Bind address for the homepage server."),
+    port: int = typer.Option(DEFAULT_HOME_PORT, "--port", help="Bind port for the homepage server."),
+) -> None:
+    """Start the Codepedia homepage: analyse a repository, or reopen one."""
+    try:
+        run_home(host, port)
+    except ServerBindError as exc:
         report_and_exit(exc)
 
 
