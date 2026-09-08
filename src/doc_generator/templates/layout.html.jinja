@@ -46,7 +46,12 @@
     {# items-center, not items-baseline: the slot now holds a 24 px SVG rather
        than a text span, and an SVG has no baseline to align the wordmark to -
        baseline alignment drops the mark below the text (036 T034). #}
-    <a class="brand flex items-center gap-2 px-1.5 text-ink hover:no-underline" href="{{ home_href }}">
+    {# The mark and the wordmark go to the product's homepage, the way a brand
+       lockup does everywhere else. `data-hub-home` is repointed by the bundle
+       at load (lib/hubLink.ts): a wiki is generated long before any hub exists,
+       so the href it ships with is the wiki's own overview - which is also what
+       a reader with scripting unavailable still gets. #}
+    <a class="brand flex items-center gap-2 px-1.5 text-ink hover:no-underline" href="{{ home_href }}" data-hub-home title="Back to the Codepedia homepage">
 {% include "_brand.html.jinja" %}
       <span class="brand-name font-semibold text-[14.5px]">codepedia</span>
     </a>
@@ -65,9 +70,19 @@
     </div>
 {% endif %}
     <div class="nav-group flex flex-col gap-0.5">
-      <a class="nav-link flex items-center gap-2 py-1.5 px-2 rounded-sm text-ink-soft text-[13.5px] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:bg-accent-soft [&.active]:text-accent [&.active]:font-medium" href="{{ home_href }}">
+      {# "Home" is the launcher, not this wiki's front page. Without it there is
+         no way back once you have opened a repository - you are stuck in one
+         wiki until you go to the terminal, which is the whole thing the
+         homepage exists to avoid. #}
+      <a class="nav-link flex items-center gap-2 py-1.5 px-2 rounded-sm text-ink-soft text-[13.5px] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:bg-accent-soft [&.active]:text-accent [&.active]:font-medium" href="{{ home_href }}" data-hub-home title="Back to the Codepedia homepage">
         <svg class="nav-icon flex-none opacity-85" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>
         Home
+      </a>
+      {# The wiki's own front page keeps its place in the nav under its real
+         name, so repointing "Home" above costs no reachability. #}
+      <a class="nav-link flex items-center gap-2 py-1.5 px-2 rounded-sm text-ink-soft text-[13.5px] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:bg-accent-soft [&.active]:text-accent [&.active]:font-medium{{ ' active' if is_home_page else '' }}" href="{{ home_href }}">
+        <svg class="nav-icon flex-none opacity-85" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 4v6h6"/></svg>
+        Overview
       </a>
       <a class="nav-link flex items-center gap-2 py-1.5 px-2 rounded-sm text-ink-soft text-[13.5px] hover:bg-sunken hover:text-ink hover:no-underline [&.active]:bg-accent-soft [&.active]:text-accent [&.active]:font-medium{{ ' active' if is_diagrams_page else '' }}" href="{{ diagrams_href }}">
         <svg class="nav-icon flex-none opacity-85" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>

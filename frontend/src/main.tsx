@@ -7,11 +7,19 @@ import { ThemeToggle } from "./components/ThemeToggle";
 import { captureApiTokenFromUrl } from "./lib/apiToken";
 import { enhanceDiagrams, installDiagramThemeSync } from "./lib/diagramViewport";
 import { installFragmentScrolling } from "./lib/fragmentScroll";
+import { captureHubOriginFromUrl, installHubHomeLinks } from "./lib/hubLink";
 import "./styles.css";
 
 // Before anything mounts: ChatPanel fires a history request on its first
 // render if the URL names a session, and that request needs the token.
 captureApiTokenFromUrl();
+
+// Where "back to the homepage" points. The wiki is generated long before any
+// hub exists, so the template ships the wiki's own overview page as the href
+// and this repoints it - which also means the links still go somewhere with
+// scripting unavailable.
+captureHubOriginFromUrl();
+installHubHomeLinks();
 
 function mount(elementId: string, node: ReactNode): void {
   const container = document.getElementById(elementId);

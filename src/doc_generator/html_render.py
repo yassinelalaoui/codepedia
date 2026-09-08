@@ -215,6 +215,10 @@ def render_page_html(
         nav_features=nav_entries,
         page_toc=page_toc,
         is_diagrams_page=output_path_html == DIAGRAMS_INDEX_OUTPUT_HTML,
+        # Marks the sidebar's "Overview" entry, which is this wiki's own front
+        # page. "Home" beside it leaves for the launcher instead, so the two
+        # need to be distinguishable.
+        is_home_page=output_path_html == HOME_OUTPUT_HTML,
         generated_at=datetime.now(timezone.utc).isoformat(),
         # Empty whenever the commit is unknown (not a git checkout, unborn
         # branch); the template then omits the provenance entirely rather than
