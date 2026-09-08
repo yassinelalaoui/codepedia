@@ -23,7 +23,15 @@ flowchart LR
         ucEmbed(["Build the searchable\nvector index"])
         ucDocs(["Generate the documentation wiki"])
         ucServe(["codepedia serve\n(resume an indexed repo, watcher active)"])
-        ucConfig(["codepedia config\n(choose local LLM/embedding model)"])
+        ucConfig(["codepedia config\n(connection settings for local: entries)"])
+        ucProvider(["codepedia provider\n(choose each stage's provider chain)"])
+        ucHome(["codepedia home\n(open the launcher homepage)"])
+        ucAnalyseFromPage(["Analyse a repository\nby typing its path"])
+        ucWatchProgress(["Watch a run advance\nstage by stage"])
+        ucStopRun(["Stop a run in progress"])
+        ucHistory(["Browse previously\nanalysed repositories"])
+        ucReopen(["Reopen an analysed repository"])
+        ucForget(["Remove a stored analysis\n(never the repository)"])
         ucCheckModels(["Verify local LLM/embedding\nmodel availability"])
         ucCheckVersion(["codepedia --version\n(confirm the install worked)"])
         ucBrowse(["Browse documentation pages"])
@@ -32,7 +40,8 @@ flowchart LR
         ucAsk(["Ask a question and get a\ncited, grounded answer"])
         ucWatch(["Watch the repository for changes"])
         ucReindex(["Incrementally re-index\njust what changed"])
-        ucFailClear(["Fail clearly instead of using\na remote/cloud service"])
+        ucFailover(["Fail over to the next provider\nin the configured chain"])
+        ucFailClear(["Fail clearly when every provider\nin the chain is unavailable"])
     end
 
     operator --> ucScan
@@ -44,7 +53,17 @@ flowchart LR
     operator --> ucServe
     ucServe -->|include| ucCheckModels
     operator --> ucConfig
+    operator --> ucProvider
     operator --> ucCheckVersion
+    operator --> ucHome
+    ucHome -->|include| ucHistory
+    ucHome -->|include| ucAnalyseFromPage
+    ucAnalyseFromPage -->|include| ucIndex
+    ucAnalyseFromPage -->|include| ucWatchProgress
+    ucWatchProgress -->|extend| ucStopRun
+    ucHistory -->|extend| ucReopen
+    ucHistory -->|extend| ucForget
+    ucReopen -->|include| ucServe
 
     reader --> ucBrowse
     reader --> ucSearch
@@ -59,8 +78,9 @@ flowchart LR
     ucReindex -->|include| ucEmbed
     ucReindex -->|include| ucDocs
 
-    ucSummarize -->|extend| ucFailClear
-    ucAsk -->|extend| ucFailClear
-    ucEmbed -->|extend| ucFailClear
+    ucSummarize -->|extend| ucFailover
+    ucAsk -->|extend| ucFailover
+    ucEmbed -->|extend| ucFailover
+    ucFailover -->|extend| ucFailClear
     ucCheckModels -->|extend| ucFailClear
 ```

@@ -37,10 +37,11 @@ this file" or "just these symbols" as an alternative to "the whole repository."
 
 ## System layers
 
-Every package under `src/` belongs to one of six layers. Packages within a layer
-don't depend on each other; dependencies only flow downward (a later layer depends on
-earlier ones, never the reverse) — see `docs/diagrams/class-diagram.md` for the
-cross-package relationships this produces.
+Every package under `src/` belongs to one of seven layers, plus a small set of
+cross-cutting supporting packages. Packages within a layer don't depend on each
+other; dependencies only flow downward (a later layer depends on earlier ones,
+never the reverse) — see `docs/diagrams/class-diagram.md` for the cross-package
+relationships this produces.
 
 ### 1. Ingestion & Analysis
 
@@ -101,7 +102,27 @@ every layer above; nothing depends on it.
 
 | Package | Responsibility |
 |---|---|
-| `cli` | The `codepedia` command (`index`/`serve`/`config`/`scan`/`provider`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active; `config` sets connection settings (endpoint/timeout) for any `local:` chain entry; `provider chain set <stage> <provider:model>...`/`provider mode full-local` (029) change which providers a stage's chain actually uses. A Typer-callback-enforced disclosure gate (`cli.disclosure`) blocks `index`/`serve`/`provider` until the operator explicitly acknowledges the three chains' current providers, re-triggered whenever that combination actually changes. |
+| `cli` | The `codepedia` command (`index`/`serve`/`config`/`scan`/`provider`/`home`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active, and (037) runs one generation pass first so a wiki written by older templates or an older UI bundle is brought up to date before it is served; `config` sets connection settings (endpoint/timeout) for any `local:` chain entry; `provider chain set <stage> <provider:model>...`/`provider mode full-local` (029) change which providers a stage's chain actually uses; `home` (037) starts the launcher described in layer 7. A Typer-callback-enforced disclosure gate (`cli.disclosure`) blocks `index`/`serve`/`provider`/`home` until the operator explicitly acknowledges the three chains' current providers, re-triggered whenever that combination actually changes. |
+| `progress_stream` | (037) An environment-gated emitter: with `CODEPEDIA_PROGRESS_STREAM=1` set, the pipeline additionally writes sentinel-prefixed JSON progress events to stdout, alongside — never instead of — what it already prints. Unset, every call is a no-op, which is what keeps the CLI's output identical for anyone running it themselves. Only layer 7 sets it. |
+
+### 7. Launcher
+
+(037) A second entry point, above `cli` rather than beside it: it does not run
+the pipeline, it runs the `cli` command. Nothing depends on it, and removing it
+would leave every layer below untouched.
+
+| Package | Responsibility |
+|---|---|
+| `hub_server` | The `codepedia home` homepage: a loopback server owning `/`, with an index bar, live progress for the current run, and an analyse history reconstructed by scanning `~/.codepedia/repos/`. It launches `python -m cli index` or `serve` as a **child process** and reads that child's progress from its stdout. Running the real command out-of-process is what makes stopping a run possible at all — `run_index` blocks inside provider calls in thread pools Python cannot interrupt — and means a crash in the pipeline is an exit code rather than a dead server. |
+
+### Supporting packages
+
+Cross-cutting helpers that belong to no layer; every layer may use them.
+
+| Package | Responsibility |
+|---|---|
+| `sqlite_support` | Shared SQLite connection and checkpoint helpers, so each owning package's store does not re-implement them. |
+| `http_support` | Shared HTTP client construction and timeout handling for the remote provider calls in layer 2. |
 
 ## Data flow
 
@@ -193,6 +214,15 @@ stays out of that table and is surfaced on the console instead.
   directory holding it is about to be replaced.
 - `doc_generator` — the page manifest (what was generated, its content hash, its
   links) used to compute incremental regeneration impact.
+- `hub_server` — (037) `~/.codepedia/runs.sqlite`, the launcher's run log: one
+  row per analysis, holding its outcome and, for a failure, the stage and the
+  providers attempted. Bounded to the newest 50 rows and pruned on every
+  append. Deliberately **not** inside a repository's own state directory: a run
+  record has to outlive the analysis it describes, and a failed run leaves no
+  state directory at all while "remove this repository" deletes one outright.
+  A row is written with a NULL outcome when a run starts, so a row still NULL
+  at the next startup can only belong to a run whose process died — one UPDATE
+  resolves it, and no liveness tracking is needed.
 
 Each store is only ever written by its owning package. This trades a small amount of
 duplicated connection/schema boilerplate for simple ownership: no component needs to

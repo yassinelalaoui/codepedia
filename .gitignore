@@ -64,6 +64,9 @@ frontend/dist/
 # built PDF) - added 2026-08-31 when pfa.tex was split into docs/pfa/.
 docs/pfa/
 docs/pfa.tex
+# Figures used only by the report sources above (company logos, org charts,
+# client/partner slides) - untracked 2026-09-04, nothing else references them.
+docs/imgs/
 docs/*.aux
 docs/*.log
 docs/*.out

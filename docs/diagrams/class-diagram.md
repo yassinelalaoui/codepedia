@@ -337,6 +337,15 @@ classDiagram
             <<function, serve_command.py>>
             +run_serve(repo_path, config) IndexRunResult
         }
+        class run_home {
+            <<function, home_command.py>>
+            +run_home(host, port)
+        }
+        class progress_stream {
+            <<module, progress_stream.py>>
+            +enabled() bool
+            +emit(event_type, **fields)
+        }
         class run_config {
             <<function, config_command.py>>
             +run_config(llm_model, llm_endpoint, llm_generate_timeout, embedding_model, embedding_endpoint, embedding_generate_timeout, show)
@@ -371,6 +380,71 @@ classDiagram
 
     %% Cross-package data flow
     CLIConfiguration ..> ProviderChain : embeddingChain/summaryChain/chatChain entries
+    namespace hub_server {
+        class HubState {
+            <<app.py>>
+            +currentRun RunState
+            +servers dict
+            +start_run(kind, repository_path, args) RunState
+            +cancel_current() RunState
+            +shutdown()
+        }
+        class RunState {
+            <<runs.py>>
+            +runId str
+            +kind str
+            +stages list~StageState~
+            +outcome str
+            +version int
+            +apply(event)
+            +finish(outcome)
+            +snapshot() dict
+        }
+        class StageState {
+            <<runs.py>>
+            +name str
+            +status str
+            +completed int
+            +total int
+        }
+        class ProgressEvent {
+            <<progress_parse.py>>
+            +seq int
+            +type str
+            +stage str
+            +payload dict
+        }
+        class ChildProcess {
+            <<children.py>>
+            +pid int
+            +url str
+            +start_reader()
+            +terminate()
+        }
+        class RunLog {
+            <<run_log.py>>
+            +append(run_id, repository_path, kind)
+            +close(run_id, outcome)
+            +prune(keep)
+            +sweep_interrupted() int
+            +recent(limit) list~RunRecord~
+        }
+        class RunRecord {
+            <<run_log.py>>
+            +runId str
+            +outcome str
+            +failedStage str
+            +providersAttempted tuple
+        }
+        class HistoryEntry {
+            <<history.py>>
+            +stateId str
+            +repositoryPath str
+            +lastIndexedAt str
+            +available bool
+        }
+    }
+
     run_index ..> FailoverExecutor : builds embeddings/summary/chat executors
     run_index ..> ScanResult : scan_repository()
     run_index ..> DocGenerator : structure + content passes
@@ -400,4 +474,17 @@ classDiagram
     IncrementalReindexPipeline ..> CodeSummaryPipeline : targeted regeneration
     IncrementalReindexPipeline ..> VectorIndex : targeted re-embed
     IncrementalReindexPipeline ..> DocGenerator : targeted regeneration
+    run_home ..> HubState : creates via create_hub_app()
+    HubState ..> RunState : one non-terminal run at a time
+    HubState ..> RunLog : records every terminal outcome
+    HubState ..> ChildProcess : launches python -m cli index / serve
+    ChildProcess ..> run_index : as a child process, never in-process
+    ChildProcess ..> run_serve : as a child process, never in-process
+    ChildProcess ..> ProgressEvent : parses child stdout
+    ProgressEvent ..> RunState : apply(event)
+    RunState *-- StageState : ten, in pipeline order
+    RunLog ..> RunRecord : returns
+    HubState ..> HistoryEntry : scans ~/.codepedia/repos/
+    run_index ..> progress_stream : emit() beside every echo
+    run_serve ..> progress_stream : emit() beside every echo
 ```

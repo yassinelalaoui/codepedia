@@ -244,6 +244,17 @@ boilerplate, and binds to `127.0.0.1` by default — matching constitution 2.2 d
 wiki + chat API) rather than two was a deliberate simplicity choice, not a technical
 necessity.
 
+**A second FastAPI app for the launcher (037)**, `hub_server`, built with the same
+stack and reusing `chat_api.security`'s token and allowed-hosts checks rather than
+restating them. It is a separate app rather than more routes on the chat API: the two
+share no routes and no state, and leaving `create_app` untouched is what keeps the
+guarantee that the existing commands behave identically. Progress reaches the page
+over **server-sent events** — Starlette's `StreamingResponse` with
+`text/event-stream`, the same construction chat streaming already uses, so no new
+dependency. SSE rather than polling because a run can last forty minutes, and
+`EventSource` reconnects on its own, which is most of "a run survives the browser
+closing" for free. No new Python dependency was added for any of this.
+
 ## File watching
 
 **`watchdog`** (added in 017) — wraps each OS's native file-change notification API
@@ -265,6 +276,17 @@ a **classic (non-`type="module"`) IIFE bundle** and committed into
 - The built bundle is committed to the repo, not built on the fly — so
   `doc_generator`'s output never depends on Node/npm being available at
   documentation-generation time, only at frontend-development time.
+
+**Two bundles out of one project (037).** `vite.hub.config.ts` builds the launcher
+page into `src/hub_server/assets/hub-ui.{js,css}`, alongside the wiki bundle. A second
+Vite *invocation* rather than a second entry, because `build.lib` in IIFE format takes
+exactly one entry. The two share `styles.css`, `ThemeToggle.tsx`, `theme.ts` and
+`apiToken.ts`, which is what makes the homepage look like the same product without a
+second palette to keep in step — but the homepage's own styles live in `hub.css`,
+imported only from the homepage entry, so none of it reaches a generated wiki. The
+homepage is served over loopback and may talk to its own origin; the wiki's
+zero-fetch guarantee is unaffected, and a test asserts no homepage endpoint or style
+appears in the wiki bundle.
 
 The chat panel (`ChatPanel.tsx`, 028) renders assistant answers as
 structured content instead of plain text: **`react-markdown`** (Markdown to

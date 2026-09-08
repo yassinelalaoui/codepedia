@@ -103,7 +103,9 @@ picture and *why* it's built this way.
   and report clearly if no provider in a stage's chain is reachable, rather
   than failing silently.
   - **Needs one of the above**: `codepedia index`, and the AI-backed
-    parts of `codepedia serve` (summarization, embedding, chat).
+    parts of `codepedia serve` (summarization, embedding, chat). `codepedia
+    home` starts without any provider — it is only the runs you launch *from*
+    it that need one.
   - **Doesn't need either**: `codepedia scan`, `codepedia config`
     (configuring or viewing your settings works regardless of what's
     installed/configured yet).
@@ -167,7 +169,21 @@ npm install
 
 ## Running it
 
-`codepedia` is the single command-line entry point, with four subcommands:
+`codepedia` is the command-line entry point, with six subcommands. Most of the
+time you only need the first one:
+
+**Open the homepage** — the everyday way in. Starts a local launcher page where
+you can analyse a repository by typing its path, watch that run advance stage by
+stage, and reopen anything you have analysed before:
+
+```bash
+codepedia home
+```
+
+It prints a URL carrying a one-run token — keep it private, because it authorises
+starting and removing analyses on this machine. The page binds to `127.0.0.1`
+only. Everything below is still available, and the homepage runs exactly these
+commands for you rather than reimplementing them.
 
 **Index a repository** — the one-command path from a fresh repository to a
 browsable wiki. Scans, parses, extracts symbols, builds the dependency
@@ -196,6 +212,14 @@ saved edits are reflected automatically without re-running `index`:
 ```bash
 codepedia serve /path/to/some/repository
 ```
+
+Serving also brings the wiki's shell up to date first. A generated wiki is a
+snapshot: its HTML came from the templates as they stood when it was written,
+and its copy of the UI bundle is from that same day. Neither is refreshed by the
+watcher, which only runs when a source file changes — so opening an older
+analysis used to show an older wiki with no way to tell. `serve` now runs one
+generation pass before serving, which costs nothing when the wiki is already
+current and needs no provider when it is not.
 
 > **Upgrading from an index built before symbol ids became line-independent**
 > — re-run `codepedia index` once. Symbol ids no longer encode a line range,
