@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codepedia</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="/hub-ui.css" />
+    <script>
+      // Before first paint, deliberately inline and blocking: spec FR-044b
+      // requires returning to the homepage never flash the wrong appearance.
+      // A deferred bundle would paint light, then correct itself.
+      (function () {
+        // Publishing the key here lets lib/theme.ts and ThemeToggle.tsx be
+        // reused byte-for-byte from the wiki: that module already derives its
+        // key from this global. The homepage is its own origin, so its choice
+        // is its own and never travels to or from a wiki (spec FR-044b).
+        window.__WIKI_THEME__ = { storageKey: "codepedia:theme:hub" };
+        try {
+          var choice = localStorage.getItem("codepedia:theme:hub");
+          if (choice === "light" || choice === "dark") {
+            document.documentElement.dataset.theme = choice;
+          }
+        } catch (error) {
+          // Private mode, or site data blocked. The OS preference still
+          // applies through CSS, which is the documented fallback
+          // (spec FR-044c).
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="/hub-ui.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Codepedia">
+  <title>Codepedia app icon / favicon</title>
+  <rect width="256" height="256" rx="56" fill="#14274A"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round">
+    <path d="M92 76 V180"/>
+    <path d="M92 140 C92 106 114 90 150 90"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="92" cy="76" r="20"/>
+    <circle cx="92" cy="180" r="20"/>
+  </g>
+  <circle cx="166" cy="90" r="20" fill="#8FB8EA"/>
+</svg>

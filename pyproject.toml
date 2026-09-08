@@ -50,6 +50,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 doc_generator = ["templates/*.jinja", "assets/*"]
+# The hub's page bundle and brand assets travel with the package, the same way
+# the wiki's do - a generated wiki and the homepage both have to work from an
+# installed copy, not from the repository they were built in (spec FR-043).
+hub_server = ["assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
