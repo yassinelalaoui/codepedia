@@ -27,10 +27,10 @@ from repository_metadata.sqlite_store import copy_summary_ledger, stable_reposit
 from sqlite_support import checkpoint_and_close
 from vector_index import VectorIndex
 
-from . import paths
+from . import paths, progress_stream
 from .availability import check_ai_dependencies
 from .config import CLIConfiguration
-from .errors import RepositoryNotFoundError
+from .errors import LocalModelUnavailableError, RepositoryNotFoundError
 
 # A directory just closed by sqlite/other local I/O can briefly stay locked
 # on Windows (e.g. antivirus/indexer scanning it right after it's written),
@@ -127,10 +127,100 @@ def _echo_summary_progress(completed: int, total: int, symbol: Symbol) -> None:
     """`CodeSummaryPipeline` already serializes this call under its own lock,
     so no lock is needed here - see `SummaryProgressCallback`."""
     typer.echo(f"  [{completed}/{total}] {symbol.kind} {symbol.name}")
+    # Summarization dominates the wall clock, so this is the event spec FR-015
+    # exists for: without it the bar would sit still for the majority of a run.
+    progress_stream.emit(
+        "items",
+        stage=Stage.SUMMARIZING.name,
+        completed=completed,
+        total=total,
+        item=f"{symbol.kind} {symbol.name}",
+    )
 
 
 def _echo_embedding_progress(completed: int, total: int, relative_path: str) -> None:
     typer.echo(f"  [{completed}/{total}] {relative_path}")
+    progress_stream.emit(
+        "items",
+        stage=Stage.EMBEDDING.name,
+        completed=completed,
+        total=total,
+        item=relative_path,
+    )
+
+
+# Which stage the pipeline is inside, for attributing a failure to it. A plain
+# module global rather than a parameter threaded through every call: spec FR-012
+# guarantees one analysis per process, so there is exactly one answer at a time,
+# and the alternative would touch every function signature in this file.
+_current_stage: "Stage | None" = None
+
+# `check_ai_dependencies` names the stage whose chain refused, in its message.
+# Mapping that back to the configured chain is what lets a failure say *which*
+# providers were tried rather than just that something was unavailable
+# (spec FR-022).
+_STAGE_CHAIN_FIELDS = {
+    "embeddings": "embeddingChain",
+    "summary": "summaryChain",
+    "chat": "chatChain",
+}
+
+
+def _emit_failure(stage: "Stage | None", error: BaseException, config: CLIConfiguration | None = None) -> None:
+    """Report a run's cause of death on the progress channel.
+
+    The hub does not rely on this to *detect* failure - a non-zero exit code is
+    authoritative, and a child killed outright emits nothing at all
+    (contracts/run-progress-stream.md, reader obligation 6). This supplies the
+    diagnosis that turns "it failed" into something a person can act on.
+    """
+    attempted: tuple[str, ...] = getattr(error, "attempted", ()) or ()
+    stage_name = getattr(error, "stage", None)
+    if not attempted and config is not None:
+        message = str(error)
+        for chain_stage, field in _STAGE_CHAIN_FIELDS.items():
+            if f"'{chain_stage}'" in message:
+                attempted = tuple(getattr(config, field, ()) or ())
+                stage_name = stage_name or chain_stage
+                break
+    progress_stream.emit(
+        "failed",
+        stage=stage.name if stage is not None else None,
+        chain=stage_name,
+        message=str(error),
+        providers=list(attempted),
+    )
+
+
+@dataclass(slots=True)
+class _EmittingFailoverLog:
+    """Wrap the real failover log so a switch reaches the homepage too.
+
+    Constitution 2.3 permits automatic failover only inside a configured chain,
+    and requires every switch stay visible. The durable record in
+    `engine_failover_log` is unchanged and is written first: if it raises, this
+    behaves exactly as `PathFailoverLog` alone did, and nothing is emitted for a
+    switch that was never recorded (spec FR-017).
+    """
+
+    inner: PathFailoverLog
+
+    def __call__(
+        self, *, stage: str, attempted_provider: str, result_provider: Optional[str], reason: str
+    ) -> None:
+        self.inner(
+            stage=stage,
+            attempted_provider=attempted_provider,
+            result_provider=result_provider,
+            reason=reason,
+        )
+        progress_stream.emit(
+            "failover",
+            chain=stage,
+            fromProvider=attempted_provider,
+            toProvider=result_provider,
+            reason=reason,
+        )
 
 
 def _echo_backoff(*, stage: str, provider: str, delay_seconds: float, wait_number: int, max_waits: int) -> None:
@@ -144,6 +234,18 @@ def _echo_backoff(*, stage: str, provider: str, delay_seconds: float, wait_numbe
     typer.echo(
         f"  rate limited by {provider} ({stage}); waiting {delay_seconds:.1f}s "
         f"before retry {wait_number}/{max_waits}"
+    )
+    # Constitution 2.3 requires an automatic switch never be silent "in
+    # practice". Until now the terminal was the only place it showed; the
+    # homepage is now a second, and for a browser-started run the only one the
+    # person is looking at (spec FR-017).
+    progress_stream.emit(
+        "backoff",
+        chain=stage,
+        provider=provider,
+        delaySeconds=round(delay_seconds, 3),
+        waitNumber=wait_number,
+        maxWaits=max_waits,
     )
 
 
@@ -168,7 +270,14 @@ class _stage:
         self._started = 0.0
 
     def __enter__(self) -> "_stage":
+        global _current_stage
+        _current_stage = self._stage
         typer.echo(self._stage.value)
+        # Alongside the echo, never instead of it (spec FR-016). This is the
+        # single choke point for eight of the ten stages, which is why
+        # contracts/run-progress-stream.md routes them through here rather than
+        # adding an emit beside every call site.
+        progress_stream.emit("stage", stage=self._stage.name, label=self._stage.value)
         self._started = time.perf_counter()
         return self
 
@@ -177,11 +286,16 @@ class _stage:
         # Timed even on failure: how far a failed run got, and how long it took
         # to get there, is exactly what makes it diagnosable.
         typer.echo(f"  {self._stage.value} finished in {elapsed:.1f}s")
+        progress_stream.emit("stage_end", stage=self._stage.name, elapsedSeconds=round(elapsed, 3))
         return False
 
 
 def validate_repo_path(repo_path: Path) -> Path:
     typer.echo(Stage.VALIDATING.value)
+    # One of the two stages announced outside `_stage` (the other is
+    # CHECKING_MODELS), so it needs its own emit to keep the ten-stage list the
+    # homepage draws complete (data-model.md §1).
+    progress_stream.emit("stage", stage=Stage.VALIDATING.name, label=Stage.VALIDATING.value)
     resolved = Path(repo_path).expanduser().resolve()
     if not resolved.exists() or not resolved.is_dir():
         raise RepositoryNotFoundError(
@@ -200,7 +314,7 @@ def _build_stage_executors(
     `PathFailoverLog` (connects fresh per event, never holds the metadata db
     open) rather than one long-lived connection, so nothing here can block a
     later rename/replace of that file on Windows."""
-    failover_log = PathFailoverLog(metadata_db_path, connect_metadata_db)
+    failover_log = _EmittingFailoverLog(PathFailoverLog(metadata_db_path, connect_metadata_db))
     # The two indexing stages announce their rate-limit waits; chat does not,
     # because `FailoverExecutor.stream` - the only path chat uses - carries no
     # backoff and would never call it.
@@ -237,10 +351,18 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     staging_dir.mkdir(parents=True, exist_ok=True)
 
     typer.echo(Stage.CHECKING_MODELS.value)
+    progress_stream.emit("stage", stage=Stage.CHECKING_MODELS.name, label=Stage.CHECKING_MODELS.value)
     embeddings_executor, summary_executor, chat_executor = _build_stage_executors(
         config, paths.metadata_db_path(staging_dir)
     )
-    check_ai_dependencies(embeddings=embeddings_executor, summary=summary_executor, chat=chat_executor)
+    try:
+        check_ai_dependencies(embeddings=embeddings_executor, summary=summary_executor, chat=chat_executor)
+    except LocalModelUnavailableError as error:
+        # The most common failure on a machine with no reachable provider, and
+        # the one spec FR-022 most needs named: report which stage refused
+        # before re-raising, so the homepage can say more than "it failed".
+        _emit_failure(Stage.CHECKING_MODELS, error, config)
+        raise
 
     try:
         _run_pipeline(
@@ -251,7 +373,13 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
             config=config,
             previous_state_dir=final_state_dir,
         )
-    except Exception:
+    except Exception as error:
+        # Emitted before the cleanup, while `_current_stage` still names where
+        # the run died. The staging directory goes either way: a failed run
+        # keeps nothing, which is exactly what spec FR-023 requires the
+        # homepage to say out loud rather than leave to be inferred from a
+        # column of ticked stages.
+        _emit_failure(_current_stage, error, config)
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
 

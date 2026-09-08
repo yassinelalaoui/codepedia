@@ -6,8 +6,9 @@ from typing import Any
 import typer
 import uvicorn
 from chat_api.app import create_app
-from chat_api.security import allowed_hosts_for, generate_token, startup_lines
+from chat_api.security import TOKEN_QUERY_PARAM, allowed_hosts_for, generate_token, startup_lines
 
+from . import progress_stream
 from .errors import ServerBindError
 
 
@@ -38,6 +39,12 @@ def start_local_server(
     )
     for line in startup_lines(host, port, token):
         typer.echo(line)
+    # The hub's readiness signal and the child's credential in one event. It
+    # also matches the human-readable line above, which `hub_server.children`
+    # falls back to parsing - but an explicit event means the homepage does not
+    # depend on that sentence's wording never changing
+    # (contracts/run-progress-stream.md).
+    progress_stream.emit("server_ready", url=f"http://{host}:{port}/?{TOKEN_QUERY_PARAM}={token}")
     try:
         uvicorn.run(app, host=host, port=port)
     except SystemExit as exc:

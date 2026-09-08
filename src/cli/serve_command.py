@@ -13,11 +13,66 @@ from repository_metadata.sqlite_store import stable_repository_id
 from provider_routing import PathFailoverLog, build_stage_executor
 from vector_index import VectorIndex
 
-from . import paths
+from . import paths, progress_stream
 from .availability import check_ai_dependencies
 from .config import CLIConfiguration
 from .errors import IndexNotFoundError
-from .index_command import IndexRunResult, validate_repo_path
+from .index_command import IndexRunResult, Stage, validate_repo_path
+
+
+def _emit_catchup_progress(phase: str, completed: int, total: int, relative_path: str) -> None:
+    """Surface the previously-invisible catch-up re-index (research.md §3)."""
+    progress_stream.emit(
+        "catchup",
+        phase=phase,
+        completed=completed,
+        total=total,
+        path=relative_path,
+    )
+
+
+def _refresh_wiki_shell(doc_generator: DocGenerator, root: Path) -> None:
+    """Bring an already-generated wiki up to date with this build, before serving it.
+
+    A generated wiki is a snapshot, not a live view: its HTML came from the
+    Jinja templates as they stood the day it was written, and its
+    `assets/wiki-ui.js` is a copy of the bundle from that same day. Nothing
+    refreshed either afterwards. The watcher only runs when a *source file*
+    changes, so a repository whose code has not moved since it was analysed was
+    served from its original shell forever - with no way for a reader to tell,
+    and no way to reach anything the shell gained since.
+
+    That produced two symptoms with one cause: a wiki whose sidebar predates the
+    homepage has no link back to it, and a wiki carrying an older bundle is
+    missing every improvement made to the wiki UI since.
+
+    The pass itself is cheap when nothing moved. `template_fingerprint` is a
+    hash comparison, and `ensure_wiki_ui_assets` compares bytes before writing,
+    so an up-to-date wiki costs a few reads and rewrites nothing. When the
+    templates *have* moved the generator rebuilds every page rather than leaving
+    half the wiki on the old shell, which is what its fingerprint check exists
+    for.
+
+    Crucially it consults no provider: summaries are read from the metadata
+    store and the feature plan is cached in the manifest, so this still works on
+    a machine where no chain is reachable.
+    """
+    # Reuses the pipeline's own stage name, so a hub-launched serve lights up a
+    # stage the homepage already knows how to draw instead of needing a new
+    # event type (contracts/run-progress-stream.md).
+    progress_stream.emit(
+        "stage",
+        stage=Stage.GENERATING_DOCS_CONTENT.name,
+        label=Stage.GENERATING_DOCS_CONTENT.value,
+    )
+    refreshed = doc_generator.generateRepositoryDocumentation(root, incremental=True)
+    progress_stream.emit("stage_end", stage=Stage.GENERATING_DOCS_CONTENT.name, elapsedSeconds=0.0)
+
+    # Silent when there was nothing to do, which is the common case - a person
+    # running `codepedia serve` on an up-to-date wiki sees exactly what they saw
+    # before.
+    if refreshed.pages:
+        typer.echo(f"Rebuilt {len(refreshed.pages)} wiki page(s) for this version of the templates.")
 
 
 def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
@@ -86,9 +141,27 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         docGenerator=doc_generator,
     )
 
+    def _run_batch(batch) -> None:  # noqa: ANN001 - ChangeBatch, matching on_batch's signature
+        """Run a change batch, reporting per-file progress on the hub channel.
+
+        `watcher.start()` runs `compute_catchup_batch` synchronously *before*
+        `start_local_server` prints the URL (`repo_watcher/watcher.py:51-53`),
+        so a hub-launched `serve` reports everything it is bringing up to date
+        and only then hands over the address. That ordering is what makes spec
+        FR-019 and FR-035 fall out in sequence with no extra coordination - and
+        why a repository with nothing to catch up emits no `catchup` event at
+        all, which is spec FR-020's "no empty progress display".
+
+        With `CODEPEDIA_PROGRESS_STREAM` unset every emit is a no-op, so a
+        person's own `codepedia serve` prints exactly what it always did.
+        """
+        reindex_pipeline.run(batch, on_progress=_emit_catchup_progress)
+
+    _refresh_wiki_shell(doc_generator, root)
+
     watcher = RepositoryWatcher(
         repository_root=root,
-        on_batch=reindex_pipeline.run,
+        on_batch=_run_batch,
         metadata_store=metadata_store,
     )
     typer.echo("Starting repository watcher...")

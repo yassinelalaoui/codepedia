@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
+
+# (phase, completed, total, relative_path). Reported per file rather than per
+# symbol: the caller that wants this - `codepedia home`, via `serve` - is
+# drawing a bar for work measured in files changed since the repository was
+# last opened (contracts/run-progress-stream.md's `catchup` event).
+ReindexProgressCallback = Callable[[str, int, int, str], None]
 
 from dependency_graph import DependencyGraph
 from doc_generator import DocGenerator
@@ -51,7 +57,16 @@ class IncrementalReindexPipeline:
         self._ignoreMatcher = load_ignore_matcher(self.repositoryRoot)
         self._docsScope = load_docs_scope(self.repositoryRoot)
 
-    def run(self, batch: ChangeBatch) -> ReindexOutcome:
+    def run(self, batch: ChangeBatch, *, on_progress: ReindexProgressCallback | None = None) -> ReindexOutcome:
+        """`on_progress` defaults to `None`, and that default is deliberate.
+
+        This pipeline printed nothing at all before feature 037 - the catch-up
+        that runs when `serve` starts was, and by default still is, entirely
+        silent. Adding an optional callback rather than an unconditional print
+        is what lets `codepedia home` show that work (spec FR-019) while a
+        person's own `codepedia serve` keeps producing byte-identical output
+        (spec FR-002, research.md §3).
+        """
         # First, before any page is regenerated below. `serve` keeps this process
         # alive across commits, and every page this pass writes stamps the
         # repository's recorded HEAD in its footer - which, read only once at
@@ -86,8 +101,10 @@ class IncrementalReindexPipeline:
         reprocessed: list[str] = []
         failed: list[str] = []
         inventories = []
-        for relative_path in candidates:
+        for index, relative_path in enumerate(candidates, start=1):
             inventory = self._reparse_and_store(relative_path, classifications[relative_path].language)
+            if on_progress is not None:
+                on_progress("parsing", index, len(candidates), relative_path)
             if inventory is None:
                 failed.append(relative_path)
                 continue
@@ -135,7 +152,7 @@ class IncrementalReindexPipeline:
         # because lines moved above it.
         embedding_cache = EmbeddingCache()
         embedding_cache.seed_from_index(self.vectorIndex)
-        for relative_path in reprocessed:
+        for index, relative_path in enumerate(reprocessed, start=1):
             update_embeddings(
                 repository_root=self.repositoryRoot,
                 relative_path=relative_path,
@@ -144,6 +161,8 @@ class IncrementalReindexPipeline:
                 embedding_engine=self.embeddingEngine,
                 embedding_cache=embedding_cache,
             )
+            if on_progress is not None:
+                on_progress("embedding", index, len(reprocessed), relative_path)
         for relative_path in to_remove:
             remove_embeddings(relative_path=relative_path, vector_index=self.vectorIndex)
 
