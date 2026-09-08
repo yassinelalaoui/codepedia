@@ -27,11 +27,25 @@ export function RunOutcome({ run, onRetry, onDismiss, onOpen, retrying = false }
 
   const succeeded = run.outcome === "succeeded";
   const cancelled = run.outcome === "cancelled";
+  const opened = run.kind === "open";
 
   return (
     <section className={`run-outcome run-outcome--${run.outcome}`} aria-label="Analysis result" role="status">
       <h2 className="run-outcome__title">
-        {succeeded ? "Analysis complete" : cancelled ? "Analysis stopped" : "Analysis failed"}
+        {/* An `open` run analysed nothing - it started a server for a
+            repository that was already analysed - so calling it an analysis
+            would be wrong on the one screen that has to be trustworthy. */}
+        {succeeded
+          ? opened
+            ? "Repository opened"
+            : "Analysis complete"
+          : cancelled
+            ? opened
+              ? "Opening stopped"
+              : "Analysis stopped"
+            : opened
+              ? "Could not open the repository"
+              : "Analysis failed"}
       </h2>
 
       <p className="run-outcome__path" title={run.repositoryPath}>

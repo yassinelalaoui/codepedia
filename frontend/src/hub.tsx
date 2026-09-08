@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 // The wiki's tokens and base styles first, then the homepage's own on top.
@@ -58,6 +58,11 @@ export function HubPage(): JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // Which open we are actually waiting to be taken to. Without this, *any*
+  // finished open with a server URL would send this tab to that wiki - which
+  // meant returning to the homepage bounced you straight back out of it, with
+  // no way to ever stay here.
+  const followingOpen = useRef<string | null>(null);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -95,8 +100,11 @@ export function HubPage(): JSX.Element {
     if (outcome !== null) void refreshHistory();
   }, [outcome, refreshHistory]);
   useEffect(() => {
-    if (serverUrl && run?.kind === "open") goToWiki(serverUrl);
-  }, [serverUrl, run?.kind]);
+    if (!serverUrl || run?.kind !== "open") return;
+    if (followingOpen.current !== run.runId) return;
+    followingOpen.current = null;
+    goToWiki(serverUrl);
+  }, [serverUrl, run?.kind, run?.runId]);
 
   const startRun = useCallback(async (path: string) => {
     setError(null);
@@ -153,7 +161,9 @@ export function HubPage(): JSX.Element {
           return;
         }
         // Catch-up work started; the stream now drives the display and the
-        // navigation happens when `server_ready` arrives (spec FR-019).
+        // navigation happens when `server_ready` arrives (spec FR-019). Record
+        // which run we are following, so only this open takes us away.
+        if (result.runId) followingOpen.current = result.runId;
         const current = await hubApi.currentRun();
         setRun(current.run);
       } catch (thrown) {

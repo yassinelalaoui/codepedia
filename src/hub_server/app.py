@@ -76,11 +76,31 @@ class HubState:
             self.currentRun = run
         self.runLog.append(run_id=run.runId, repository_path=repository_path, kind=kind)
 
+        def on_event(event) -> None:  # noqa: ANN001 - ProgressEvent
+            """Apply the event, and end an `open` run once its server is up.
+
+            An `index` run ends when its process ends. An `open` run does not:
+            the child it starts *is* the wiki server, so waiting for that child
+            to exit means waiting for the reader to close the wiki. Its actual
+            job - get a server listening and report the URL - is finished the
+            moment `server_ready` arrives.
+
+            Leaving it non-terminal had three visible consequences, all the same
+            bug: the homepage kept redirecting back to the wiki because a run
+            with a `serverUrl` looked live, no new analysis could be started
+            because one was apparently already running, and the run log kept a
+            row that a later startup would sweep as interrupted.
+            """
+            run.apply(event)
+            if kind == "open" and event.type == "server_ready" and not run.isTerminal:
+                run.finish(SUCCEEDED)
+                self._record_outcome(run)
+
         child = children.launch(
             kind=kind,
             args=args,
             repository_path=repository_path,
-            on_event=run.apply,
+            on_event=on_event,
             on_line=self._forward,
         )
         child.stateId = state_id
@@ -107,9 +127,10 @@ class HubState:
         """
         code = child.process.wait()
         if run.isTerminal:
-            # Already finished - a cancel got here first, and spec FR-012a's
-            # cancelled outcome must not be relabelled as a failure.
-            self._record_outcome(run)
+            # Already finished - a cancel got here first, or an `open` run
+            # succeeded when its server came up. Its outcome is recorded
+            # already, and spec FR-012a's cancelled outcome must not be
+            # relabelled as a failure by the exit that cancelling caused.
             return
 
         if code == 0:
