@@ -34,3 +34,9 @@ def test_home_page_presents_architecture_summary(tmp_path):
     assert "## Features" in home_page.contentMarkdown
     # The existing flat module list must still be present alongside the summary.
     assert "## Modules" in home_page.contentMarkdown
+    # 038: the run timestamp left the page's content (it made reruns differ),
+    # and the class diagram is reached by its link rather than drawn inline.
+    assert "Last indexed" not in home_page.contentMarkdown
+    assert "```mermaid" not in home_page.contentMarkdown
+    # With no narrator the page opens straight onto the repository facts.
+    assert home_page.contentMarkdown.split("\n", 2)[2].lstrip().startswith("- Repository root:")

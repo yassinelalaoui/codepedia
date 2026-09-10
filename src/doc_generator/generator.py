@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 from dependency_graph import DependencyGraph, DiagramExport
 from repository_metadata import ModuleSymbol, Repository, RepositoryMetadataStore
@@ -23,6 +23,9 @@ from .features.evidence import build_repository_evidence
 from .features.fallback import build_import_adjacency
 from .features.planner import FeaturePlanner
 from .features.validate import Feature, repair
+from .overview.evidence import build_overview_evidence
+from .overview.grounding import GroundedNarrative, ground, render_paragraph
+from .overview.narrator import NarrationOutcome, OverviewNarrator
 from .mermaid_diagram import (
     ClassDiagramSource,
     build_class_diagram_mermaid_source,
@@ -35,7 +38,7 @@ from .models import DocPage, DocumentationSet, EdgeId, PageLink, PageManifestEnt
 from .prose import display_label, is_prose_file
 from .search_index import SearchIndexDocument, build_search_index
 from .use_case_diagram import select_use_cases
-from .writer import DocumentationWriter
+from .writer import DocumentationWriter, _content_hash
 
 
 class DocGenerator:
@@ -57,6 +60,8 @@ class DocGenerator:
         outputRoot: str | Path,
         repositoryRoot: str | Path,
         featurePlanner: FeaturePlanner | None = None,
+        overviewNarrator: OverviewNarrator | None = None,
+        onNotice: Callable[[str], None] | None = None,
     ) -> None:
         self.metadataStore = metadataStore
         self.dependencyGraph = dependencyGraph
@@ -70,6 +75,16 @@ class DocGenerator:
             repositoryId=self.repositoryId,
         )
         self.featurePlanner = featurePlanner
+        # The Overview's narrative (038). Optional exactly as the planner is: a
+        # generator with none writes the same page with no prose at the top.
+        self.overviewNarrator = overviewNarrator
+        # Where "the narrative was omitted, reduced or is out of date" is said -
+        # the CLI passes `typer.echo`. Never onto the page itself (FR-018).
+        self.onNotice = onNotice
+        # False only for `index`'s structure pass, which runs before summaries
+        # exist; narrating there would key the cache on summary-less evidence
+        # and spend a second call on the content pass (038 research Decision 8).
+        self._narrate_overview = True
         self._bundle: RepositoryBundle | None = None
         self._bundle_by_module_id: dict[str, SourceFileBundle] = {}
         self._bundle_by_file_path: dict[str, SourceFileBundle] = {}
@@ -83,7 +98,6 @@ class DocGenerator:
         *,
         classDiagramPage: DocPage | None = None,
         useCaseDiagramPage: DocPage | None = None,
-        classDiagramSource: ClassDiagramSource | None = None,
     ) -> DocPage:
         bundle = self._ensure_bundle()
         modules = sorted((file_bundle.module for file_bundle in bundle.files), key=lambda module: module.name)
@@ -92,6 +106,7 @@ class DocGenerator:
 
         page_links: list[PageLink] = []
         feature_entries: list[dict[str, object]] = []
+        feature_links_by_key: dict[str, PageLink] = {}
         for feature in features:
             feature_page_id, feature_md, _feature_html = self._feature_identity(feature)
             feature_link = links.build_page_link(
@@ -103,7 +118,11 @@ class DocGenerator:
             )
             if feature_link:
                 page_links.append(feature_link)
+                feature_links_by_key[feature.key] = feature_link
             feature_entries.append({"feature": feature, "featureLink": feature_link})
+
+        narrative = self._overview_narrative(features)
+        lead_paragraphs = [render_paragraph(paragraph, feature_links_by_key) for paragraph in narrative.lead]
         class_diagram_link: PageLink | None = None
         if classDiagramPage is not None:
             class_diagram_link = links.build_page_link(
@@ -155,7 +174,7 @@ class DocGenerator:
             module_entries.append({"module": module, "moduleLink": module_link, "diagramLink": diagram_link})
 
         repository_name = Path(repository.rootPath).name or repository.rootPath
-        title = f"{repository_name} — Documentation"
+        title = f"{repository_name} â€” Documentation"
         content = render_markdown_template(
             "home.md.jinja",
             repository=repository,
@@ -165,7 +184,8 @@ class DocGenerator:
             architecture_summary=architecture_summary,
             class_diagram_link=class_diagram_link,
             use_case_diagram_link=use_case_diagram_link,
-            class_diagram_source=classDiagramSource,
+            lead_paragraphs=lead_paragraphs,
+            lead_is_stale=narrative.isStale,
         )
         referenced_page_ids: set[str] = set()
         html = self._render_page(
@@ -186,6 +206,83 @@ class DocGenerator:
             outputPathHtml=links.HOME_OUTPUT_HTML,
             links=tuple(page_links),
         )
+
+    def _overview_narrative(self, features: Sequence[Feature]) -> GroundedNarrative:
+        """The Overview's lead, accepted paragraph by paragraph (038).
+
+        Every path ends at `ground`, and `ground` turns "no reply" into "no
+        prose", so no narrator, no provider, a refused call and an unreadable
+        reply all produce the same page as a reply whose every paragraph
+        failed: the same headings and links, nothing where the lead would be.
+        """
+        if not self._narrate_overview:
+            return GroundedNarrative()
+
+        evidence = build_overview_evidence(
+            features,
+            self._ensure_bundle(),
+            self.dependencyGraph,
+            repository_root=self.repositoryRoot,
+        )
+        if self.overviewNarrator is None:
+            outcome = NarrationOutcome("unavailable")
+        else:
+            self.overviewNarrator.repositoryId = self.repositoryId
+            outcome = self.overviewNarrator.narrate(evidence)
+
+        narrative = ground(
+            outcome.reply,
+            evidence,
+            self._symbol_lookup,
+            handle_map=outcome.handleMap,
+            is_stale=outcome.status == "stale",
+        )
+        self._report_narrative(outcome, narrative, configured=self.overviewNarrator is not None)
+        return narrative
+
+    def _report_narrative(self, outcome: NarrationOutcome, narrative: GroundedNarrative, *, configured: bool) -> None:
+        """At most one line per pass, and only when prose is missing or reduced.
+
+        The wording is 038 contract Â§7's. A plain line, not a `progress_stream`
+        event: the hub folds only the events it knows, so its display is
+        unaffected while the terminal says what the page cannot.
+        """
+        if self.onNotice is None:
+            return
+        failure_text = {
+            "unavailable": "no provider could answer" if configured else "no provider configured",
+            "failed": "no provider could answer",
+            "unparseable": "the reply could not be read",
+        }
+        kept = narrative.paragraphCount
+        offered = narrative.offeredCount
+        naming_rules = {"G3", "G4", "G5"}
+        reason = (
+            "named something not in the repository"
+            if narrative.rejected and all(item.rule in naming_rules | {"G10"} for item in narrative.rejected)
+            else "did not pass the page's checks"
+        )
+
+        line: str | None = None
+        if outcome.status == "stale":
+            line = (
+                f"overview: showing the narrative from an earlier version "
+                f"({failure_text.get(outcome.staleReason, outcome.staleReason)}); {kept} of {offered} paragraphs still apply"
+            )
+        elif outcome.status == "skipped":
+            if outcome.skipReason == "no-features":
+                line = "overview: narrative skipped (no subsystems to describe)"
+        elif outcome.status in failure_text:
+            line = f"overview: narrative omitted ({failure_text[outcome.status]})"
+        elif narrative.leadWithheld:
+            line = f"overview: narrative lead withheld (its opening paragraph {reason})"
+        elif offered and not kept:
+            line = f"overview: narrative omitted (every paragraph {reason})"
+        elif narrative.rejected:
+            line = f"overview: {offered - kept} of {offered} narrative paragraphs dropped ({reason})"
+
+        if line is not None:
+            self.onNotice(f"  {line}")
 
     def generateModulePage(
         self, moduleSymbol: ModuleSymbol, *, entryPointPages: dict[str, DocPage] | None = None
@@ -441,7 +538,7 @@ class DocGenerator:
             resolve_module=self._resolve_module_key_by_path,
         )
 
-        title = f"{module_name} — Dependency diagram"
+        title = f"{module_name} â€” Dependency diagram"
         content = render_markdown_template(
             "diagram.md.jinja",
             module_name=module_name,
@@ -572,7 +669,7 @@ class DocGenerator:
             slug = links.page_slug(entry_point.name, entry_point.stableKey)
             output_md, output_html = links.diagram_output_paths(slug)
             page_id = links.sequence_diagram_page_id(entry_point.stableKey)
-            title = f"{entry_point.name} — Call sequence"
+            title = f"{entry_point.name} â€” Call sequence"
 
             content = render_markdown_template(
                 "sequence_diagram.md.jinja",
@@ -704,6 +801,7 @@ class DocGenerator:
         changedPaths: Iterable[str | Path] = (),
         changedSymbolIds: Iterable[str] = (),
         changedDependencyEdgeIds: Iterable[EdgeId] = (),
+        narrateOverview: bool = True,
     ) -> DocumentationSet:
         """Generate the wiki, under one manifest connection for the whole pass.
 
@@ -711,6 +809,10 @@ class DocGenerator:
         reads and writes its plan cache. Each of those used to open the
         database, replay its schema, commit and close - once per page of the
         wiki.
+
+        `narrateOverview=False` is for `index`'s structure pass only: summaries
+        do not exist yet, so the Overview is written without its lead and the
+        content pass - same staging directory - narrates it once.
         """
         with self.manifestStore.session():
             return self._generate_repository_documentation(
@@ -719,6 +821,7 @@ class DocGenerator:
                 changedPaths=changedPaths,
                 changedSymbolIds=changedSymbolIds,
                 changedDependencyEdgeIds=changedDependencyEdgeIds,
+                narrateOverview=narrateOverview,
             )
 
     def _generate_repository_documentation(
@@ -729,7 +832,9 @@ class DocGenerator:
         changedPaths: Iterable[str | Path],
         changedSymbolIds: Iterable[str],
         changedDependencyEdgeIds: Iterable[EdgeId],
+        narrateOverview: bool = True,
     ) -> DocumentationSet:
+        self._narrate_overview = narrateOverview
         self.repositoryRoot = repositoryRoot
         self.repositoryId = stable_repository_id(repositoryRoot)
         self._writer.repositoryId = self.repositoryId
@@ -833,13 +938,26 @@ class DocGenerator:
             modules=tuple(modules),
         )
 
-        if target_page_ids is None or links.HOME_PAGE_ID in target_page_ids:
-            home_page = self.generateOverviewPage(
-                bundle.repository,
-                classDiagramPage=class_diagram_page,
-                useCaseDiagramPage=use_case_diagram_page,
-                classDiagramSource=self._class_diagram_source(),
-            )
+        # The Overview is computed on every pass and written only when its
+        # content moved (038 research Decision 7). Its narrative cites symbols
+        # anywhere in the repository and is re-grounded on every render, so an
+        # edit that deletes a cited function changes the page without changing
+        # the navigation that `requiresHomePageRegeneration` watches. And an
+        # unchanged page is not rewritten, so reopening an unchanged repository
+        # leaves it untouched. The comparison uses the writer's own digest: the
+        # manifest stores SHA-1, and any other hash would never match.
+        home_page = self.generateOverviewPage(
+            bundle.repository,
+            classDiagramPage=class_diagram_page,
+            useCaseDiagramPage=use_case_diagram_page,
+        )
+        previous_home = next((entry for entry in previous_entries if entry.pageId == links.HOME_PAGE_ID), None)
+        if (
+            target_page_ids is None
+            or links.HOME_PAGE_ID in target_page_ids
+            or previous_home is None
+            or previous_home.contentHash != _content_hash(home_page.contentMarkdown)
+        ):
             self._writer.write_page(home_page)
             pages.append(home_page)
 
@@ -1132,7 +1250,7 @@ class DocGenerator:
         kwargs.setdefault("commit_sha", self._commit_sha())
         # Same reasoning as commit_sha: stamped once here so the theme storage
         # key is identical on every page of a wiki, and so a page kind added
-        # later inherits it (036 contracts/wiki-theme-shell.md §1).
+        # later inherits it (036 contracts/wiki-theme-shell.md Â§1).
         kwargs.setdefault("repository_id", self.repositoryId)
         return render_page_html(**kwargs)
 

@@ -1,8 +1,24 @@
 # {{ repository_name }} — Documentation
 
+{# The narrative lead (038): explanation before structure. Each paragraph is
+   already rendered, escaped Markdown from `overview.grounding.render_paragraph`
+   - model text never reaches this template raw. Absent entirely when there is
+   no narrative: no placeholder, no empty container (spec FR-014). #}
+{% for paragraph in lead_paragraphs %}
+{{ paragraph }}
+{: .ai-generated }
+
+{% endfor %}
+{% if lead_paragraphs and lead_is_stale %}
+_This overview describes an earlier version of the repository and has not been regenerated yet._
+{: .summary-stale }
+
+{% endif %}
+{# No "Last indexed" line: it changed on every run, so an unchanged repository
+   could never regenerate an identical page. The footer every page shares
+   already carries the generation time (038 research Decision 9). #}
 - Repository root: `{{ repository.rootPath }}`
 - Detected languages: {{ repository.detectedLanguages | join(', ') if repository.detectedLanguages else '_unknown_' }}
-- Last indexed: {{ repository.lastIndexedAt }}
 {% if repository.commitSha %}
 - Commit: `{{ repository.commitSha[:7] }}`
 {% endif %}
@@ -20,12 +36,8 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 {% endfor %}
 
 {% endif %}
-{% if class_diagram_source %}
-```mermaid
-{{ class_diagram_source.sourceText }}
-```
-
-{% endif %}
+{# The repository class diagram is reached by its link, not drawn inline: at
+   full page width its labels could not be read (spec FR-003b). #}
 {% if class_diagram_link %}
 [View the repository class diagram]({{ class_diagram_link.relativePath }}){: .diagram-link }
 
@@ -36,9 +48,11 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 {% endif %}
 ## Features
 
+{# Titles only. A planned description is model-written, and a list item cannot
+   carry the generated marker for half its text (spec FR-012a). #}
 {% if feature_entries %}
 {% for entry in feature_entries %}
-- [{{ entry.feature.title | mdesc }}]({{ entry.featureLink.relativePath if entry.featureLink else '#' }}){% if entry.feature.description %} — {{ entry.feature.description.split() | join(' ') | mdesc }}{% endif +%}
+- [{{ entry.feature.title | mdesc }}]({{ entry.featureLink.relativePath if entry.featureLink else '#' }})
 {% endfor %}
 {: .module-list }
 {% else %}

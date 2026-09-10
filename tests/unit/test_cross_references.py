@@ -72,6 +72,21 @@ def test_a_repository_relative_path_resolves_against_a_stored_absolute_path():
     assert resolve_reference(lookup, "src/pkg/gamma.py") is not None
 
 
+def test_a_documentation_file_path_resolves_to_its_page():
+    """A Markdown file is indexed as kind "document"; its path must resolve too.
+
+    Found by 038's Overview grounding: `docs/architecture.md`, a real file, was
+    rejected as a fabrication because only kind "module" was indexed by path.
+    """
+    guide = SearchIndexEntry(
+        name="docs/architecture", kind="document", symbolId="doc-arch",
+        filePath="C:/work/repo/docs/architecture.md", pageUrl="modules/architecture-1.html",
+    )
+    lookup = build_symbol_lookup(_index(GAMMA_MODULE, guide))
+
+    assert resolve_reference(lookup, "docs/architecture.md") is guide
+
+
 def test_the_explicit_path_double_colon_symbol_form_resolves_by_symbol_id():
     assert resolve_reference(LOOKUP, "src/pkg/gamma.py :: cls-base") is BASE_THING
 

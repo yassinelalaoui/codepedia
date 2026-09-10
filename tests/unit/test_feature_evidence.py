@@ -10,6 +10,7 @@ from _doc_generator_support import index_repo  # noqa: E402
 from doc_generator.features.evidence import (  # noqa: E402
     MAX_README_PROMPT_CHARS,
     build_repository_evidence,
+    find_readme,
     read_readme_bullets,
 )
 
@@ -146,6 +147,19 @@ def test_readme_md_is_read(tmp_path):
 
     assert "Indexes a repository" in bullets
     assert "Answers questions about it" in bullets
+
+
+def test_find_readme_follows_candidate_order(tmp_path):
+    """`.md` wins over `.rst`, and a directory holding neither has no README.
+
+    Both the planner's bullets and the Overview's lead read through this, so
+    the two can never describe the repository from different files.
+    """
+    assert find_readme(tmp_path) is None
+    _write(tmp_path / "README.rst", "Title\n=====\n")
+    assert find_readme(tmp_path) == tmp_path / "README.rst"
+    _write(tmp_path / "README.md", "# Title\n")
+    assert find_readme(tmp_path) == tmp_path / "README.md"
 
 
 def test_missing_readme_yields_no_bullets(tmp_path):

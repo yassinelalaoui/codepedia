@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 import typer
 from dependency_graph import DependencyGraph
-from doc_generator import DocGenerator, FeaturePlanner, open_doc_manifest_store
+from doc_generator import DocGenerator, FeaturePlanner, OverviewNarrator, open_doc_manifest_store
 from parser_engine import SourceFile, extract_symbols
 from provider_routing import FailoverExecutor, PathFailoverLog, build_stage_executor
 from reindex_pipeline import EmbeddingCache
@@ -477,10 +477,17 @@ def _run_pipeline(
         # repository indexed with no provider reachable still gets the same
         # features at the same addresses, just under plainer names.
         featurePlanner=FeaturePlanner(llm_engine, cache=manifest_store),
+        # The Overview's narrative: one call through the same executor, cached
+        # against its exact prompt in the same manifest - carried forward with
+        # it, so re-indexing an unchanged repository asks no model (038).
+        overviewNarrator=OverviewNarrator(llm_engine, cache=manifest_store),
+        onNotice=typer.echo,
     )
 
     with _stage(Stage.GENERATING_DOCS_STRUCTURE):
-        doc_generator.generateRepositoryDocumentation(root, incremental=False)
+        # No narrative yet: summaries do not exist, and a narrative keyed on
+        # summary-less evidence would be bought again on the content pass.
+        doc_generator.generateRepositoryDocumentation(root, incremental=False, narrateOverview=False)
 
     _carry_forward_summary_ledger(state_dir, previous_state_dir)
 

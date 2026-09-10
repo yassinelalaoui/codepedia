@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 from dependency_graph import DependencyGraph
-from doc_generator import DocGenerator, FeaturePlanner, open_doc_manifest_store
+from doc_generator import DocGenerator, FeaturePlanner, OverviewNarrator, open_doc_manifest_store
 from reindex_pipeline import IncrementalReindexPipeline
 from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore
@@ -53,9 +53,12 @@ def _refresh_wiki_shell(doc_generator: DocGenerator, root: Path) -> None:
     half the wiki on the old shell, which is what its fingerprint check exists
     for.
 
-    Crucially it consults no provider: summaries are read from the metadata
-    store and the feature plan is cached in the manifest, so this still works on
-    a machine where no chain is reachable.
+    Crucially it needs no provider: summaries are read from the metadata store,
+    and the feature plan and the Overview's narrative are cached in the
+    manifest, so this still works on a machine where no chain is reachable. The
+    one call it can spend is the narrative's, and only when the repository
+    changed since the narrative was written; with no chain reachable it shows
+    the earlier narrative, marked as such, instead (038 FR-017a).
     """
     # Reuses the pipeline's own stage name, so a hub-launched serve lights up a
     # stage the homepage already knows how to draw instead of needing a new
@@ -122,6 +125,11 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
         # repository indexed with no provider reachable still gets the same
         # features at the same addresses, just under plainer names.
         featurePlanner=FeaturePlanner(summary_executor, cache=manifest_store),
+        # Same executor, same cache as `index`: an unchanged repository
+        # renders the Overview it was indexed with, whether or not a provider
+        # is reachable now (038 FR-016).
+        overviewNarrator=OverviewNarrator(summary_executor, cache=manifest_store),
+        onNotice=typer.echo,
     )
     summary_pipeline = CodeSummaryPipeline(
         metadataStore=metadata_store,

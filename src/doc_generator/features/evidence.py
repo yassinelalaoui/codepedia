@@ -184,22 +184,34 @@ def read_readme_bullets(
     empty README yields `()`. An unreadable README must degrade the planner's
     prompt, never the run.
     """
+    path = find_readme(repository_root)
+    if path is None:
+        return ()
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        # A README that exists but cannot be read is the same outcome as no
+        # README at all. Never the run's problem.
+        return ()
+    bullets = _extract_bullets(text)
+    return _truncate_bullets(bullets, max_chars) if bullets else ()
+
+
+def find_readme(repository_root: str | Path) -> Path | None:
+    """The analysed repository's README, first of `_README_CANDIDATES` present.
+
+    Shared by the planner's bullet reader and the Overview narrative's lead
+    reader, so both describe the repository from the same file.
+    """
     root = Path(repository_root)
     for candidate in _README_CANDIDATES:
         path = root / candidate
         try:
-            if not path.is_file():
-                continue
-            text = path.read_text(encoding="utf-8", errors="replace")
+            if path.is_file():
+                return path
         except OSError:
-            # A README that exists but cannot be read is the same outcome as no
-            # README at all. Never the run's problem.
-            return ()
-        bullets = _extract_bullets(text)
-        if bullets:
-            return _truncate_bullets(bullets, max_chars)
-        return ()
-    return ()
+            return None
+    return None
 
 
 def _extract_bullets(text: str) -> list[str]:

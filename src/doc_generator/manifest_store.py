@@ -113,6 +113,27 @@ SCHEMA_STATEMENTS = (
         PRIMARY KEY (repository_id)
     )
     """,
+    # The model's answer to "what is this repository", cached against the exact
+    # prompt that produced it (`overview.narrator.narrative_cache_key`). Same
+    # shape and same reasoning as `doc_feature_plans`: the raw reply, not the
+    # grounded result, so grounding re-runs on every render against the
+    # repository as it is now, and a symbol deleted since the call drops its
+    # paragraph without a new call.
+    #
+    # `handle_map_json` records which feature each `fN` handle meant in that
+    # prompt. A key hit never needs it - the same prompt numbers features the
+    # same way - but the earlier-version fallback does, because the current
+    # evidence may number them differently (038 research Decision 13).
+    """
+    CREATE TABLE IF NOT EXISTS doc_overview_narratives (
+        repository_id TEXT NOT NULL,
+        narrative_key TEXT NOT NULL,
+        reply_text TEXT NOT NULL,
+        handle_map_json TEXT NOT NULL,
+        generated_at TEXT NOT NULL,
+        PRIMARY KEY (repository_id)
+    )
+    """,
 )
 
 
@@ -129,6 +150,23 @@ def _connect(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
     return connection
+
+
+def _narrative_row(row: sqlite3.Row | None) -> tuple[str, dict[str, str]] | None:
+    """A stored narrative, or `None` for a row that is absent or unreadable.
+
+    Unreadable is a miss, which costs one call - never a crash, and never a
+    handle map that silently points subsystem links somewhere wrong.
+    """
+    if row is None:
+        return None
+    try:
+        handle_map = json.loads(row["handle_map_json"])
+    except ValueError:
+        return None
+    if not isinstance(handle_map, dict):
+        return None
+    return str(row["reply_text"]), {str(key): str(value) for key, value in handle_map.items()}
 
 
 def _row_to_entry(row: sqlite3.Row) -> PageManifestEntry:
@@ -331,6 +369,57 @@ class DocPageManifestStore:
                         repository_id,
                         plan_key,
                         json.dumps(list(features)),
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+
+    def load_overview_narrative(
+        self, repository_id: str, narrative_key: str
+    ) -> tuple[str, dict[str, str]] | None:
+        """The cached reply to this exact prompt, with its handle map, if any.
+
+        A row whose key no longer matches is a miss, never a stale answer:
+        answering a different prompt's question as if it were this one's is the
+        earlier-version fallback's job, and that path says so on the page.
+        """
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT reply_text, handle_map_json FROM doc_overview_narratives "
+                "WHERE repository_id = ? AND narrative_key = ?",
+                (repository_id, narrative_key),
+            ).fetchone()
+        return _narrative_row(row)
+
+    def load_latest_overview_narrative(self, repository_id: str) -> tuple[str, dict[str, str]] | None:
+        """This repository's most recent reply, whatever prompt it answered."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT reply_text, handle_map_json FROM doc_overview_narratives WHERE repository_id = ?",
+                (repository_id,),
+            ).fetchone()
+        return _narrative_row(row)
+
+    def save_overview_narrative(
+        self, repository_id: str, narrative_key: str, reply_text: str, handle_map: Mapping[str, str]
+    ) -> None:
+        with self._connection() as connection:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO doc_overview_narratives
+                        (repository_id, narrative_key, reply_text, handle_map_json, generated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(repository_id) DO UPDATE SET
+                        narrative_key = excluded.narrative_key,
+                        reply_text = excluded.reply_text,
+                        handle_map_json = excluded.handle_map_json,
+                        generated_at = excluded.generated_at
+                    """,
+                    (
+                        repository_id,
+                        narrative_key,
+                        reply_text,
+                        json.dumps(dict(handle_map), sort_keys=True),
                         datetime.now(timezone.utc).isoformat(),
                     ),
                 )

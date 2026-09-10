@@ -79,7 +79,11 @@ def build_symbol_lookup(search_index: SearchIndexDocument) -> SymbolLookup:
     for entry in search_index.entries:
         by_name.setdefault(entry.name, []).append(entry)
         by_symbol_id.setdefault(entry.symbolId, entry)
-        if entry.kind == "module":
+        # A Markdown file is indexed as kind "document" (search_index), and a
+        # mention of `README.md` or `docs/guide.md` names that file exactly as
+        # a mention of `pkg/mod.py` names a module - so both resolve by path.
+        # Keyed on "module" alone, no document could ever be linked by name.
+        if entry.kind in ("module", "document"):
             normalized = _normalize_path(entry.filePath)
             if normalized in by_file_path:
                 # The same module path is only indexed once, exactly as

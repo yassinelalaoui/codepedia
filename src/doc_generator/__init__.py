@@ -9,6 +9,7 @@ from .features.candidates import Candidate, build_candidates
 from .features.evidence import build_repository_evidence
 from .features.planner import FeaturePlanner
 from .features.validate import Feature, FeatureMember, repair
+from .overview.narrator import OverviewNarrator
 from .writer import DocumentationWriter, OutputRootEscapeError
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "Feature",
     "FeatureMember",
     "FeaturePlanner",
+    "OverviewNarrator",
     "build_candidates",
     "build_module_diagram",
     "build_repository_evidence",
