@@ -86,9 +86,10 @@ model:
 - **Code references.** Wrap every module, file, class or function name in
   backticks, exactly as written in the evidence. Prefer the repo-relative path
   for modules. Never name anything not listed. **Every paragraph names at least
-  one of them**. The opening paragraph names a line's file as where work enters
-  only if that line is marked `entry`; otherwise it claims no entry point and
-  cites a subsystem's start file (research Decision 15).
+  one of them**. The opening paragraph says where work enters only from lines
+  marked `entry`, and names **each kind** with its files: api-route as routes,
+  cli-command as commands, main as the main function. With none, it claims no
+  entry point and cites a subsystem's start file (research Decisions 15 and 19).
 - **Style.** Declarative present tense. No second person. No promotional
   adjectives. No headings, lists, tables or links.
 - **When evidence is thin.** If the evidence does not support a claim, omit it.
@@ -220,10 +221,10 @@ _This overview describes an earlier version of the repository and has not been r
 
 ```text
 ## Architecture overview
-<counts sentence>
+<counts sentence>                      {: .architecture-counts }
 | Subsystem | Responsibility[ (AI-generated)] | Start with |   (every subsystem, navigation order)
 | [<title>](features/…) | <accepted description> or — | [<module>](modules/…) or — |
-<subsystem paragraph> [<title>](features/…)   (prose)  {: .ai-generated }   (≤ 8, table order)
+<subsystem paragraph> → [<title>](features/…)   (prose)  {: .ai-generated }   (≤ 8, table order)
 _This overview describes an earlier version …_  (stale, lead withheld only)  {: .summary-stale }
 [View the repository class diagram]    {: .diagram-link }
 [View the repository use-case diagram] {: .diagram-link }
@@ -239,8 +240,20 @@ _This overview describes an earlier version …_  (stale, lead withheld only)  {
   always belongs to the subsystem (spec FR-023).
 - The table is built with no provider at all, so it is identical with and
   without one (spec FR-024).
-- **The module-list row shape** belongs to User Story 4. Until then, the row is
-  unchanged.
+- The counts sentence carries `.architecture-counts` so the stylesheet can set
+  the table's Responsibility column in the UI font without touching any other
+  table. Each subsystem paragraph's closing link is set apart by `→` and still
+  ends the paragraph (FR-025; research Decision 19).
+- **Subsystems that get a paragraph** (`majorFeatureKeys`) are the first eight
+  that are not `tooling` and not made only of documentation or test files
+  (research Decision 19).
+- **The module-list row** (User Story 4) is
+  `- [<label>](modules/…)[ — <description>] [dependencies](diagrams/…)`, with no
+  parentheses around the dependency link. `<label>` comes from
+  `prose.disambiguated_labels`, and rows are sorted by it. `<description>` is
+  `plain_text.marked_excerpt(docstring)`: plain text that ends at a sentence or
+  word boundary and always ends in `…` when shortened (FR-029 to FR-034;
+  research Decision 12).
 - **Identity checks** (test-enforced):
   - The heading sequence `[h.text for h in all headings]` is equal with and
     without prose.
@@ -267,15 +280,23 @@ missing or reduced:
 | lead withheld (G10) | `  overview: narrative lead withheld (its opening paragraph named something not in the repository)` |
 | `stale` | `  overview: showing the narrative from an earlier version (<staleReason>); <k> of <n> paragraphs still apply` |
 | `previous-prompt` | `  overview: showing the narrative written for an earlier prompt (<staleReason>); <k> of <n> paragraphs still apply` |
-
 | `skipped` because the wiki has no subsystems | `  overview: narrative skipped (no subsystems to describe)` |
+| `generated` / `cached`, and the reply wrote no paragraph for some requested subsystems | `  overview: <u> of <m> subsystem paragraphs not written`, or appended to the line above it as `; <u> of <m> subsystem paragraphs not written` |
 
-`<n>` counts lead and subsystem paragraphs together. When several conditions
-hold, the `stale` (or `previous-prompt`) line takes precedence, then the lead
-line, then the others. There is still at most one line per pass. `cached`,
-`generated` with nothing rejected, and `skipped` because `narrateOverview=False`
-(the structure pass) are silent. The line is
-plain text, not a `progress_stream` event (research Decision 11).
+`<n>` counts lead and subsystem paragraphs together, but only subsystem
+paragraphs that were asked for: one written for a subsystem not marked
+`paragraph` is ignored, neither shown nor counted (`unaskedCount`). An invented
+handle (G3) and a second paragraph for one subsystem (G9) still count as
+dropped. `<m>` is the number of subsystems asked for (`askedCount`) and `<u>`
+how many of them the reply wrote nothing for (`unwrittenCount`); a written but
+rejected paragraph is dropped, not unwritten (research Decision 19). When
+several conditions hold, the `stale` (or `previous-prompt`) line takes
+precedence, then the lead line, then the others, and the "not written" clause
+joins whichever line a `generated` or `cached` pass prints. There is still at
+most one line per pass. `cached` and `generated` with nothing rejected or
+unwritten, and `skipped` because `narrateOverview=False` (the structure pass),
+are silent. The line is plain text, not a `progress_stream` event (research
+Decision 11).
 
 ## §8 Getting started (User Story 3 — deferred)
 

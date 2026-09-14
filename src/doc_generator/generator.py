@@ -35,7 +35,8 @@ from .mermaid_diagram import (
     build_use_case_diagram_mermaid_source,
 )
 from .models import DocPage, DocumentationSet, EdgeId, PageLink, PageManifestEntry
-from .prose import display_label, is_prose_file
+from .plain_text import marked_excerpt
+from .prose import disambiguated_labels, display_label, is_prose_file
 from .search_index import SearchIndexDocument, build_search_index
 from .use_case_diagram import select_use_cases
 from .writer import DocumentationWriter, _content_hash
@@ -137,9 +138,11 @@ class DocGenerator:
         for feature_key, paragraph in narrative.subsystems:
             text = render_paragraph(paragraph, feature_links_by_key)
             link = feature_links_by_key.get(feature_key)
-            # Each ends in its subsystem's page (spec FR-025), whatever it cited.
+            # Each ends in its subsystem's page (spec FR-025), whatever it cited,
+            # set apart by an arrow: run on after the last sentence, the bare
+            # link read as a stray fragment (038 research Decision 19).
             if link is not None:
-                text = f"{text} [{_markdown_escape(link.label)}]({link.relativePath})"
+                text = f"{text} → [{_markdown_escape(link.label)}]({link.relativePath})"
             subsystem_paragraphs.append(text)
         class_diagram_link: PageLink | None = None
         if classDiagramPage is not None:
@@ -165,8 +168,11 @@ class DocGenerator:
             if use_case_diagram_link:
                 page_links.append(use_case_diagram_link)
 
+        # Display only (038 User Story 4): labels no two alike, descriptions as
+        # plain text. Slugs, page ids and links still derive from `module.name`.
+        module_labels = disambiguated_labels(modules, self.repositoryRoot)
         module_entries = []
-        for module in modules:
+        for module in sorted(modules, key=lambda module: (module_labels[module.sourceFileId], module.sourceFileId)):
             module_key = module.sourceFileId
             slug = links.page_slug(module.name, module_key)
             module_md, _ = links.module_output_paths(slug)
@@ -189,7 +195,15 @@ class DocGenerator:
                 page_links.append(module_link)
             if diagram_link:
                 page_links.append(diagram_link)
-            module_entries.append({"module": module, "moduleLink": module_link, "diagramLink": diagram_link})
+            module_entries.append(
+                {
+                    "module": module,
+                    "label": module_labels[module.sourceFileId],
+                    "description": marked_excerpt(module.docstring),
+                    "moduleLink": module_link,
+                    "diagramLink": diagram_link,
+                }
+            )
 
         repository_name = Path(repository.rootPath).name or repository.rootPath
         title = f"{repository_name} — Documentation"
@@ -362,6 +376,14 @@ class DocGenerator:
             line = f"overview: narrative omitted (every paragraph {reason})"
         elif narrative.rejected:
             line = f"overview: {offered - kept} of {offered} narrative paragraphs dropped ({reason})"
+
+        # A subsystem paragraph the reply never wrote is neither dropped nor
+        # withheld, so nothing above counts it; measured on the sample
+        # repository, a reply wrote three of eight and the pass was silent
+        # (research Decision 19). Same line, so still one per pass.
+        if narrative.unwrittenCount and outcome.status in ("generated", "cached"):
+            unwritten = f"{narrative.unwrittenCount} of {narrative.askedCount} subsystem paragraphs not written"
+            line = f"{line}; {unwritten}" if line is not None else f"overview: {unwritten}"
 
         if line is not None:
             self.onNotice(f"  {line}")

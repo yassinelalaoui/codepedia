@@ -1,6 +1,6 @@
 # Major Function: Full Repository Indexing
 
-**Specs**: 001, 002/003, 004, 005, 009/010, 006/007, 012, 019
+**Specs**: 001, 002/003, 004, 005, 009/010, 006/007, 012, 019, 038
 
 The from-scratch flow: `codepedia index <path>` (019) points the tool at a
 repository once, and it becomes a fully analyzed, summarized, embedded, and
@@ -39,7 +39,7 @@ sequenceDiagram
     end
     cli->>DependencyGraph: build_from_inventories(inventories).save(...)
 
-    cli->>DocGenerator: generateRepositoryDocumentation(incremental=False)\n(structure pass, no summaries yet)
+    cli->>DocGenerator: generateRepositoryDocumentation(incremental=False, narrateOverview=False)\n(structure pass, no summaries yet, no Overview narrative)
 
     cli->>CodeSummaryPipeline: summarizeRepository(root, incremental=False)
     CodeSummaryPipeline->>LocalLLMEngine: checkAvailability()
@@ -56,7 +56,12 @@ sequenceDiagram
     end
 
     cli->>DocGenerator: generateRepositoryDocumentation(incremental=False)\n(content pass, reflects the summaries just generated)
-    DocGenerator-->>cli: DocumentationSet (home + module + diagram pages written)
+    opt Overview narrative (038): no cached reply for this exact prompt
+        DocGenerator->>LocalLLMEngine: one generate(prompt) through the summary chain
+        LocalLLMEngine-->>DocGenerator: JSON reply (lead + subsystem paragraphs)
+    end
+    DocGenerator->>DocGenerator: ground each paragraph against the symbol index\n(unresolved names are dropped, never published)
+    DocGenerator-->>cli: DocumentationSet (home + module + diagram pages written)\nplus at most one overview notice line when prose is missing or reduced
 
     loop for each file in ScanResult
         cli->>EmbeddingEngine: embed(symbol source text) (via update_embeddings)

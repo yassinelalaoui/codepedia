@@ -256,6 +256,34 @@ classDiagram
             +tuple~str~ actorNodeIds
             +tuple~str~ useCaseNodeIds
         }
+        class DocPageManifestStore {
+            <<doc-manifest.sqlite>>
+            +load_overview_narrative(repositoryId, narrativeKey)
+            +load_latest_overview_narrative(repositoryId)
+            +save_overview_narrative(repositoryId, narrativeKey, replyText, handleMap, repositoryFingerprint)
+        }
+        class FeaturePlanner {
+            <<features/planner.py, 033>>
+            +plan(candidates, evidence) FeaturePlan
+        }
+        class OverviewEvidence {
+            <<overview/evidence.py, 038, no engine>>
+            +tuple~FeatureBrief~ features
+            +tuple~EntryFlow~ entryFlows
+            +tuple~str~ majorFeatureKeys
+            +str repositoryFingerprint
+        }
+        class OverviewNarrator {
+            <<overview/narrator.py, 038, the only engine-taker>>
+            +narrate(evidence) NarrationOutcome
+        }
+        class GroundedNarrative {
+            <<overview/grounding.py, 038, no engine>>
+            +tuple~GroundedParagraph~ lead
+            +tuple subsystems
+            +bool leadWithheld
+            +int unwrittenCount
+        }
     }
     DocGenerator ..> DocumentationSet : produces
     DocumentationSet *-- DocPage
@@ -271,6 +299,15 @@ classDiagram
     UseCaseDiagramSelection *-- UseCase
     DocGenerator ..> UseCaseDiagramSelection : select_use_cases()
     UseCaseDiagramSelection ..> UseCaseDiagramSource : build_use_case_diagram_mermaid_source()
+    DocGenerator --> DocPageManifestStore : page manifest
+    DocGenerator --> FeaturePlanner : subsystems (repaired features)
+    FeaturePlanner ..> DocPageManifestStore : doc_feature_plans cache
+    DocGenerator ..> OverviewEvidence : build_overview_evidence(features, bundle, graph)
+    DocGenerator --> OverviewNarrator : overviewNarrator
+    OverviewNarrator ..> OverviewEvidence : one prompt
+    OverviewNarrator ..> FailoverExecutor : one call, summary chain
+    OverviewNarrator ..> DocPageManifestStore : doc_overview_narratives cache
+    DocGenerator ..> GroundedNarrative : ground(reply, evidence, lookup)
 
     namespace WebServer {
         class ChatApiApp {

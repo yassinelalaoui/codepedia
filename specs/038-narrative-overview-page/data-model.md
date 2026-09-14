@@ -53,7 +53,7 @@ number of distinct modules reached (descending), then by `stableKey`. The first
 | `features` | `tuple[FeatureBrief, ...]` | First `MAX_PROMPTED_FEATURES` features in navigation order |
 | `omittedFeatureCount` | `int` | `len(all features) - len(features)` |
 | `entryFlows` | `tuple[EntryFlow, ...]` | ≤ `MAX_PROMPTED_ENTRY_FLOWS` |
-| `majorFeatureKeys` | `tuple[str, ...]` | First ≤ `MAX_SUBSYSTEM_PARAGRAPHS` (8) features in navigation order whose `kind != "tooling"`. The subsystems that may receive a paragraph (User Story 2) |
+| `majorFeatureKeys` | `tuple[str, ...]` | First ≤ `MAX_SUBSYSTEM_PARAGRAPHS` (8) prompted features in navigation order whose `kind != "tooling"` and which are not made only of documentation or test files (a member with no path counts as code). The subsystems that may receive a paragraph (User Story 2; research Decision 19) |
 | `featureTitles` | `tuple[tuple[str, str], ...]` | Every current feature as `(key, title)`, prompted or not, in navigation order. Grounding uses it to confirm a handle's feature still exists and to title its link |
 | `repositoryFingerprint` | `str` | `repository_fingerprint(bundle, root, readme_lead=…)`: SHA-1 of the README lead and every file's `(repo-relative path, contentHash)`, sorted. **Never part of the prompt.** Stored with each saved reply, so a fallback can tell an earlier *prompt* about the same repository from an earlier *version* of it (research Decision 17, analyze I2) |
 
@@ -91,6 +91,10 @@ anything else. A reply with neither key, or with both empty, is `None`.
 | `rejected` | `tuple[Rejection, ...]` | Every dropped paragraph, with the first rule it failed (`G2`…`G10`) and the offending token. For the notice and for tests; never rendered |
 | `leadWithheld` | `bool` | True when G10 withheld the lead because its opening paragraph failed |
 | `isStale` | `bool` | True when grounded from an earlier-version reply (`NarrationOutcome.status == "stale"`); drives the `.summary-stale` caveat |
+| `offeredCount` | `int` | Lead paragraphs plus subsystem paragraphs the reply offered, excluding those for subsystems not asked for. The `<n>` of the notice |
+| `unaskedCount` | `int` | Paragraphs written for live subsystems not in `majorFeatureKeys`. Never shown, never counted as offered or dropped; diagnosis only (research Decision 19) |
+| `askedCount` | `int` | `len(majorFeatureKeys)`, the subsystem paragraphs the prompt asked for |
+| `unwrittenCount` | `int` | Requested subsystems the reply wrote nothing for. A written but rejected paragraph is dropped, not unwritten. Reported by the notice (contract §7) |
 
 `ground(reply, evidence, lookup, *, handle_map, is_stale=False) ->
 GroundedNarrative` is pure. `handle_map` resolves each `[[fN]]` to a feature
@@ -178,7 +182,7 @@ carries. So `manifest_store`, `search_index`, `cross_references` and
 | Constant | Value | Module | Reason |
 | --- | --- | --- | --- |
 | `PROVIDER_TOKEN_BUDGET`, `CHARS_PER_TOKEN` | 8000, 4 | `features/__init__` (re-exported) | Single source; the test must not import the module that could move them |
-| `SYSTEM_PROMPT_CHARS` | 1900 | `overview/narrator.py` | Asserted ≥ `len(SYSTEM_PROMPT)`; 1400 until research Decision 15, 1600 until User Story 2's subsystem request (Decision 17). Worst case 4,590 tokens per call |
+| `SYSTEM_PROMPT_CHARS` | 2050 | `overview/narrator.py` | Asserted ≥ `len(SYSTEM_PROMPT)` (2,040); 1400 until research Decision 15, 1600 until User Story 2's subsystem request (Decision 17), 1900 until paragraph 1 was asked to name every kind of entry (Decision 19). Worst case 4,627 tokens per call |
 | `ENTRY_KINDS` | `("cli-command", "api-route", "main")` | `overview/evidence.py` | The kinds the prompt may call an entry point; ranked first |
 | `HEADER_CHARS` | 300 | `overview/narrator.py` | Repository name, languages, subsystem count, how to read entry lines (200 in the plan; research Decision 14) |
 | `MAX_README_LEAD_CHARS` | 600 | `overview/evidence.py` | ~150 tok |

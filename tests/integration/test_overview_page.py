@@ -52,6 +52,13 @@ def _reply(*lead: str) -> str:
     return json.dumps({"lead": list(lead)})
 
 
+def _full_reply(*lead: str) -> str:
+    """A lead plus a paragraph for each of the fixture's three subsystems, so
+    nothing asked for is left unwritten (research Decision 19)."""
+    subsystems = {f"f{index}": "Its code sits in `alpha.py`." for index in range(3)}
+    return json.dumps({"lead": list(lead), "subsystems": subsystems})
+
+
 def _generator(tmp_path: Path, name: str, root, store, graph, engine=None, *, narrator=True, notices=None):
     manifest = open_doc_manifest_store(tmp_path / f"{name}-manifest.sqlite")
     return DocGenerator(
@@ -327,16 +334,19 @@ def test_the_structure_pass_does_not_narrate(tmp_path):
         (
             ScriptedEngine(_reply(OPENING, "It stores loans with `LoanStore`.")),
             True,
-            "  overview: 1 of 2 narrative paragraphs dropped (named something not in the repository)",
+            "  overview: 1 of 2 narrative paragraphs dropped (named something not in the repository); "
+            "3 of 3 subsystem paragraphs not written",
         ),
         (
             ScriptedEngine(_reply("It begins in `NoSuchThing`.", FLOW)),
             True,
-            "  overview: narrative lead withheld (its opening paragraph named something not in the repository)",
+            "  overview: narrative lead withheld (its opening paragraph named something not in the repository); "
+            "3 of 3 subsystem paragraphs not written",
         ),
-        (ScriptedEngine(_reply(OPENING, FLOW)), True, None),
+        (ScriptedEngine(_reply(OPENING, FLOW)), True, "  overview: 3 of 3 subsystem paragraphs not written"),
+        (ScriptedEngine(_full_reply(OPENING, FLOW)), True, None),
     ],
-    ids=["not-configured", "unreachable", "failed", "unparseable", "partial", "opening-withheld", "clean"],
+    ids=["not-configured", "unreachable", "failed", "unparseable", "partial", "opening-withheld", "lead-only", "clean"],
 )
 def test_on_notice_receives_the_contract_line_for_each_outcome(tmp_path, engine, narrator, expected):
     root, store, graph = build_indexed_repo(tmp_path)

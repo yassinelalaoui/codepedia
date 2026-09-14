@@ -25,9 +25,10 @@ def index_repo(tmp_path: Path, root: Path, file_paths: list[Path], db_name: str)
     """Parse `file_paths`, build the dependency graph, and persist both.
 
     The generic form of `build_indexed_repo` below, for tests that need a
-    repository shape the shared alpha/beta/gamma fixture does not have.
+    repository shape the shared alpha/beta/gamma fixture does not have. A
+    `.md` file is parsed as documentation, everything else as Python.
     """
-    inventories = [extract_symbols(SourceFile(path=path, language="python")) for path in file_paths]
+    inventories = [extract_symbols(SourceFile(path=path, language=_language(path))) for path in file_paths]
     graph = DependencyGraph.build_from_inventories(inventories, sourceFile=str(root))
     repository_id = stable_repository_id(root)
     edges = [
@@ -46,12 +47,16 @@ def index_repo(tmp_path: Path, root: Path, file_paths: list[Path], db_name: str)
         source_path = Path(inventory.sourceFile)
         store.store_inventory(
             repository_root=root,
-            source_file=SourceFile(path=source_path, language="python"),
+            source_file=SourceFile(path=source_path, language=_language(source_path)),
             inventory=inventory,
             dependency_edges=edges,
             content_hash=compute_content_hash(source_path),
         )
     return store, graph
+
+
+def _language(path: Path) -> str:
+    return "markdown" if path.suffix.lower() == ".md" else "python"
 
 
 def build_indexed_repo(tmp_path: Path):

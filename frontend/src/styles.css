@@ -235,6 +235,12 @@ h1, h2, h3, h4 { text-wrap: balance; font-weight: 600; letter-spacing: -0.01em; 
 .content-col table td:first-child, .content-col table th:first-child { padding-left: 0; }
 .content-col table td:first-child { color: var(--ink); font-weight: 500; }
 .content-col table tr:last-child td { border-bottom: none; }
+/* The Overview's subsystems table: its Responsibility column is a sentence, not
+   an identifier, and in the monospace face it ran tall at narrow widths. Scoped
+   through the counts paragraph that always precedes it (038 research Decision
+   19), so every other table keeps the monospace face. Code spans inside keep
+   theirs through the `code` rule. */
+.content-col .architecture-counts + table td:nth-child(2) { font-family: var(--wiki-font-ui); }
 
 /* module list on the home page */
 /* attr_list attaches a trailing block marker to the LAST <li>, not the <ul> — select the ancestor via :has() */

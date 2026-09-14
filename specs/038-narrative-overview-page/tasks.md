@@ -66,7 +66,7 @@ description: "Task list for the Narrative Overview Page feature"
 
 **Goal**: One to four grounded, marked paragraphs directly under the Overview's title say what the repository is, name its major subsystems as links, and describe where work enters and ends up. The page's structure is unchanged without a provider; an unchanged repository regenerates identical Markdown.
 
-**Independent Test**: Index a repository with a provider. One to four `.ai-generated` paragraphs (two to four requested) precede the repository facts, each cites at least one real file, module or symbol, every backticked name is a link, and every subsystem link opens. Then regenerate with a failing engine: the same headings and link destinations, and no prose (quickstart §2–Â§4).
+**Independent Test**: Index a repository with a provider. One to four `.ai-generated` paragraphs (two to four requested) precede the repository facts, each cites at least one real file, module or symbol, every backticked name is a link, and every subsystem link opens. Then regenerate with a failing engine: the same headings and link destinations, and no prose (quickstart §2–§4).
 
 ### Tests for User Story 1 (write first; confirm they fail)
 
@@ -282,6 +282,19 @@ description: "Task list for the Narrative Overview Page feature"
   Extend `<scratchpad>\tense-review-<repo>.md` with the new paragraphs and the table's generated cells (SC-013).
 - [X] T043 [US2] Appearance of both `<state>\docs\index.html` Overviews at about 400 px and full width, light and dark: the table scrolls inside itself when narrow, with no page overflow.
 
+### Refinements after User Story 2 (research Decisions 18 and 19)
+
+Added after the fact. Each came out of a verification round, not out of the original plan.
+
+- [X] T043a [US2] Prompt fix (research Decision 18): subsystem paragraphs name their start file in backticks and other subsystems as handles; paragraph 1 opens with what the repository is; paragraph 3 cites a start file. Re-verified on both reference repositories, with a stranger test.
+- [X] T043b [US2] R1: in `generator.py`, set each subsystem paragraph's closing link apart with an arrow, `→ [Title](…)`. It still ends the paragraph (FR-025). Test: `test_each_paragraph_ends_with_its_subsystem_link`.
+- [X] T043c [US2] R2: mark the counts sentence `{: .architecture-counts }` in `home.md.jinja`, and set `.content-col .architecture-counts + table td:nth-child(2)` in the UI font in `frontend/src/styles.css`, then `npm run build`. No other table changes. Tests: `test_the_counts_sentence_directly_precedes_the_table_and_is_marked`, `test_the_subsystems_responsibility_column_uses_the_ui_font`.
+- [X] T043d [US2] R3: in `overview/evidence.py`, leave a subsystem out of `majorFeatureKeys` when every member is documentation or a test file. Test: `test_a_subsystem_with_no_code_gets_no_paragraph`.
+- [X] T043e [US2] R4: `SYSTEM_PROMPT` asks paragraph 1 to name each kind of entry with its files (api-route as routes, cli-command as commands, main as the main function), with a two-kind example. `SYSTEM_PROMPT_CHARS` rises from 1900 to 2050, and the worst case from 4,590 to 4,627 tokens. Test: `test_paragraph_one_names_every_kind_of_entry_with_its_files`.
+- [X] T043f [US2] R5: in `overview/grounding.py`, a paragraph for a live subsystem the prompt did not ask about is skipped and counted in `unaskedCount`, never as offered or dropped. Invented handles (G3) and second paragraphs (G9) still count. Tests: `test_a_paragraph_for_a_subsystem_not_asked_for_is_ignored_not_dropped`, `test_an_invented_handle_still_counts_as_dropped`, `test_a_paragraph_for_a_subsystem_not_asked_for_is_neither_shown_nor_reported`.
+- [X] T043h [US2] From the T043g round (owner-approved): `GroundedNarrative.askedCount` and `unwrittenCount`, and the notice clause `<u> of <m> subsystem paragraphs not written` (contract §7), so a reply that skips requested subsystem paragraphs is never silent (FR-018). Tests: `test_a_major_the_reply_wrote_nothing_for_counts_as_unwritten`, `test_a_subsystem_paragraph_the_model_never_wrote_is_reported`, `test_unwritten_paragraphs_share_the_line_with_dropped_ones`, and the `lead-only` case in `test_on_notice_receives_the_contract_line_for_each_outcome`.
+- [X] T043g [US2] Verification round for T043b–T043f together with T049: re-index both reference repositories with the Groq-first chain (owner-approved), then run the handoff's checks (`why2.py`, `lead_links.py`, screenshots, tense review, stranger test). Record the results in research Decision 19.
+
 **Checkpoint**: User Stories 1 and 2 both work; the page is the full first-release narrative.
 
 ---
@@ -302,13 +315,13 @@ Not in this release (spec Clarifications Q4). Its design is fixed in research De
 
 ### Tests for User Story 4
 
-- [ ] T044 [P] [US4] Write `tests/unit/test_prose_labels.py`:
+- [X] T044 [P] [US4] Write `tests/unit/test_prose_labels.py`:
   - `test_unique_code_labels_are_unchanged`
   - `test_duplicate_init_modules_get_the_shortest_unique_path_tail`
   - `test_prose_files_keep_their_display_label`
   - `test_labels_are_deterministic_across_input_order`
   - `test_a_label_never_includes_the_extension`
-- [ ] T045 [P] [US4] Write `tests/integration/test_overview_module_list.py`, with a fixture holding two `__init__.py` files, a README with a heading and emphasis, and a module with no docstring:
+- [X] T045 [P] [US4] Write `tests/integration/test_overview_module_list.py`, with a fixture holding two `__init__.py` files, a README with a heading and emphasis, and a module with no docstring:
   - `test_no_row_contains_orphaned_punctuation`
   - `test_no_two_rows_share_a_visible_label`
   - `test_a_prose_description_contains_no_raw_markup`
@@ -318,10 +331,10 @@ Not in this release (spec Clarifications Q4). Its design is fixed in research De
 
 ### Implementation for User Story 4
 
-- [ ] T046 [US4] Add `disambiguated_labels(modules, repository_root) -> dict[str, str]` to `src/doc_generator/prose.py`, per research Decision 12. It is display-only: slugs, page ids and stored links keep deriving from `module.name`. Makes T044 pass.
-- [ ] T047 [US4] In `src/doc_generator/generator.py`'s `generateOverviewPage` module-entry loop (lines 131–155), add `label` from `disambiguated_labels` and `description` from `plain_text.excerpt(module.docstring)`. Sort by label. Link `label` values stay `module.name`-based for page ids.
-- [ ] T048 [US4] In `src/doc_generator/templates/home.md.jinja`, change the module row (line 52) to `- [{{ entry.label | mdesc }}](…){% if entry.description %} — {{ entry.description | mdesc }}{% endif %} [dependencies](…)`, with no parentheses around the dependency link. **No CSS change** (research Decision 12). Makes T045 pass. Run the full suite against the baseline.
-- [ ] T049 [US4] Manual: re-index `codepedia-sample-repo`. In the module list, confirm eight distinguishable `__init__` rows, no loose punctuation at either edge in light and dark at about 400 px, and a README row that reads as a plain sentence.
+- [X] T046 [US4] Add `disambiguated_labels(modules, repository_root) -> dict[str, str]` to `src/doc_generator/prose.py`, per research Decision 12. It is display-only: slugs, page ids and stored links keep deriving from `module.name`. Makes T044 pass. (As built, two files that differ only in extension keep it, so FR-030 still holds: `test_files_differing_only_by_extension_keep_it_to_stay_distinct`.)
+- [X] T047 [US4] In `src/doc_generator/generator.py`'s `generateOverviewPage` module-entry loop (lines 131–155), add `label` from `disambiguated_labels` and `description` from `plain_text.excerpt(module.docstring)`. Sort by label. Link `label` values stay `module.name`-based for page ids. (As built: `plain_text.marked_excerpt`, which also marks a cut made at a sentence boundary; owner decision on FR-032, research Decision 12.)
+- [X] T048 [US4] In `src/doc_generator/templates/home.md.jinja`, change the module row (line 52) to `- [{{ entry.label | mdesc }}](…){% if entry.description %} — {{ entry.description | mdesc }}{% endif %} [dependencies](…)`, with no parentheses around the dependency link. **No CSS change** (research Decision 12). Makes T045 pass. Run the full suite against the baseline.
+- [X] T049 [US4] Manual: re-index `codepedia-sample-repo`. In the module list, confirm eight distinguishable `__init__` rows, no loose punctuation at either edge in light and dark at about 400 px, and a README row that reads as a plain sentence.
 
 **Checkpoint**: All first-release stories work independently.
 
@@ -329,10 +342,10 @@ Not in this release (spec Clarifications Q4). Its design is fixed in research De
 
 ## Phase 7: Polish & Cross-Cutting
 
-- [ ] T050 [P] Update `docs/architecture.md` per its "> Maintenance:" rule: the new `doc_generator/overview/` package with its one-engine-taker invariant, the `doc_overview_narratives` table in `doc-manifest.sqlite`, and the Overview's always-recomputed, write-if-changed regeneration.
-- [ ] T051 [P] Update `docs/diagrams/class-diagram.md` per its "> Maintenance:" rule with `OverviewNarrator`, `OverviewEvidence`, `GroundedNarrative` and their relationships to `DocGenerator`, `FeaturePlanner` and `DocPageManifestStore`.
-- [ ] T052 [P] Update `README.md`'s description of the generated wiki: the Overview now opens with a grounded, AI-generated explanation. Confirm `docs/stack.md` needs no change, since no dependency was added.
-- [ ] T053 Run the whole of `quickstart.md` (§1–Â§6) once more on the final tree, and attach the results to the implementation report: files touched, where narration lives and why, tokens per run from T033, and the generated sample-repository `index.md`.
+- [X] T050 [P] Update `docs/architecture.md` per its "> Maintenance:" rule: the new `doc_generator/overview/` package with its one-engine-taker invariant, the `doc_overview_narratives` table in `doc-manifest.sqlite`, and the Overview's always-recomputed, write-if-changed regeneration.
+- [X] T051 [P] Update `docs/diagrams/class-diagram.md` per its "> Maintenance:" rule with `OverviewNarrator`, `OverviewEvidence`, `GroundedNarrative` and their relationships to `DocGenerator`, `FeaturePlanner` and `DocPageManifestStore`. (As built: `FeaturePlanner` and `DocPageManifestStore` were not in the diagram yet and were added as minimal classes. The same rule covers `docs/diagrams/sequence-diagrams/01-full-indexing.md` (structure pass without narration, one narrative call in the content pass) and `04-wiki-browsing.md` (`index.html` is the Overview). All three parse with the bundled `mermaid.min.js`.)
+- [X] T052 [P] Update `README.md`'s description of the generated wiki: the Overview now opens with a grounded, AI-generated explanation. Confirm `docs/stack.md` needs no change, since no dependency was added. (Confirmed: none added.)
+- [ ] T053 Run the whole of `quickstart.md` (§1–§6) once more on the final tree, and attach the results to the implementation report: files touched, where narration lives and why, tokens per run from T033, and the generated sample-repository `index.md`.
 
 ---
 

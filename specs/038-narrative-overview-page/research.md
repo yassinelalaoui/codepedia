@@ -527,6 +527,18 @@ narrator adds nothing there, because it calls through the same executor.
   It is applied to every module-list description, code docstrings included.
   `mdesc` is still applied after it.
 
+  **As built (2026-09-15).** FR-032 and US4 scenario 4 ask for a visible mark
+  on *every* shortened description, while the bullet above leaves a cut at a
+  sentence boundary unmarked. The owner chose to mark both. The module list
+  uses `plain_text.marked_excerpt`, which appends a space and `…` to a
+  sentence-boundary cut and keeps the mark's room inside the cap. `excerpt` itself is unchanged,
+  so the narrative prompt and its cache keys are unaffected. The sample
+  README row now reads "A small library lending service used as a fixture
+  repository. …".
+- **Same-extension edge case.** Two files that differ only in extension
+  (`web/search.py`, `web/search.ts`) share every extension-free tail, so they
+  keep the extension. FR-030 wins over "without the extension".
+
 None of these touch the narrator. They ship independently.
 
 ---
@@ -922,6 +934,94 @@ paragraph is placed and marked as specified. Its *value* is capped by spec
 what its subsystem is, and when the subsystem is mis-grouped the paragraph
 repeats the mislabel in prose. Improving the feature planner (a follow-up to
 033) is now the highest-leverage change for the Overview.
+
+---
+
+## Decision 19: Presentation refinements after User Story 2, and what a skipped paragraph means
+
+Five refinements the owner approved from Decision 18's review (tasks
+T043b–T043f), verified together with User Story 4 in one round.
+
+- **R1, closing link.** A subsystem paragraph now ends
+  `… → [Title](features/…)`. Run on after the last sentence, the bare link read
+  as a stray fragment. It still ends the paragraph (FR-025).
+- **R2, table font.** The counts sentence carries `.architecture-counts`, and
+  `.content-col .architecture-counts + table td:nth-child(2)` sets the
+  Responsibility column in the UI font. In monospace the sentences ran the table
+  tall at narrow widths. Scoping through the preceding paragraph leaves every
+  other table as it was. A test pins the sibling relationship the rule needs.
+- **R3, which subsystems are major.** `majorFeatureKeys` also leaves out a
+  subsystem whose members are all documentation or test files. 033 ranks by
+  kind, so on the sample repository "Documentation" (two Markdown files) took a
+  paragraph while both storage subsystems went without. The spec leaves
+  "significance" to planning. "Tests (Test Fines)" stays major, because it
+  holds `fine_calculator.py` as well as its test; that is 033's grouping, not
+  something a filter here should undo. A ranking by entry points was
+  considered and rejected: those counts are noisy, and the 033 follow-up may
+  change them.
+- **R4, paragraph 1 names every kind of entry.** With routes and commands both
+  marked `entry`, paragraph 1 picked one, `list_overdue`, and called it "the
+  command". The rule now asks for each kind with its files (api-route as
+  routes, cli-command as commands, main as the main function), and the example
+  shows two kinds. `SYSTEM_PROMPT` is 2,040 characters, `SYSTEM_PROMPT_CHARS`
+  2,050, and the worst case 4,627 tokens per call (from 4,590). The evidence is
+  unchanged: each call line already carries its kind.
+- **R5, paragraphs nobody asked for.** Models still write paragraphs for
+  subsystems not marked `paragraph`, and G9 counted them as dropped, so every
+  sample notice read "4 of 15 narrative paragraphs dropped". Such a paragraph
+  is now skipped and counted only in `unaskedCount`. An invented handle (G3)
+  and a second paragraph for one subsystem (G9) still count.
+
+**A skipped paragraph must still be reported.** The round's first sample reply
+wrote subsystem paragraphs for only three subsystems, the three paragraph 3
+had named as places results go. So only two of the eight majors got one. The
+pass printed nothing, because a paragraph never written is neither dropped nor
+withheld, and R5 had just removed the only line that fired on this page. That
+contradicts FR-018's "never silent". The owner approved a new clause:
+`GroundedNarrative` gains `askedCount` and `unwrittenCount` (requested
+subsystems the reply wrote nothing for), and a `generated` or `cached` pass
+prints `<u> of <m> subsystem paragraphs not written`, alone or appended to its
+other line (contract §7). A written but rejected paragraph stays "dropped".
+
+**Variance, not regression.** Re-asked once with the same prompt (cache row
+cleared, one Groq call), the sample reply wrote all twelve paragraphs. Every
+major was kept, and the four unmarked were ignored without a notice. One
+reply is one sample, and this one model call per repository can under-deliver.
+The new clause is what makes that visible.
+
+**Verification** (`gpt-oss-120b` temporarily first; config restored and
+hash-checked after each re-index; three Groq calls in all):
+
+| | Sample | Nextgen |
+| --- | --- | --- |
+| Terminal `overview:` line | none (run 1: none, 6 majors unwritten, which led to the new clause) | none |
+| Lead | 3 of 3. ¶1: "Work enters through API routes in `routes_loans.py` and `routes_books.py`, and through CLI commands in `cli.py`" | 3 of 3. ¶1 names `DigitalBankingApplication.main` |
+| Subsystem paragraphs | 8 of 8 majors kept; 4 unasked ignored | 5 of 5 majors kept; 2 unasked (tooling) ignored |
+| Majors | Documentation out, Storage (Memory Store) in | unchanged |
+| Generated words / link problems | ~327 / 0 | ~230 / 0 |
+| Tense (SC-013) | every sentence declarative present | same |
+| Appearance | 700 px dark and 1440 px light: Responsibility in the UI font, table scrolls inside, `→` links, one block per section | same |
+| Module list (T049) | 51 rows, 51 distinct labels, eight told-apart `__init__` rows, no loose parentheses at either edge (700 px dark; at 400 px the pre-existing shell sidebar clips content, as on every page) | 109 rows, 109 distinct labels |
+
+**Stranger test** (fresh subagent per repository, one Read of `index.md`, both
+`tool_uses: 1`; scored against the Decision 17 keys). Both pass.
+
+- **Sample.** 8 of 8 key subsystems, and the entry points: routes, `cli.py`,
+  `app.py`. The Decision 18 reviewer missed the CLI; this one found it in
+  paragraph 1, which it called "good". The module list was "my most reliable
+  source". The table and paragraphs were still "mostly misleading", for
+  Decision 18's reasons: "Tests" starts at `fine_calculator.py`, "Lending
+  Service" at `utils/ids.py`, "Catalog Service" at `core/errors.py`.
+- **Nextgen.** It passes by the key, but from module names. Paragraph 1's
+  first sentence helped. `main` "is where the process starts, not where
+  operations come in", because controllers are invisible to the evidence (the
+  Java parser records no annotations). "Data Transfer Objects … in
+  `animations.ts`" is "plainly wrong".
+
+**Conclusion.** The refinements did what they were for, and User Story 4 makes
+the module list readable; both reviewers leaned on it. The Overview's
+remaining weakness is unchanged from Decision 18: spec 033's grouping, titles
+and anchors, and on Java, entry evidence that cannot see controllers.
 
 ---
 

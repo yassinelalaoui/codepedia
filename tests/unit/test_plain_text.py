@@ -7,7 +7,7 @@ the character budget ran out. These pin what a reader sees instead.
 
 from __future__ import annotations
 
-from doc_generator.plain_text import MAX_MODULE_DESCRIPTION_CHARS, excerpt, first_sentence, to_plain
+from doc_generator.plain_text import MAX_MODULE_DESCRIPTION_CHARS, excerpt, first_sentence, marked_excerpt, to_plain
 
 # The README row as it appeared on a real Overview (research Decision 12).
 NEXTGEN_README = (
@@ -84,6 +84,28 @@ def test_the_nextgen_readme_row_becomes_plain_text():
     assert result == "Welcome to the NexGen Wealth Ledger repository!"
     for marker in ("#", "*", "\\", "---"):
         assert marker not in result
+
+
+def test_a_marked_excerpt_shows_a_cut_even_at_a_sentence_boundary():
+    """Spec FR-032: a shortened description says so, wherever it was cut. A
+    sentence-boundary cut reads as complete without the mark."""
+    result = marked_excerpt(NEXTGEN_README)
+
+    assert result == "Welcome to the NexGen Wealth Ledger repository! …"
+    assert len(result) <= MAX_MODULE_DESCRIPTION_CHARS
+
+
+def test_a_marked_excerpt_at_a_word_boundary_carries_one_ellipsis():
+    text = "A single very long sentence that keeps going without any stop at all for a while"
+
+    assert marked_excerpt(text, max_chars=30) == "A single very long sentence…"
+
+
+def test_a_marked_excerpt_of_text_that_fits_is_unmarked():
+    assert marked_excerpt("Fits. Also fits.") == "Fits. Also fits."
+    assert marked_excerpt("# Heading only\n") == ""
+    exact = "x" * (MAX_MODULE_DESCRIPTION_CHARS - 1) + "."
+    assert marked_excerpt(exact) == exact
 
 
 def test_first_sentence_takes_one_sentence_and_caps_it():

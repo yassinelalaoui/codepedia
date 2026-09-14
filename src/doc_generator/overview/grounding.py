@@ -148,6 +148,15 @@ class GroundedNarrative:
     isStale: bool = False
     #: How many paragraphs the reply offered, for "k of n" in the notice.
     offeredCount: int = 0
+    #: Paragraphs written for live subsystems the prompt did not ask about.
+    #: Never published and never counted as offered or dropped; kept for
+    #: diagnosis only (research Decision 19).
+    unaskedCount: int = 0
+    #: Subsystem paragraphs the prompt asked for, and how many of those the
+    #: reply did not write at all - reported, since a reply that skips most of
+    #: them is a reduced narrative (spec FR-018, research Decision 19).
+    askedCount: int = 0
+    unwrittenCount: int = 0
 
     @property
     def paragraphCount(self) -> int:
@@ -206,7 +215,10 @@ def ground(
         rejected.append(Rejection("lead", index, "G9"))
     lead = lead[:MAX_LEAD_PARAGRAPHS]
 
-    subsystems, offered_subsystems = _ground_subsystems(getattr(reply, "subsystems", None) or {}, context, rejected)
+    offered_by_handle = getattr(reply, "subsystems", None) or {}
+    subsystems, offered_subsystems, unasked = _ground_subsystems(offered_by_handle, context, rejected)
+    written = {handle_map.get(str(handle)) for handle in offered_by_handle}
+    asked = evidence.majorFeatureKeys
 
     # G9: the whole page's generated prose stays under the word budget, trimmed
     # from the end - subsystem paragraphs first (last in table order), then the
@@ -238,29 +250,39 @@ def ground(
         leadWithheld=lead_withheld,
         isStale=is_stale,
         offeredCount=len(offered) + offered_subsystems,
+        unaskedCount=unasked,
+        askedCount=len(asked),
+        unwrittenCount=sum(1 for key in asked if key not in written),
     )
 
 
 def _ground_subsystems(
     offered: Mapping[str, object], context: _Context, rejected: list[Rejection]
-) -> tuple[list[tuple[int, str, GroundedParagraph]], int]:
+) -> tuple[list[tuple[int, str, GroundedParagraph]], int, int]:
     """The per-subsystem paragraphs that survive, in table order (G11).
 
     Each is accepted or withheld on its own (spec FR-025a): one bad paragraph
     never costs the others, and never its subsystem's table row. The `int` in
     each entry is the paragraph's position in the reply, for the notice.
+    Also returns how many were offered and how many were not asked for.
     """
     majors = context.evidence.majorFeatureKeys
     kept: dict[str, tuple[int, GroundedParagraph]] = {}
+    unasked = 0
     for index, (handle, text) in enumerate(offered.items()):
         # G3: a handle this prompt issued, for a feature that still exists.
         feature_key = context.handle_map.get(str(handle))
         if not feature_key or feature_key not in context.titles:
             rejected.append(Rejection("subsystem", index, "G3", str(handle)))
             continue
-        # G9: paragraphs are asked for, and kept for, major subsystems only -
-        # at most `MAX_SUBSYSTEM_PARAGRAPHS` of them - and one each.
-        if feature_key not in majors or feature_key in kept:
+        # Paragraphs are asked for, and kept for, major subsystems only. One
+        # for any other subsystem answers a question nobody asked, so it is
+        # skipped without counting against the reply (research Decision 19).
+        if feature_key not in majors:
+            unasked += 1
+            continue
+        # G9: at most one paragraph per major subsystem.
+        if feature_key in kept:
             rejected.append(Rejection("subsystem", index, "G9", str(handle)))
             continue
         outcome = _check(text, "subsystem", index, context)
@@ -274,7 +296,7 @@ def _ground_subsystems(
         kept[feature_key] = (index, outcome)
 
     ordered = [(kept[key][0], key, kept[key][1]) for key in majors if key in kept]
-    return ordered[:MAX_SUBSYSTEM_PARAGRAPHS], len(offered)
+    return ordered[:MAX_SUBSYSTEM_PARAGRAPHS], len(offered) - unasked, unasked
 
 
 def accept_description(text: str, evidence: OverviewEvidence, lookup: SymbolLookup) -> str | None:

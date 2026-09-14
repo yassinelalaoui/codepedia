@@ -143,7 +143,9 @@ def build_overview_evidence(
     )
     handle_by_key = {brief.featureKey: brief.handle for brief in briefs}
     major = tuple(
-        brief.featureKey for brief in briefs if brief.kind != "tooling"
+        feature.key
+        for feature in prompted
+        if feature.kind != "tooling" and not _is_docs_or_tests_only(feature, repository_root)
     )[:MAX_SUBSYSTEM_PARAGRAPHS]
 
     repository = bundle.repository
@@ -242,6 +244,20 @@ def _brief(handle: str, feature: Feature, repository_root: str | Path) -> Featur
         anchorSummary=_summary(anchor),
         memberNames=tuple(_member_name(member, repository_root) for member in others[:MAX_MEMBER_NAMES]),
         entryPointCount=feature.exposedEntryPointCount,
+    )
+
+
+def _is_docs_or_tests_only(feature: Feature, repository_root: str | Path) -> bool:
+    """Whether every member is known to be documentation or a test file.
+
+    Such a subsystem gets no paragraph. Measured on the sample repository, the
+    planner's kind ranking put "Documentation" among the eight while both
+    storage subsystems went without (research Decision 19). A member with no
+    path is not known to be either, so it keeps its subsystem eligible.
+    """
+    paths = [member.filePath for member in feature.members]
+    return bool(paths) and all(
+        path and (is_prose_file(path) or is_test_path(_relative_path(path, repository_root))) for path in paths
     )
 
 

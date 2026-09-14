@@ -1,6 +1,6 @@
 # Major Function: Browse the Wiki, Search, and Navigate a Dependency Diagram
 
-**Specs**: 012, 013, 015, 016
+**Specs**: 012, 013, 015, 016, 038
 
 The everyday reading experience: open the wiki, find a symbol by name, or explore how
 modules connect to each other by clicking through a live diagram.
@@ -13,7 +13,7 @@ sequenceDiagram
     participant SearchIndex as "search-index.json (012)"
 
     Reader->>Server: GET / (wiki home page)
-    Server-->>Reader: home.html (architecture overview,\nmodule links)
+    Server-->>Reader: index.html, the Overview (038: AI-written lead,\nsubsystems table, module list)
     Reader->>WikiUI: loads wiki-ui.js
 
     par Search for a symbol

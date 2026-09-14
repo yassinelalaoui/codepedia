@@ -27,6 +27,7 @@ _This overview describes an earlier version of the repository and has not been r
 ## Architecture overview
 
 This repository has {{ architecture_summary.moduleCount }} documented module{{ '' if architecture_summary.moduleCount == 1 else 's' }}, {{ architecture_summary.classCount }} class{{ '' if architecture_summary.classCount == 1 else 'es' }}, and {{ architecture_summary.functionCount }} top-level function{{ '' if architecture_summary.functionCount == 1 else 's' }}{% if architecture_summary.documentCount %}, alongside {{ architecture_summary.documentCount }} documentation page{{ '' if architecture_summary.documentCount == 1 else 's' }}{% endif %}.
+{: .architecture-counts }
 
 {# The subsystems table (038 User Story 2): what each part is for and where to
    start reading it, not how big it is. Built with no provider at all, so it is
@@ -71,9 +72,13 @@ _This overview describes an earlier version of the repository and has not been r
    in the same order, so the list only repeated it (038 User Story 2). #}
 ## Modules
 
+{# Each row is a flex box whose last link is pushed right, so a literal "("
+   and ")" around it became loose items at opposite edges (038 research
+   Decision 12). The label and plain-text description come from
+   `prose.disambiguated_labels` and `plain_text.marked_excerpt` (User Story 4). #}
 {% if module_entries %}
 {% for entry in module_entries %}
-- [{{ entry.module.name | mdesc }}]({{ entry.moduleLink.relativePath if entry.moduleLink else '#' }}){% if entry.module.docstring %} — {{ entry.module.docstring | replace('\n', ' ') | mdesc }}{% endif %} ([dependencies]({{ entry.diagramLink.relativePath if entry.diagramLink else '#' }}))
+- [{{ entry.label | mdesc }}]({{ entry.moduleLink.relativePath if entry.moduleLink else '#' }}){% if entry.description %} — {{ entry.description | mdesc }}{% endif %} [dependencies]({{ entry.diagramLink.relativePath if entry.diagramLink else '#' }})
 {% endfor %}
 {: .module-list }
 {% else %}

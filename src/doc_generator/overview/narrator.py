@@ -46,9 +46,10 @@ NARRATIVE_FORMAT_VERSION = "2"
 # has to bound what the prompt *could* be, not what one example happens to be.
 # Every part is hard-truncated to its constant when the prompt is built.
 # 1400 until the entry/uncalled distinction was spelled out (038 research
-# Decisions 15 and 16), 1600 until User Story 2 asked for subsystem paragraphs;
+# Decisions 15 and 16), 1600 until User Story 2 asked for subsystem paragraphs,
+# 1900 until paragraph 1 was asked to name every kind of entry (Decision 19);
 # each step is under 100 tokens on the worst case.
-SYSTEM_PROMPT_CHARS = 1900
+SYSTEM_PROMPT_CHARS = 2050
 # Repository name, languages, the subsystem count, and the one line that says
 # how to read the entry lines below.
 HEADER_CHARS = 300
@@ -64,8 +65,9 @@ SYSTEM_PROMPT = (
     "You write the opening of a repository's documentation page, using only the evidence given. "
     'Reply with only a JSON object {"lead": ["...", "..."], "subsystems": {"fN": "..."}}, '
     "under 550 words in all. The lead holds two to four paragraphs.\n"
-    "Paragraph 1 opens by saying what the repository is and does. Then, if a line is marked entry, it names "
-    "that line's file as where work enters; if none is, it claims no entry point and names a subsystem's start file.\n"
+    "Paragraph 1 opens by saying what the repository is and does. Then, if lines are marked entry, it "
+    "names each kind of entry with its files as where work enters (api-route as routes, cli-command as commands, "
+    "main as the main function); if none is, it claims no entry point and names a subsystem's start file.\n"
     "Paragraph 2 follows one line: name its function and file, then the subsystems its calls reach. "
     "Only a line marked entry is an entry point; one marked uncalled is just a function nothing calls. "
     "Call order is not data flow: list what it reaches without then, next or finally.\n"
@@ -84,8 +86,8 @@ SYSTEM_PROMPT = (
     "- Declarative present tense. Never address the reader or write you.\n"
     "- No promotional adjectives such as powerful, robust, seamless or modern.\n"
     "- No headings, lists, tables, links or other markup.\n"
-    "Example paragraph: Work enters through the `run` command in `src/app/cli.py`, "
-    "part of [[f0]]; its calls reach [[f1]] and [[f3]]."
+    "Example: Work enters through routes in `src/app/api.py` and commands in `src/app/cli.py`. "
+    "The `run` command in `src/app/cli.py` is part of [[f0]]; its calls reach [[f1]] and [[f3]]."
 )
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)

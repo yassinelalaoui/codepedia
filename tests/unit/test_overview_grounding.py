@@ -386,6 +386,45 @@ def test_offered_count_includes_subsystem_paragraphs():
     assert result.paragraphCount == 3
 
 
+def test_a_paragraph_for_a_subsystem_not_asked_for_is_ignored_not_dropped():
+    """The prompt asks for majors only, but models write the rest anyway; on the
+    sample repository every notice read "4 of 15 narrative paragraphs dropped"
+    for paragraphs nobody asked for (research Decision 19). They are not
+    published, and not counted either way."""
+    evidence = replace(EVIDENCE, majorFeatureKeys=("feat-core",))
+
+    result = _ground_subsystems({"f0": CORE, "f1": IO}, GOOD, evidence=evidence)
+
+    assert _subsystem_keys(result) == ["feat-core"]
+    assert result.rejected == ()
+    assert result.offeredCount == 2
+    assert result.unaskedCount == 1
+
+
+def test_a_major_the_reply_wrote_nothing_for_counts_as_unwritten():
+    """Measured on the sample repository: asked for eight, the model wrote three,
+    and the terminal said nothing (research Decision 19). A paragraph that was
+    written and then rejected is dropped, not unwritten."""
+    missing = _ground_subsystems({"f0": CORE}, GOOD)
+    rejected = _ground_subsystems({"f0": "It is priced by `LoanPricingEngine`."}, GOOD)
+    lead_only = _ground(GOOD)
+
+    assert (missing.unwrittenCount, missing.askedCount) == (1, 2)
+    assert (rejected.unwrittenCount, rejected.askedCount) == (1, 2)
+    assert lead_only.unwrittenCount == 2
+    assert ground(None, EVIDENCE, LOOKUP, handle_map=HANDLES).unwrittenCount == 0
+
+
+def test_an_invented_handle_still_counts_as_dropped():  # G3 is a real defect
+    evidence = replace(EVIDENCE, majorFeatureKeys=("feat-core",))
+
+    result = _ground_subsystems({"f0": CORE, "f9": IO}, GOOD, evidence=evidence)
+
+    assert [r.rule for r in result.rejected] == ["G3"]
+    assert result.offeredCount == 3
+    assert result.unaskedCount == 0
+
+
 # --------------------------------------------------------------------------
 # accept_description - a planned description entering the table (FR-021)
 # --------------------------------------------------------------------------

@@ -81,7 +81,25 @@ def excerpt(text: str, max_chars: int = MAX_MODULE_DESCRIPTION_CHARS) -> str:
     boundary that fits, followed by an ellipsis. Never mid-word, except for a
     single word longer than the whole budget, which cannot be helped.
     """
+    return _shorten(to_plain(text), max_chars)
+
+
+def marked_excerpt(text: str, max_chars: int = MAX_MODULE_DESCRIPTION_CHARS) -> str:
+    """`excerpt`, but a shortened result always says so (038 spec FR-032).
+
+    `excerpt` marks only a cut at a word; one after a whole sentence reads as
+    complete. For a module-list row, where the full text is a click away, the
+    owner chose to mark both (038 research Decision 12). The mark's room is
+    kept inside `max_chars`.
+    """
     plain = to_plain(text)
+    if len(plain) <= max_chars:
+        return plain
+    cut = _shorten(plain, max_chars - len(" " + ELLIPSIS))
+    return cut if cut.endswith(ELLIPSIS) else f"{cut} {ELLIPSIS}"
+
+
+def _shorten(plain: str, max_chars: int) -> str:
     if len(plain) <= max_chars:
         return plain
 

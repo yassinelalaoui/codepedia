@@ -21,7 +21,14 @@ picture and *why* it's built this way.
   context.
 - **Embeds and indexes** code so it can be found by meaning, not just
   keyword.
-- **Renders a browsable wiki**: a home page, one page per module, clickable
+- **Renders a browsable wiki**: an Overview home page that explains the
+  repository before it lists it. It opens with a short AI-written account of
+  what the repository is, where work enters and where results end up, checked
+  against the code so every name it mentions is real and links to its page.
+  Next come a table of the repository's subsystems, each with what it is for
+  and where to start reading, and a module list whose rows are readable and
+  distinct. With no AI provider available, the page keeps the same structure
+  and links, just without the prose. Beyond the Overview: one page per module, clickable
   dependency diagrams, a repository-wide class diagram of its structurally
   major classes, one bounded call-sequence diagram per identified entry
   point (CLI command, API route handler, or uncalled public function/method),

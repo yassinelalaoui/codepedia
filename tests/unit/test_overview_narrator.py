@@ -203,6 +203,14 @@ def test_paragraph_one_opens_with_what_the_repository_is():
     assert "Paragraph 1 opens by saying what the repository is and does. Then," in SYSTEM_PROMPT
 
 
+def test_paragraph_one_names_every_kind_of_entry_with_its_files():
+    """With routes and commands both marked entry, paragraph 1 named one route
+    as "the command" where work enters (research Decision 19)."""
+    assert "names each kind of entry with its files" in SYSTEM_PROMPT
+    assert "api-route as routes, cli-command as commands" in SYSTEM_PROMPT
+    assert "Work enters through routes in `src/app/api.py` and commands in `src/app/cli.py`." in SYSTEM_PROMPT
+
+
 def test_prompt_asks_for_subsystem_paragraphs_keyed_by_handle():
     """User Story 2: one paragraph per *major* subsystem, keyed by its handle.
     Majors are marked in their own block, so the header does not grow."""

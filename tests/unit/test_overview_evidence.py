@@ -105,6 +105,32 @@ def test_major_feature_keys_skip_tooling_and_cap_at_eight(tmp_path):
     assert list(evidence.majorFeatureKeys) == [f.key for f in features if f.kind != "tooling"][:MAX_SUBSYSTEM_PARAGRAPHS]
 
 
+def _with_members(feature: Feature, root: Path, *paths: str) -> Feature:
+    members = tuple(
+        FeatureMember(moduleKey=f"{feature.key}-{m}", name=Path(path).stem, filePath=str(root / path))
+        for m, path in enumerate(paths)
+    )
+    return Feature(
+        key=members[0].moduleKey, title=feature.title, description=feature.description, kind=feature.kind, members=members
+    )
+
+
+def test_a_subsystem_with_no_code_gets_no_paragraph(tmp_path):
+    """Documentation alone, or tests alone, is not a part of the system to
+    explain: measured on the sample repository, "Documentation" took a
+    paragraph from both storage subsystems (research Decision 19). A test file
+    grouped with the code it tests still counts as code."""
+    root = tmp_path / "sample-repo"
+    docs = _with_members(_feature(0, root, kind="overview"), root, "docs/architecture.md", "docs/getting-started.md")
+    tests = _with_members(_feature(1, root), root, "tests/test_a.py", "tests/conftest.py")
+    mixed = _with_members(_feature(2, root), root, "src/fines.py", "tests/test_fines.py")
+    code = _with_members(_feature(3, root, kind="subsystem"), root, "src/store.py")
+    evidence, _ = _synthetic(tmp_path, [docs, tests, mixed, code])
+
+    assert list(evidence.majorFeatureKeys) == [mixed.key, code.key]
+    assert [brief.featureKey for brief in evidence.features] == [docs.key, tests.key, mixed.key, code.key]
+
+
 def test_anchor_summary_prefers_docstring_then_generated_summary_first_sentence_capped_at_120(tmp_path):
     root = tmp_path / "sample-repo"
     long_sentence = "Word " * 60 + "end."

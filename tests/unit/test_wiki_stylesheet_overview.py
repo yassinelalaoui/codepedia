@@ -40,3 +40,10 @@ def test_a_row_holding_only_its_title_link_is_not_styled_as_the_trailing_link(wi
     `:last-child` alone pushed every feature title right and greyed it."""
     assert "a:last-child:not(:first-child){" in wiki_css
     assert "ul:has(>li.module-list) a:last-child{" not in wiki_css
+
+
+def test_the_subsystems_responsibility_column_uses_the_ui_font(wiki_css):
+    """A sentence in the monospace face ran the table tall at narrow widths.
+    Scoped through the counts paragraph before it, so no other table changes
+    (research Decision 19)."""
+    assert ".content-col .architecture-counts+table td:nth-child(2){font-family:var(--wiki-font-ui)}" in wiki_css

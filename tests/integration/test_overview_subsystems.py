@@ -52,8 +52,9 @@ class ScriptedEngine:
 class StubPlanner:
     """Groups `core` and `helpers` as one planned subsystem, `store` as another."""
 
-    def __init__(self, descriptions: dict[str, str]) -> None:
+    def __init__(self, descriptions: dict[str, str], kinds: dict[str, str] | None = None) -> None:
         self.descriptions = descriptions
+        self.kinds = kinds or {}
         self.repositoryId = ""
 
     def plan(self, candidates, evidence):
@@ -64,7 +65,12 @@ class StubPlanner:
             groups["Storage" if members == {"store"} else "Core"].append(f"c{index}")
         return FeaturePlan(
             features=tuple(
-                PlannedFeature(title=title, description=self.descriptions.get(title, ""), kind="subsystem", memberCandidateIds=tuple(ids))
+                PlannedFeature(
+                    title=title,
+                    description=self.descriptions.get(title, ""),
+                    kind=self.kinds.get(title, "subsystem"),
+                    memberCandidateIds=tuple(ids),
+                )
                 for title, ids in groups.items()
                 if ids
             )
@@ -157,7 +163,75 @@ def test_each_paragraph_ends_with_its_subsystem_link(tmp_path):
 
     assert len(paragraphs) == 2
     for title, paragraph in zip(order, paragraphs):
-        assert re.search(rf"\[{title}\]\(features/[^)]+\.md\)$", paragraph), paragraph
+        # Set apart by an arrow: run on after the last sentence, the bare link
+        # read as a stray fragment (research Decision 19).
+        assert re.search(rf"\\\. → \[{title}\]\(features/[^)]+\.md\)$", paragraph), paragraph
+
+
+def test_the_counts_sentence_directly_precedes_the_table_and_is_marked(tmp_path):
+    """The stylesheet sets the Responsibility column in the UI font through
+    `.architecture-counts + table`, so only this table changes (research
+    Decision 19). This pins the sibling relationship that rule depends on."""
+    home, _ = _home(tmp_path)
+
+    assert "{: .architecture-counts }" in home.contentMarkdown
+    assert re.search(r'<p class="architecture-counts">This repository has [^<]*</p>\s*<table>', home.renderedHtml)
+
+
+def test_a_paragraph_for_a_subsystem_not_asked_for_is_neither_shown_nor_reported(tmp_path):
+    """Tooling gets no paragraph (FR-025). When the model writes one anyway it
+    is ignored, not reported as dropped (research Decision 19)."""
+    root, store, graph = _repo(tmp_path / "u")
+    manifest = open_doc_manifest_store(tmp_path / "u-manifest.sqlite")
+    notices: list[str] = []
+    generator = DocGenerator(
+        metadataStore=store,
+        dependencyGraph=graph,
+        manifestStore=manifest,
+        outputRoot=tmp_path / "u-docs",
+        repositoryRoot=root,
+        featurePlanner=StubPlanner(DESCRIPTIONS, kinds={"Storage": "tooling"}),
+        overviewNarrator=OverviewNarrator(wrap_llm(ScriptedEngine(_reply(f0=CORE_TEXT, f1=STORE_TEXT))), cache=manifest),
+        onNotice=notices.append,
+    )
+    home = next(page for page in generator.generateRepositoryDocumentation(root, incremental=False).pages if page.kind == "home")
+
+    assert [feature.title for feature in generator._ensure_features()] == ["Core", "Storage"]
+    paragraphs = _paragraphs(home.contentMarkdown)
+    assert len(paragraphs) == 1 and "[Core](features/" in paragraphs[0]
+    assert notices == []
+
+
+def _notices_for(tmp_path, reply: str) -> list[str]:
+    root, store, graph = _repo(tmp_path / "n")
+    manifest = open_doc_manifest_store(tmp_path / "n-manifest.sqlite")
+    notices: list[str] = []
+    DocGenerator(
+        metadataStore=store,
+        dependencyGraph=graph,
+        manifestStore=manifest,
+        outputRoot=tmp_path / "n-docs",
+        repositoryRoot=root,
+        featurePlanner=StubPlanner(DESCRIPTIONS),
+        overviewNarrator=OverviewNarrator(wrap_llm(ScriptedEngine(reply)), cache=manifest),
+        onNotice=notices.append,
+    ).generateRepositoryDocumentation(root, incremental=False)
+    return notices
+
+
+def test_a_subsystem_paragraph_the_model_never_wrote_is_reported(tmp_path):  # FR-018
+    """Asked for eight, the sample repository's reply wrote three, and nothing
+    said so (research Decision 19)."""
+    assert _notices_for(tmp_path, _reply(f0=CORE_TEXT)) == ["  overview: 1 of 2 subsystem paragraphs not written"]
+
+
+def test_unwritten_paragraphs_share_the_line_with_dropped_ones(tmp_path):  # contract §7: one line per pass
+    notices = _notices_for(tmp_path, _reply(f1="It is priced by `NoSuchEngine`."))
+
+    assert notices == [
+        "  overview: 1 of 2 narrative paragraphs dropped (named something not in the repository); "
+        "1 of 2 subsystem paragraphs not written"
+    ]
 
 
 def test_a_withheld_paragraph_keeps_its_table_row(tmp_path):
