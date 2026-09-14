@@ -17,6 +17,7 @@ the same cache key - on every run.
 
 from __future__ import annotations
 
+import re
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,13 +41,31 @@ MAX_README_LEAD_CHARS = 600
 # table still lists every one.
 MAX_PROMPTED_FEATURES = 12
 
-# Six flows are enough to say where work enters; they are the six reaching the
-# most modules, so the principal paths are the ones described.
+# Six flows are enough to say where work enters: commands, routes and `main`
+# first (`ENTRY_KINDS`), then the six reaching the most modules, so the
+# principal paths are the ones described.
 MAX_PROMPTED_ENTRY_FLOWS = 6
 
 # How many subsystems may receive a paragraph of their own (spec FR-025). Here
 # rather than in `grounding` because the evidence decides which ones are major.
 MAX_SUBSYSTEM_PARAGRAPHS = 8
+
+# The flow kinds that say where work enters. The fourth kind, "function", is only
+# a function nothing in the repository calls: an interface implementation whose
+# callers go through the interface, a framework callback, a test. Measured on a
+# Spring repository, service implementations outranked every controller and the
+# `main` method by reach, and the narrative named one as the program's entry
+# point. So these rank first, and the prompt labels the rest as merely uncalled.
+ENTRY_KINDS = ("cli-command", "api-route", "main")
+
+# A test calls the code it tests, so by reach it looks like the busiest entry
+# point in the repository - measured on the sample repository, a test ranked
+# fourth. Directory names and file-name conventions, not imports, because a
+# test's file is the only thing every language's test runner agrees on.
+_TEST_DIRECTORIES = frozenset({"test", "tests", "__tests__"})
+_TEST_FILE_NAME = re.compile(
+    r"^(test_.+\.py|.+_test\.(py|go)|conftest\.py|.+Tests?\.(java|kt|cs)|.+\.(spec|test)\.[cm]?[jt]sx?)$"
+)
 
 MAX_DESCRIPTION_CHARS = 160
 MAX_ANCHOR_SUMMARY_CHARS = 120
@@ -76,6 +95,7 @@ class EntryFlow:
     """Where one entry point takes work: the subsystems it reaches, in order."""
 
     qualifiedName: str
+    #: One of `ENTRY_KINDS`, or "function" for a function nothing calls.
     kind: str
     modulePath: str
     featureHandle: str
@@ -244,10 +264,12 @@ def _entry_flows(
     feature_key_by_module = {
         member.moduleKey: feature.key for feature in features for member in feature.members
     }
-    ranked: list[tuple[int, str, EntryFlow]] = []
+    ranked: list[tuple[int, int, str, EntryFlow]] = []
     for entry_point in identify_entry_points(bundle, graph):
         module_path = path_by_module_key.get(entry_point.moduleKey, "")
-        if module_path and is_prose_file(module_path):
+        if module_path and (
+            is_prose_file(module_path) or is_test_path(_relative_path(module_path, repository_root))
+        ):
             continue
         depth_by_module = _module_depths(graph, entry_point.symbolId, module_key_by_symbol)
         own_feature = feature_key_by_module.get(entry_point.moduleKey, "")
@@ -264,17 +286,27 @@ def _entry_flows(
             key=lambda key: (depth_by_feature[key], _handle_index(handle_by_key[key])),
         )[:MAX_REACHED_FEATURES]
 
+        # `main` is found by the uncalled-function rule like any other, but it
+        # is where a program starts, whatever little it reaches.
+        kind = "main" if entry_point.kind == "function" and entry_point.name == "main" else entry_point.kind
         flow = EntryFlow(
             qualifiedName=f"{entry_point.className}.{entry_point.name}" if entry_point.className else entry_point.name,
-            kind=entry_point.kind,
+            kind=kind,
             modulePath=_relative_path(module_path, repository_root) if module_path else entry_point.moduleName,
             featureHandle=handle_by_key.get(own_feature, ""),
             reachedHandles=tuple(handle_by_key[key] for key in reached),
         )
-        ranked.append((len(depth_by_module), entry_point.stableKey, flow))
+        tier = 0 if kind in ENTRY_KINDS else 1
+        ranked.append((tier, -len(depth_by_module), entry_point.stableKey, flow))
 
-    ranked.sort(key=lambda item: (-item[0], item[1]))
-    return tuple(flow for _, _, flow in ranked[:MAX_PROMPTED_ENTRY_FLOWS])
+    ranked.sort(key=lambda item: item[:3])
+    return tuple(item[3] for item in ranked[:MAX_PROMPTED_ENTRY_FLOWS])
+
+
+def is_test_path(relative_path: str) -> bool:
+    """Whether a repo-relative path is a test file, by directory or file-name convention."""
+    parts = relative_path.replace("\\", "/").split("/")
+    return bool(_TEST_DIRECTORIES.intersection(parts[:-1])) or bool(_TEST_FILE_NAME.match(parts[-1]))
 
 
 def _module_depths(

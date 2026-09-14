@@ -10,9 +10,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "integration"))
 
-from _doc_generator_support import build_indexed_repo  # noqa: E402
+from _doc_generator_support import build_indexed_repo, index_repo  # noqa: E402
 
 from doc_generator.features.candidates import build_candidates  # noqa: E402
 from doc_generator.features.evidence import build_repository_evidence  # noqa: E402
@@ -27,6 +29,7 @@ from doc_generator.overview.evidence import (  # noqa: E402
     MAX_REACHED_FEATURES,
     MAX_SUBSYSTEM_PARAGRAPHS,
     build_overview_evidence,
+    is_test_path,
     read_readme_lead,
 )
 
@@ -138,6 +141,62 @@ def test_entry_flows_rank_by_modules_reached_then_stable_key_and_cap_at_six(tmp_
     # uncalled leaf and must lead the list.
     assert evidence.entryFlows[0].qualifiedName == "alpha_entry"
     assert evidence.entryFlows[0].modulePath == "alpha.py"
+
+
+def _entry_kinds_repo(tmp_path):
+    """A command, a `main`, an uncalled function reaching more than either, and a test.
+
+    Ranked by reach alone, `busy` and the test would lead - the shape that let a
+    Spring service implementation pass for the entry point (research Decision 15).
+    """
+    root = tmp_path / "kinds-repo"
+    (root / "tests").mkdir(parents=True)
+    sources = {
+        "leaf_a.py": "def work_a():\n    return 1\n",
+        "leaf_b.py": "def work_b():\n    return 2\n",
+        "cli.py": "from leaf_a import work_a\n\n\n@app.command()\ndef run():\n    return work_a()\n",
+        "launcher.py": "def main():\n    return 0\n",
+        "busy.py": "from leaf_a import work_a\nfrom leaf_b import work_b\n\n\ndef busy():\n    return work_a() + work_b()\n",
+        "tests/test_leaves.py": (
+            "from leaf_a import work_a\nfrom leaf_b import work_b\n\n\n"
+            "def test_leaves():\n    assert work_a() + work_b() == 3\n"
+        ),
+    }
+    for name, text in sources.items():
+        (root / name).write_text(text, encoding="utf-8")
+    store, graph = index_repo(tmp_path, root, [root / name for name in sources], "kinds.sqlite")
+    return root, store.load_repository(root), graph
+
+
+def test_commands_routes_and_main_lead_the_entry_flows_and_tests_are_left_out(tmp_path):
+    root, bundle, graph = _entry_kinds_repo(tmp_path)
+    flows = build_overview_evidence([], bundle, graph, repository_root=root).entryFlows
+    by_name = {flow.qualifiedName: flow for flow in flows}
+
+    assert [flow.kind for flow in flows[:2]] == ["cli-command", "main"]
+    assert by_name["main"].modulePath == "launcher.py"
+    assert by_name["busy"].kind == "function"
+    assert "test_leaves" not in by_name
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tests/test_api.py",
+        "src/test/java/com/acme/WalletTest.java",
+        "pkg/service_test.go",
+        "web/__tests__/app.js",
+        "web/src/app.spec.ts",
+        "conftest.py",
+    ],
+)
+def test_test_files_are_recognised_by_directory_or_name(path):
+    assert is_test_path(path)
+
+
+@pytest.mark.parametrize("path", ["src/latest.py", "src/contest.py", "backend/Wallet.java", "web/src/app.ts"])
+def test_ordinary_files_are_not_test_files(path):
+    assert not is_test_path(path)
 
 
 def test_reached_handles_are_ordered_by_first_contact_depth_and_cap_at_five(tmp_path):

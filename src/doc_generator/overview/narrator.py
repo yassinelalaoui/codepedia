@@ -31,6 +31,7 @@ from .evidence import (
     MAX_PROMPTED_ENTRY_FLOWS,
     MAX_PROMPTED_FEATURES,
     MAX_README_LEAD_CHARS,
+    ENTRY_KINDS,
     EntryFlow,
     FeatureBrief,
     OverviewEvidence,
@@ -44,7 +45,9 @@ NARRATIVE_FORMAT_VERSION = "1"
 # the live strings, because the budget assertion in `test_overview_narrator.py`
 # has to bound what the prompt *could* be, not what one example happens to be.
 # Every part is hard-truncated to its constant when the prompt is built.
-SYSTEM_PROMPT_CHARS = 1400
+# 1400 until the entry/uncalled distinction was spelled out (038 research
+# Decisions 15 and 16); +50 tokens on the worst case.
+SYSTEM_PROMPT_CHARS = 1600
 # Repository name, languages, the subsystem count, and the one line that says
 # how to read the entry lines below.
 HEADER_CHARS = 300
@@ -60,11 +63,13 @@ SYSTEM_PROMPT = (
     "You write the opening of a source repository's documentation page, using only the evidence given. "
     'Reply with only a JSON object {"lead": ["...", "..."]} holding two to four paragraphs, '
     "under 400 words in total.\n"
-    "Paragraph 1 says what the repository is and does, and names the file its main entry point is in.\n"
-    "Paragraph 2 follows one entry line: name the entry function and its file, then the subsystems "
-    "its calls reach. Call order is not data flow; do not say results move from one to the next.\n"
+    "Paragraph 1 says what the repository is and does. If a line is marked entry, it names that line's "
+    "file as where work enters; if none is, it claims no entry point and names a subsystem's start file.\n"
+    "Paragraph 2 follows one line: name its function and file, then the subsystems its calls reach. "
+    "Only a line marked entry is an entry point; one marked uncalled is just a function nothing calls. "
+    "Call order is not data flow: list what it reaches without then, next or finally.\n"
     "Paragraph 3, only if a subsystem's description or start-file summary says it stores, sends or "
-    "returns results, says where results end up and names that start file.\n"
+    "returns data, names every such subsystem as a place results can go, never a single file as the only destination.\n"
     "Rules:\n"
     "- Write full sentences; no arrows.\n"
     "- Write a subsystem only as its handle in double brackets, like [[f2]]; never f2 alone, never its title.\n"
@@ -74,8 +79,8 @@ SYSTEM_PROMPT = (
     "- Declarative present tense. Never address the reader or write you.\n"
     "- No promotional adjectives such as powerful, robust, seamless or modern.\n"
     "- No headings, lists, tables, links or other markup.\n"
-    "Example paragraph: The service is used through `src/app/main.py`, whose `run` function "
-    "passes each request to [[f1]], which saves results through [[f3]]."
+    "Example paragraph: Work enters through the `run` command in `src/app/cli.py`, "
+    "part of [[f0]]; its calls reach [[f1]] and [[f3]]."
 )
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
@@ -152,7 +157,7 @@ def build_overview_prompt(evidence: OverviewEvidence) -> PromptEnvelope:
         f"Repository: {evidence.repositoryName}.\n"
         f"Languages: {', '.join(evidence.languages) or 'unknown'}.\n"
         f"Subsystems: {listed} listed below as fN{omitted}.\n"
-        "Entry lines: an entry function, its file, then the subsystems its calls reach, nearest first."
+        "Call lines: a function, its file, the subsystem it is part of, then the subsystems its calls reach, nearest first."
     )
     parts.append(_fit(header, HEADER_CHARS))
 
@@ -389,7 +394,14 @@ def _feature_block(brief: FeatureBrief) -> str:
 
 
 def _flow_line(flow: EntryFlow) -> str:
-    route = " -> ".join(f"[[{handle}]]" for handle in flow.reachedHandles)
-    owner = f" [[{flow.featureHandle}]]" if flow.featureHandle else ""
-    tail = f" -> {route}" if route else ""
-    return f"entry ({flow.kind}): `{flow.qualifiedName}` in `{flow.modulePath}`{owner}{tail}"
+    # The owning subsystem is spelled "part of", not placed first in an arrow
+    # chain: written as `file [[f3]] -> [[f5]]`, a model read `main` as
+    # "invoking" the subsystem its own file belongs to (research Decision 16).
+    owner = f" (part of [[{flow.featureHandle}]])" if flow.featureHandle else ""
+    reached = ", ".join(f"[[{handle}]]" for handle in flow.reachedHandles)
+    tail = f"; its calls reach {reached}" if reached else ""
+    # Only a command, a route or `main` is called an entry. Labelling the rest
+    # "entry (function)" is what let the model present a service implementation
+    # as the repository's entry point (evidence.ENTRY_KINDS).
+    label = f"entry ({flow.kind})" if flow.kind in ENTRY_KINDS else "uncalled"
+    return f"{label}: `{flow.qualifiedName}` in `{flow.modulePath}`{owner}{tail}"

@@ -160,6 +160,44 @@ def test_prompt_asks_for_two_to_four_lead_paragraphs_each_citing_a_listed_name()
     assert "[[f2]]" in SYSTEM_PROMPT and "never f2 alone" in SYSTEM_PROMPT
 
 
+def test_only_commands_routes_and_main_are_called_entry_points():
+    """An uncalled function is labelled as such; paragraph 1 names an entry
+    point only when a line is marked entry (research Decision 15)."""
+    flows = tuple(
+        EntryFlow(qualifiedName=f"f_{kind}", kind=kind, modulePath="src/a.py", featureHandle="", reachedHandles=())
+        for kind in ("cli-command", "api-route", "main", "function")
+    )
+    text = build_overview_prompt(replace(_evidence(), entryFlows=flows)).promptText
+
+    assert "entry (cli-command): `f_cli-command`" in text
+    assert "entry (api-route): `f_api-route`" in text
+    assert "entry (main): `f_main`" in text
+    assert "uncalled: `f_function`" in text
+    assert "entry (function)" not in text
+    assert "main entry point" not in SYSTEM_PROMPT
+    assert "if none is, it claims no entry point" in SYSTEM_PROMPT
+
+
+def test_a_call_line_names_its_own_subsystem_apart_from_the_ones_it_reaches():
+    """Written `file [[f3]] -> [[f5]]`, the owning subsystem read as a callee
+    (research Decision 16)."""
+    flow = EntryFlow(
+        qualifiedName="App.main", kind="main", modulePath="src/App.java", featureHandle="f3", reachedHandles=("f5", "f1")
+    )
+    lone = replace(flow, reachedHandles=())
+    text = build_overview_prompt(replace(_evidence(), entryFlows=(flow, lone))).promptText
+
+    assert "entry (main): `App.main` in `src/App.java` (part of [[f3]]); its calls reach [[f5]], [[f1]]" in text
+    assert "entry (main): `App.main` in `src/App.java` (part of [[f3]])\n" in text
+    assert "->" not in text
+
+
+def test_paragraph_three_lists_every_place_results_can_go_never_one_file():
+    assert "names every such subsystem as a place results can go" in SYSTEM_PROMPT
+    assert "never a single file as the only destination" in SYSTEM_PROMPT
+    assert "then, next or finally" in SYSTEM_PROMPT
+
+
 def test_no_feature_key_or_url_reaches_the_prompt():
     text = build_overview_prompt(_evidence()).to_prompt_text()
 

@@ -73,8 +73,12 @@ model:
   From User Story 2 onward, a second key: `"subsystems": {"<handle>": <string>, …}`.
 - **Length.** The lead is 2–4 paragraphs.
   - The first says what the repository is and does.
-  - The rest name the major subsystems and describe where work enters and where
-    it ends up.
+  - The second follows one call line: its function and file, then the
+    subsystems its calls reach, listed without "then", "next" or "finally".
+  - A third, only when a subsystem's own description or start-file summary says
+    it stores, sends or returns data, names **every** such subsystem as a place
+    results can go, never one file as the only destination (research
+    Decision 16).
   - Each subsystem paragraph is at most 3 sentences.
   - All paragraphs together come to fewer than 600 words.
 - **Subsystem references.** Refer to a subsystem **only** as `[[fN]]`, using the
@@ -82,8 +86,9 @@ model:
 - **Code references.** Wrap every module, file, class or function name in
   backticks, exactly as written in the evidence. Prefer the repo-relative path
   for modules. Never name anything not listed. **Every paragraph names at least
-  one of them**; the opening paragraph names the module or entry point through
-  which the repository is used.
+  one of them**. The opening paragraph names a line's file as where work enters
+  only if that line is marked `entry`; otherwise it claims no entry point and
+  cites a subsystem's start file (research Decision 15).
 - **Style.** Declarative present tense. No second person. No promotional
   adjectives. No headings, lists, tables or links.
 - **When evidence is thin.** If the evidence does not support a claim, omit it.
@@ -99,7 +104,11 @@ The prompt text consists of:
   then `  start: <anchorPath> — <anchorSummary>`, then `  also: <memberNames>`;
 - `N more subsystems not listed`, if any were omitted;
 - one line per `EntryFlow`:
-  `<qualifiedName> in <modulePath> [fN] → [fA] → [fB]`.
+  `entry (<kind>): <qualifiedName> in <modulePath> (part of [[fN]]); its calls reach [[fA]], [[fB]]`
+  for a kind in `ENTRY_KINDS` (`cli-command`, `api-route`, `main`), and
+  `uncalled: <qualifiedName> in …` for a function nothing calls. The owning
+  subsystem is spelled "part of" and the reach clause is omitted when empty
+  (research Decisions 15 and 16).
 
 The options are `{"max_tokens": MAX_NARRATIVE_RESPONSE_TOKENS, "reasoning_effort": "low"}`.
 

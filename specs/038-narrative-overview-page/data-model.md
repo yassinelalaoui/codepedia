@@ -31,14 +31,17 @@ How one entry point moves through subsystems.
 | Field | Type | Rule |
 | --- | --- | --- |
 | `qualifiedName` | `str` | `Class.name` or `name`, from `EntryPoint` |
-| `kind` | `str` | `EntryPoint.kind`: `cli-command`, `api-route` or `function` |
+| `kind` | `str` | `EntryPoint.kind` (`cli-command`, `api-route`), `main` for an uncalled function named `main`, else `function` (an uncalled function, not known to be an entry) |
 | `modulePath` | `str` | Repo-relative path of `EntryPoint.moduleKey`'s module |
 | `featureHandle` | `str` | Handle of the feature owning that module, or `""` if not among the prompted features |
 | `reachedHandles` | `tuple[str, ...]` | Features reached, ordered by the minimum call depth at which any member is first reached (ties by handle), excluding its own feature, ≤ 5 |
 
-Selection: entry points ranked by the number of distinct modules reached
-(descending), then by `stableKey`. The first `MAX_PROMPTED_ENTRY_FLOWS` are kept.
-The BFS is bounded by `features.evidence.MAX_EVIDENCE_CALL_DEPTH`.
+Selection: entry points in test files (`is_test_path`: a `test`/`tests`/`__tests__`
+directory, or a test file-name convention) are dropped. The rest are ranked
+kinds in `ENTRY_KINDS` (`cli-command`, `api-route`, `main`) first, then by the
+number of distinct modules reached (descending), then by `stableKey`. The first
+`MAX_PROMPTED_ENTRY_FLOWS` are kept. The BFS is bounded by
+`features.evidence.MAX_EVIDENCE_CALL_DEPTH`. Research Decision 15.
 
 ### `OverviewEvidence` — `overview/evidence.py`
 
@@ -167,7 +170,8 @@ carries. So `manifest_store`, `search_index`, `cross_references` and
 | Constant | Value | Module | Reason |
 | --- | --- | --- | --- |
 | `PROVIDER_TOKEN_BUDGET`, `CHARS_PER_TOKEN` | 8000, 4 | `features/__init__` (re-exported) | Single source; the test must not import the module that could move them |
-| `SYSTEM_PROMPT_CHARS` | 1400 | `overview/narrator.py` | Asserted ≥ `len(SYSTEM_PROMPT)` |
+| `SYSTEM_PROMPT_CHARS` | 1600 | `overview/narrator.py` | Asserted ≥ `len(SYSTEM_PROMPT)`; 1400 until research Decision 15 |
+| `ENTRY_KINDS` | `("cli-command", "api-route", "main")` | `overview/evidence.py` | The kinds the prompt may call an entry point; ranked first |
 | `HEADER_CHARS` | 300 | `overview/narrator.py` | Repository name, languages, subsystem count, how to read entry lines (200 in the plan; research Decision 14) |
 | `MAX_README_LEAD_CHARS` | 600 | `overview/evidence.py` | ~150 tok |
 | `MAX_PROMPTED_FEATURES` | 12 | `overview/evidence.py` | 12 × 710 = 8,520 chars |

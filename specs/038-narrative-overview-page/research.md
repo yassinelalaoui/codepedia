@@ -662,6 +662,118 @@ changes. The alternative, discarding a reply that yields no prose, re-asks on
 every pass while a weak model keeps failing, which costs one call per `serve`
 pass. That trade-off is left to the owner rather than decided here.
 
+## Decision 15: Only commands, routes and `main` are called entry points
+
+**What the owner review found.** On `nextgen-wealth-ledger` (Spring + Angular),
+the first lead paragraph said the repository's "primary code entry" is
+`WalletServiceImpl.java`. That is false: the process starts in
+`DigitalBankingApplication.main`, and requests enter through controllers. A
+fresh reviewer given only the page rejected the claim.
+
+**Why it happened.** Three layers:
+
+1. **Prompt (038).** Paragraph 1 always asked for "the file its main entry point
+   is in", so the model had to pick one even when no line was a real entry.
+2. **Evidence ranking (038).** `identify_entry_points` has three kinds. The
+   `function` kind means only "nothing in the repository calls it", which
+   covers an interface implementation (controllers call the `WalletService`
+   interface, so `WalletServiceImpl.credit` has no recorded caller), a framework
+   callback, or a test. Flows were ranked by modules reached alone, and every
+   line was labelled `entry (...)`. On the sample repository a test ranked fourth.
+3. **Parser/graph (outside 038).** Java annotations are not recorded as
+   decorators, so `@PostMapping` controllers are indistinguishable from other
+   uncalled methods. Calls through an interface are not resolved, so each
+   controller and `main` reaches one module and ranked out of the top six.
+
+**Change** (owner chose "prompt + entry ranking"; the parser change is a
+separate spec if wanted):
+
+- `evidence.ENTRY_KINDS = ("cli-command", "api-route", "main")`. An uncalled
+  function named `main` gets kind `main`. Flows rank by kind tier, then reach,
+  then `stableKey`.
+- Flows from test files are dropped (`is_test_path`: a `test`/`tests`/`__tests__`
+  directory, or `test_*.py`, `*_test.py|go`, `conftest.py`, `*Test(s).java|kt|cs`,
+  `*.spec|test.[cm][jt]s[x]`).
+- A flow line reads `entry (<kind>): …` for `ENTRY_KINDS` and `uncalled: …`
+  otherwise. The header calls them "call lines".
+- The system prompt says paragraph 1 names where work enters only from a line
+  marked `entry`, and otherwise claims no entry point and cites a subsystem's
+  start file. Paragraph 2 may call only an `entry` line an entry point.
+  `SYSTEM_PROMPT_CHARS` rises from 1,400 to 1,600: worst case 4,465 → 4,515
+  tokens per call, 43.6% headroom.
+
+**Re-verification** (2026-09-10; `gpt-oss-120b` temporarily first in the chain,
+config restored; one call per repository):
+
+| | Sample | Nextgen |
+| --- | --- | --- |
+| Entry lines | 6 × `entry` (4 routes, 2 CLI commands); the test is gone | `entry (main)` first, 5 × `uncalled` |
+| Prompt / worst case | ~1,789 / 3,189 tokens | ~1,337 / 2,737 tokens |
+| Lead | 3 paragraphs, all grounded, links 10/10 | 3 paragraphs, all grounded, links 7/7 |
+| Paragraph 1 | "accessed through the entry point `routes_loans.py`": true, but one route file of three, and the CLI is missed | "Execution begins with `DigitalBankingApplication.main`": **correct**; the reviewer rated it "genuinely useful", confidence high |
+| Stranger test (fresh subagent, one Read of `index.md`) | passes by the key; ¶2 and ¶3 misled | passes by the key; ¶1 helped, ¶2 and ¶3 misled |
+
+The targeted defect is fixed. What still misleads, in order of cause:
+
+- **The owner handle reads as a callee.** A line is `entry (main): X in file
+  [[f3]]`, where `[[f3]]` is the subsystem X belongs to, not one it calls.
+  Nextgen ¶2 says `main` "invokes the capabilities defined in [[f3]]". The old
+  format had the same ambiguity. (038 scope.)
+- **Paragraph 3's "where results end up"** invites a single-destination claim:
+  "the in-memory store" on the sample (SQLite is omitted), and `ActiveWallet.java`
+  as "storage" on nextgen. (038 scope.)
+- **Spec 033 titles and grouping.** "Tests (Test Fines)", "Scripts", and a
+  93-module "Data Transfer Objects" bucket. (Outside 038.)
+
+## Decision 16: Call lines name their own subsystem apart; paragraph 3 lists every destination
+
+The owner asked for both 038-scope defects left by Decision 15 to be fixed.
+Dropping paragraph 3 was considered and rejected: the owner's own User Story 1
+description, FR-005 and US1 #4 all require "where its results end up", so the
+spec stands and the paragraph is made safer instead.
+
+**Change:**
+
+- **Call line format.** It was `…in <file> [[f3]] -> [[f5]] -> [[f1]]`; it is now
+  `…in <file> (part of [[f3]]); its calls reach [[f5]], [[f1]]`. The reach
+  clause is omitted when a function reaches no other listed subsystem. With no
+  arrows in the evidence, the model has no chain to copy. The header now reads
+  "a function, its file, the subsystem it is part of, then the subsystems its
+  calls reach, nearest first."
+- **Paragraph 2** lists what a line reaches "without then, next or finally".
+- **Paragraph 3** is still written only when a subsystem's own text says it
+  stores, sends or returns data. It now names **every** such subsystem as a
+  place results can go, never a single file as the only destination.
+- The example paragraph uses the new shape ("Work enters through the `run`
+  command in `src/app/cli.py`, part of [[f0]]; its calls reach [[f1]] and
+  [[f3]].") in place of one that modelled a data-flow chain.
+- `SYSTEM_PROMPT` is 1,583 characters, within the 1,600 that Decision 15 set.
+  The budget is unchanged: 4,515 tokens worst case.
+
+**Re-verification** (`gpt-oss-120b` temporarily first in the chain, config
+restored; one call per repository):
+
+| | Sample | Nextgen |
+| --- | --- | --- |
+| Prompt / worst case | ~1,828 / 3,228 tokens | ~1,368 / 2,768 tokens |
+| ¶1 | Work enters through `list_overdue` in `routes_loans.py`, "which belongs to [[f0]]" | Execution starts with `DigitalBankingApplication.main`, "part of [[f3]]": correct |
+| ¶2 | The calls of `list_overdue` "reach" four subsystems, listed; no then/finally chain | `WalletServiceImpl.credit` "belongs to [[f3]] and its calls reach [[f6]]": true, and not called an entry point |
+| ¶3 | Lists the memory store, SQLite store, email gateway and fine calculator, but cites no file, so **G7 dropped it** (`overview: 1 of 3 narrative paragraphs dropped`) | Entities of [[f4]] and repositories of [[f2]]: two places, not one file. One slip: it calls `ActiveWallet.java` "ledger data" |
+| Published | 2 paragraphs, links 9/9 | 3 paragraphs, links 10/10 |
+| Stranger test (fresh subagent, one Read) | Passes by the key. ¶1's domain clause helped, but "work enters through the `list_overdue` command" singles out one route (and calls it a command). ¶2 still lists "Tests" and "Scripts" as things a route reaches. Confidence medium / low | Passes by the key. `main` is named outright (confidence high). "Part of [Data Transfer Objects]" is now read correctly as membership, which exposes 033 putting the startup class and `WalletServiceImpl` in a DTO bucket anchored at `animations.ts`. The ¶3 "ledger data in `ActiveWallet`" slip was noticed. Confidence medium / high |
+
+The owner-as-callee misreading is gone on both repositories. Paragraph 3 now
+names several destinations. On the sample, grounding correctly withheld a
+paragraph that forgot its citation: the page is shorter, not wrong.
+
+What still misleads is now mostly outside 038: spec 033's grouping and titles.
+Read as membership, "part of [[fN]]" makes a bad grouping *more* visible,
+not less. Two 038-scope refinements remain possible, neither applied:
+
+- When several lines are marked `entry`, ¶1 picks one. It could instead name
+  the kinds, for example "HTTP routes in … and CLI commands in …".
+- ¶3 could be told to cite one start file, so that G7 does not drop it.
+
 ---
 
 ## Spec amendments made during planning

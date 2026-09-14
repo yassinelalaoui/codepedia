@@ -217,6 +217,15 @@ description: "Task list for the Narrative Overview Page feature"
 - [X] T032 [US1] Appearance (quickstart Â§5): both `<state>\docs\index.html` Overviews in light and dark, at about 400 px and at full width. The lead reads as one marked block with one badge, and there is no horizontal scroll.
 - [X] T033 [US1] Cost (quickstart Â§6): with `<scratchpad>\cost.py`, record the real prompt tokens, the response cap, their sum and `worst_case_call_tokens()` for both repositories, for the implementation report.
 
+### Post-review fix for User Story 1 (owner: "fix the issue before us2")
+
+- [X] T033a [US1] Entry lines: drop flows from test files (`is_test_path`), label an uncalled function named `main` as kind `main`, and rank `ENTRY_KINDS` (`cli-command`, `api-route`, `main`) before plain uncalled functions in `src/doc_generator/overview/evidence.py`. Tests: `test_commands_routes_and_main_lead_the_entry_flows_and_tests_are_left_out` and the two `is_test_path` parametrised tests in `tests/unit/test_overview_evidence.py`. Research Decision 15.
+- [X] T033b [US1] Prompt: flow lines read `entry (<kind>)` or `uncalled`; paragraph 1 names where work enters only from a line marked `entry`, else claims no entry point; paragraph 2 may call only an `entry` line an entry point. `SYSTEM_PROMPT_CHARS` 1400 → 1600 (worst case 4,465 → 4,515 tokens). Test: `test_only_commands_routes_and_main_are_called_entry_points` in `tests/unit/test_overview_narrator.py`.
+- [X] T033c [US1] Re-verify on both reference repositories with `groq:openai/gpt-oss-120b` temporarily first in the summary chain (config restored afterwards): full suite, lead links, tense, appearance, cost, and the stranger test with fresh subagents. Results in research Decision 15.
+- [X] T033d [US1] Call lines spell the owning subsystem as `(part of [[fN]])` and list reached subsystems as `; its calls reach [[fA]], [[fB]]` (no arrows), in `_flow_line` in `src/doc_generator/overview/narrator.py`. Test: `test_a_call_line_names_its_own_subsystem_apart_from_the_ones_it_reaches`. Research Decision 16.
+- [X] T033e [US1] Paragraph 3 names every subsystem whose own text says it stores, sends or returns data, never one file as the only destination; paragraph 2 lists reach without "then/next/finally"; new example paragraph. Spec FR-005/US1 #4 unchanged (owner kept "where results end up"). Test: `test_paragraph_three_lists_every_place_results_can_go_never_one_file`.
+- [X] T033f [US1] Re-verify T033d–e as in T033c. Results in research Decision 16.
+
 **Checkpoint**: User Story 1 is complete and demonstrable on its own. **Stop here and report before any User Story 2 task** (runbook stage 6).
 
 ---
