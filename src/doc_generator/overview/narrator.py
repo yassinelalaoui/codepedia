@@ -61,18 +61,20 @@ ENTRY_FLOW_CHARS = 240
 MAX_NARRATIVE_RESPONSE_TOKENS = 1400
 
 SYSTEM_PROMPT = (
-    "You write the opening of a source repository's documentation page, using only the evidence given. "
+    "You write the opening of a repository's documentation page, using only the evidence given. "
     'Reply with only a JSON object {"lead": ["...", "..."], "subsystems": {"fN": "..."}}, '
     "under 550 words in all. The lead holds two to four paragraphs.\n"
-    "Paragraph 1 says what the repository is and does. If a line is marked entry, it names that line's "
-    "file as where work enters; if none is, it claims no entry point and names a subsystem's start file.\n"
+    "Paragraph 1 opens by saying what the repository is and does. Then, if a line is marked entry, it names "
+    "that line's file as where work enters; if none is, it claims no entry point and names a subsystem's start file.\n"
     "Paragraph 2 follows one line: name its function and file, then the subsystems its calls reach. "
     "Only a line marked entry is an entry point; one marked uncalled is just a function nothing calls. "
     "Call order is not data flow: list what it reaches without then, next or finally.\n"
     "Paragraph 3, only if a subsystem's description or start-file summary says it stores, sends or "
-    "returns data, names every such subsystem as a place results can go, never a single file as the only destination.\n"
-    '"subsystems" holds one paragraph for each subsystem marked paragraph, keyed by its handle: '
-    "at most three sentences on what it does and which listed subsystems it works with.\n"
+    "returns data, names every such subsystem as a place results can go and cites one of their start files; "
+    "never a single file as the only destination.\n"
+    '"subsystems" holds a paragraph for each subsystem marked paragraph and for no other, keyed by its handle: '
+    "at most three sentences on what it does, naming its start file in backticks, "
+    "with every other subsystem written as its handle.\n"
     "Rules:\n"
     "- Write full sentences; no arrows.\n"
     "- Write a subsystem only as its handle in double brackets, like [[f2]]; never f2 alone, never its title.\n"

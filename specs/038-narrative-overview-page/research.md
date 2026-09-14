@@ -862,6 +862,67 @@ sample "Documentation" and "Tests (Test Fines)" are majors while both Storage
 subsystems are not. That selection is evidence-side (`majorFeatureKeys`) and
 worth revisiting. T042's stranger test is deferred until the prompt is fixed.
 
+## Decision 18: The subsystem prompt, fixed from Decision 17's replies
+
+The owner chose the prompt-only fix, and left the major-subsystem selection
+unchanged. Three instructions changed:
+
+- ¶1 "**opens** by saying what the repository is and does. **Then**, …".
+- ¶3 "…names every such subsystem as a place results can go **and cites one of
+  their start files**".
+- `"subsystems"` holds a paragraph "for each subsystem marked paragraph **and for
+  no other**", "**naming its start file in backticks, with every other subsystem
+  written as its handle**".
+
+`SYSTEM_PROMPT` is 1,896 characters, under the 1,900 cap after dropping one
+redundant word, so the worst case is unchanged at 4,590 tokens.
+
+**Re-verification** (`gpt-oss-120b` temporarily first, config restored):
+
+| | Decision 17 (before) | Now |
+| --- | --- | --- |
+| Sample lead | 2 of 3; ¶1 no longer said what it is | **3 of 3**; ¶1 opens with what it is; ¶3 cites both stores |
+| Sample subsystems | 3 of 7 (4 unmarked) | **8 of 12**: every marked major; the 4 dropped were unmarked (G9) |
+| Nextgen lead | 2 of 3 (¶3, G7) | **3 of 3** |
+| Nextgen subsystems | 0 of 4 (3 × G7, 1 × G9) | **5 of 7**: every marked major; the 2 dropped were unmarked tooling |
+| Words | | ~289 / ~215 (< 600) |
+| Links in generated text | | 43 and 28, 0 problems |
+| Tense (SC-013) | | every generated sentence is declarative present; 0 exceptions |
+
+Every drop is now a paragraph written for an unmarked subsystem, which the
+model still writes despite "and for no other"; G9 removes them. What remains
+weak is content, and it comes from spec 033:
+
+- "Services (Lending Service)" is anchored at `utils/ids.py`, so its paragraph
+  says it "generates stable identifiers".
+- Nextgen's "Data Transfer Objects" (93 modules, anchored at `animations.ts`)
+  is named as a place results go.
+
+The paragraphs are also formulaic ("Its start file is …"), and each one's
+closing subsystem link reads like a stray fragment after the last sentence.
+
+**Stranger test (T042; fresh subagent per repository, one Read of `index.md`).**
+Both pass by the answer keys: they named ≥ 3 real subsystems and an accepted
+place where work begins. But both reviewers got the subsystems mostly from
+module names:
+
+- **Sample.** The lead's first sentence helped. The table was "mixed". The
+  subsystem paragraphs were "mostly misleading", because they describe each
+  subsystem through its 033 anchor: "Services (Lending Service) … generates
+  stable identifiers … `utils/ids.py`"; "the Tests subsystem … is exercised by
+  API".
+- **Nextgen.** Four table rows were "clear and believable". The paragraphs
+  "repeat the table and add doubtful relationships", including one directional
+  error ("Data Repositories … supplies data to Persistent Entities").
+
+**Conclusion.** User Story 2 is complete and grounded: every name is real,
+every link resolves, the table is complete without a provider, and each
+paragraph is placed and marked as specified. Its *value* is capped by spec
+033's grouping, titles and anchors. A per-subsystem paragraph can only restate
+what its subsystem is, and when the subsystem is mis-grouped the paragraph
+repeats the mislabel in prose. Improving the feature planner (a follow-up to
+033) is now the highest-leverage change for the Overview.
+
 ---
 
 ## Spec amendments made during planning

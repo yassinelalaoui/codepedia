@@ -273,7 +273,7 @@ description: "Task list for the Narrative Overview Page feature"
 
 ### Manual verification for User Story 2
 
-- [ ] T042 [US2] Re-index both reference repositories and re-read both Overviews end to end. Check that:
+- [X] T042 [US2] Re-index both reference repositories and re-read both Overviews end to end. Check that:
   - the table and paragraphs are in step, in the same order;
   - each paragraph is at most three sentences and ends in its link;
   - total generated prose is under 600 words (SC-007);

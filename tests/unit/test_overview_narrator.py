@@ -194,8 +194,13 @@ def test_a_call_line_names_its_own_subsystem_apart_from_the_ones_it_reaches():
 
 def test_paragraph_three_lists_every_place_results_can_go_never_one_file():
     assert "names every such subsystem as a place results can go" in SYSTEM_PROMPT
+    assert "cites one of their start files" in SYSTEM_PROMPT
     assert "never a single file as the only destination" in SYSTEM_PROMPT
     assert "then, next or finally" in SYSTEM_PROMPT
+
+
+def test_paragraph_one_opens_with_what_the_repository_is():
+    assert "Paragraph 1 opens by saying what the repository is and does. Then," in SYSTEM_PROMPT
 
 
 def test_prompt_asks_for_subsystem_paragraphs_keyed_by_handle():
@@ -205,8 +210,13 @@ def test_prompt_asks_for_subsystem_paragraphs_keyed_by_handle():
     text = build_overview_prompt(evidence).promptText
 
     assert '"subsystems"' in SYSTEM_PROMPT
-    assert "marked paragraph" in SYSTEM_PROMPT
+    assert "marked paragraph and for no other" in SYSTEM_PROMPT
     assert "at most three sentences" in SYSTEM_PROMPT
+    # Measured on both reference repositories: without these, most subsystem
+    # paragraphs cited no file (G7) or named subsystems by title (research
+    # Decision 18).
+    assert "naming its start file in backticks" in SYSTEM_PROMPT
+    assert "every other subsystem written as its handle" in SYSTEM_PROMPT
     assert "f0: Feature 0 (capability, 0 entry points, paragraph)" in text
     assert "f1: Feature 1 (capability, 1 entry points)" in text
     assert "f2: Feature 2 (capability, 2 entry points, paragraph)" in text
