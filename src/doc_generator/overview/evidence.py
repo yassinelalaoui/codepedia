@@ -17,6 +17,7 @@ the same cache key - on every run.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import deque
 from dataclasses import dataclass
@@ -115,6 +116,11 @@ class OverviewEvidence:
     #: order. Grounding resolves a handle to a key and then needs to know the
     #: key still exists - and what it is called now - to link it.
     featureTitles: tuple[tuple[str, str], ...] = ()
+    #: SHA-1 of every file's path and content hash. Never part of the prompt:
+    #: the cache key says whether the *question* changed, this says whether the
+    #: *repository* did. A narrative kept for an unchanged repository after only
+    #: the prompt changed is not "an earlier version" (038 analyze finding I2).
+    repositoryFingerprint: str = ""
 
     def handle_map(self) -> dict[str, str]:
         return {brief.handle: brief.featureKey for brief in self.features}
@@ -141,16 +147,35 @@ def build_overview_evidence(
     )[:MAX_SUBSYSTEM_PARAGRAPHS]
 
     repository = bundle.repository
+    readme_lead = read_readme_lead(repository_root)
     return OverviewEvidence(
         repositoryName=Path(repository.rootPath).name or repository.rootPath,
         languages=tuple(sorted(repository.detectedLanguages or ())),
-        readmeLead=read_readme_lead(repository_root),
+        readmeLead=readme_lead,
         features=briefs,
         omittedFeatureCount=max(0, len(features) - len(prompted)),
         entryFlows=_entry_flows(features, handle_by_key, bundle, graph, repository_root),
         majorFeatureKeys=major,
         featureTitles=tuple((feature.key, feature.title) for feature in features),
+        repositoryFingerprint=repository_fingerprint(bundle, repository_root, readme_lead=readme_lead),
     )
+
+
+def repository_fingerprint(bundle: RepositoryBundle, repository_root: str | Path, *, readme_lead: str = "") -> str:
+    """Identifies everything the evidence reads from the repository, and no prompt.
+
+    The analysed files' contents, plus the README lead, which is read from disk
+    rather than from the index - a repository whose Markdown is not indexed
+    would otherwise change its prompt without changing its fingerprint.
+    """
+    digest = hashlib.sha1()
+    digest.update(readme_lead.encode("utf-8") + b"\0")
+    for path, content_hash in sorted(
+        (_relative_path(file_bundle.file.path, repository_root), file_bundle.file.contentHash)
+        for file_bundle in bundle.files
+    ):
+        digest.update(f"{path}\0{content_hash}\n".encode("utf-8"))
+    return digest.hexdigest()
 
 
 def read_readme_lead(repository_root: str | Path, *, max_chars: int = MAX_README_LEAD_CHARS) -> str:

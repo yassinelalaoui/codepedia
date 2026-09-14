@@ -33,16 +33,21 @@ __all__ = [
     "MAX_LEAD_PARAGRAPHS",
     "MAX_NARRATIVE_WORDS",
     "MAX_SUBSYSTEM_PARAGRAPHS",
+    "MAX_SUBSYSTEM_SENTENCES",
     "GroundedNarrative",
     "GroundedParagraph",
     "Rejection",
     "Segment",
+    "accept_description",
     "ground",
     "render_paragraph",
 ]
 
 # Spec FR-005: the lead is at most four paragraphs.
 MAX_LEAD_PARAGRAPHS = 4
+
+# Spec FR-025: a subsystem paragraph is at most three sentences (G8).
+MAX_SUBSYSTEM_SENTENCES = 3
 
 # Spec FR-005a: all generated prose on the page stays *under* this.
 MAX_NARRATIVE_WORDS = 600
@@ -102,6 +107,11 @@ _CALL_LIKE = re.compile(r"\b(\w+)\(\)")
 _CAMEL_LIKE = re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+\b|\b[a-z]+[A-Z][A-Za-z0-9]*\b")
 
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z`\[])")
+# G8 counts sentences, so a full stop that ends no sentence must not count: one
+# inside a code span (`pkg.module`, `Child.run`) - masked before splitting - or
+# one closing an abbreviation that a capital may follow.
+_CODE_SPAN = re.compile(r"`[^`\n]*`")
+_ABBREVIATION_END = re.compile(r"\b(?:e\.g|i\.e|etc|vs|cf|approx|incl|resp)\.$", re.IGNORECASE)
 
 RejectionRule = Literal["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"]
 Section = Literal["lead", "subsystem"]
@@ -196,15 +206,25 @@ def ground(
         rejected.append(Rejection("lead", index, "G9"))
     lead = lead[:MAX_LEAD_PARAGRAPHS]
 
+    subsystems, offered_subsystems = _ground_subsystems(getattr(reply, "subsystems", None) or {}, context, rejected)
+
     # G9: the whole page's generated prose stays under the word budget, trimmed
-    # from the end - subsystem paragraphs first, then the lead.
-    while lead and sum(paragraph.wordCount for _, paragraph in lead) >= MAX_NARRATIVE_WORDS:
+    # from the end - subsystem paragraphs first (last in table order), then the
+    # lead.
+    def total_words() -> int:
+        return sum(p.wordCount for _, p in lead) + sum(p.wordCount for _, _, p in subsystems)
+
+    while subsystems and total_words() >= MAX_NARRATIVE_WORDS:
+        index, _, _ = subsystems.pop()
+        rejected.append(Rejection("subsystem", index, "G9"))
+    while lead and total_words() >= MAX_NARRATIVE_WORDS:
         index, _ = lead.pop()
         rejected.append(Rejection("lead", index, "G9"))
         opening_failed = opening_failed or index == 0
 
     # G10: the opening paragraph carries the rest. Without it, withhold the lead
     # rather than publish one that starts mid-explanation (spec FR-010a).
+    # Subsystem paragraphs stand on their own and are unaffected.
     lead_withheld = bool(offered) and opening_failed
     if lead_withheld:
         for index, _ in lead:
@@ -213,11 +233,86 @@ def ground(
 
     return GroundedNarrative(
         lead=tuple(paragraph for _, paragraph in lead),
+        subsystems=tuple((key, paragraph) for _, key, paragraph in subsystems),
         rejected=tuple(sorted(rejected, key=lambda item: (item.section, item.index))),
         leadWithheld=lead_withheld,
         isStale=is_stale,
-        offeredCount=len(offered),
+        offeredCount=len(offered) + offered_subsystems,
     )
+
+
+def _ground_subsystems(
+    offered: Mapping[str, object], context: _Context, rejected: list[Rejection]
+) -> tuple[list[tuple[int, str, GroundedParagraph]], int]:
+    """The per-subsystem paragraphs that survive, in table order (G11).
+
+    Each is accepted or withheld on its own (spec FR-025a): one bad paragraph
+    never costs the others, and never its subsystem's table row. The `int` in
+    each entry is the paragraph's position in the reply, for the notice.
+    """
+    majors = context.evidence.majorFeatureKeys
+    kept: dict[str, tuple[int, GroundedParagraph]] = {}
+    for index, (handle, text) in enumerate(offered.items()):
+        # G3: a handle this prompt issued, for a feature that still exists.
+        feature_key = context.handle_map.get(str(handle))
+        if not feature_key or feature_key not in context.titles:
+            rejected.append(Rejection("subsystem", index, "G3", str(handle)))
+            continue
+        # G9: paragraphs are asked for, and kept for, major subsystems only -
+        # at most `MAX_SUBSYSTEM_PARAGRAPHS` of them - and one each.
+        if feature_key not in majors or feature_key in kept:
+            rejected.append(Rejection("subsystem", index, "G9", str(handle)))
+            continue
+        outcome = _check(text, "subsystem", index, context)
+        if isinstance(outcome, Rejection):
+            rejected.append(outcome)
+            continue
+        # G8: at most three sentences.
+        if outcome.sentenceCount > MAX_SUBSYSTEM_SENTENCES:
+            rejected.append(Rejection("subsystem", index, "G8"))
+            continue
+        kept[feature_key] = (index, outcome)
+
+    ordered = [(kept[key][0], key, kept[key][1]) for key in majors if key in kept]
+    return ordered[:MAX_SUBSYSTEM_PARAGRAPHS], len(offered)
+
+
+def accept_description(text: str, evidence: OverviewEvidence, lookup: SymbolLookup) -> str | None:
+    """A planned subsystem description fit for the table, rendered, or `None`.
+
+    G1, G2, G4, G5 and G6 only (038 research Decision 6): the shape rules G3 and
+    G7-G9 are for narrative paragraphs, not a one-line cell. `None` renders as
+    a dash, exactly like a subsystem with no description (spec FR-021).
+    """
+    context = _Context(
+        evidence=evidence,
+        lookup=lookup,
+        handle_map={},
+        titles=evidence.feature_title_by_key(),
+        allowed_camel=_allowed_camel_words(evidence),
+    )
+    collapsed = _WHITESPACE.sub(" ", text or "").strip()
+    if not collapsed:
+        return None
+    segments = _segments(collapsed)
+    if segments is None:
+        return None
+    parts: list[str] = []
+    for segment in segments:
+        if segment.kind == "feature":
+            # A description is not a narrative: it may not link a subsystem.
+            return None
+        if segment.kind == "code":
+            if segment.value != evidence.repositoryName and resolve_reference(lookup, segment.value) is None:
+                return None
+            parts.append(f"`{segment.value}`")
+            continue
+        if _unresolved_identifier(segment.value, context) is not None:
+            return None
+        if _SECOND_PERSON.search(segment.value) or _BANNED.search(segment.value):
+            return None
+        parts.append(_markdown_escape(segment.value))
+    return "".join(parts).strip()
 
 
 def render_paragraph(paragraph: GroundedParagraph, feature_links: Mapping[str, PageLink]) -> str:
@@ -242,24 +337,9 @@ def _check(text: object, section: Section, index: int, context: _Context) -> Gro
     if not collapsed:
         return Rejection(section, index, "G1")
 
-    segments: list[Segment] = []
-    cursor = 0
-    for match in _TOKEN.finditer(collapsed):
-        if match.start() > cursor:
-            segments.append(Segment("text", collapsed[cursor : match.start()]))
-        if match.group(1) is not None:
-            segments.append(Segment("code", match.group(1).strip()))
-        else:
-            segments.append(Segment("feature", match.group(2)))
-        cursor = match.end()
-    if cursor < len(collapsed):
-        segments.append(Segment("text", collapsed[cursor:]))
-
-    # G2: whatever the tokenizer did not consume must not still look like markup
-    # it was meant to - a lone backtick, or brackets that are not a handle.
-    for segment in segments:
-        if segment.kind == "text" and ("`" in segment.value or "[[" in segment.value or "]]" in segment.value):
-            return Rejection(section, index, "G2", segment.value.strip()[:40])
+    segments = _segments(collapsed)
+    if segments is None:
+        return Rejection(section, index, "G2", collapsed[:40])
 
     resolved: list[Segment] = []
     has_citation = False
@@ -304,8 +384,41 @@ def _check(text: object, section: Section, index: int, context: _Context) -> Gro
     return GroundedParagraph(
         segments=tuple(resolved),
         wordCount=rendered_words,
-        sentenceCount=len(_SENTENCE_BREAK.split(collapsed)),
+        sentenceCount=_sentence_count(collapsed),
     )
+
+
+def _segments(collapsed: str) -> list[Segment] | None:
+    """Text, code and handle segments, or `None` when markup is left unbalanced (G2)."""
+    segments: list[Segment] = []
+    cursor = 0
+    for match in _TOKEN.finditer(collapsed):
+        if match.start() > cursor:
+            segments.append(Segment("text", collapsed[cursor : match.start()]))
+        if match.group(1) is not None:
+            segments.append(Segment("code", match.group(1).strip()))
+        else:
+            segments.append(Segment("feature", match.group(2)))
+        cursor = match.end()
+    if cursor < len(collapsed):
+        segments.append(Segment("text", collapsed[cursor:]))
+
+    # G2: whatever the tokenizer did not consume must not still look like markup
+    # it was meant to - a lone backtick, or brackets that are not a handle.
+    for segment in segments:
+        if segment.kind == "text" and ("`" in segment.value or "[[" in segment.value or "]]" in segment.value):
+            return None
+    return segments
+
+
+def _sentence_count(collapsed: str) -> int:
+    """G8's count: code spans masked, abbreviation stops not counted."""
+    pieces = _SENTENCE_BREAK.split(_CODE_SPAN.sub("CODE", collapsed))
+    count = 1
+    for previous in pieces[:-1]:
+        if not _ABBREVIATION_END.search(previous):
+            count += 1
+    return count
 
 
 def _unresolved_identifier(text: str, context: _Context) -> str | None:

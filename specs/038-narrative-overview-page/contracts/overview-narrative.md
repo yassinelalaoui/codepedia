@@ -215,6 +215,30 @@ _This overview describes an earlier version of the repository and has not been r
   User Story 2 replaces the list with the table, whose "Responsibility
   (AI-generated)" column carries descriptions that passed `accept_description`.
 - **No `Last indexed` line** (research Decision 9).
+
+**After User Story 2**, the part from `## Architecture overview` onward reads:
+
+```text
+## Architecture overview
+<counts sentence>
+| Subsystem | Responsibility[ (AI-generated)] | Start with |   (every subsystem, navigation order)
+| [<title>](features/…) | <accepted description> or — | [<module>](modules/…) or — |
+<subsystem paragraph> [<title>](features/…)   (prose)  {: .ai-generated }   (≤ 8, table order)
+_This overview describes an earlier version …_  (stale, lead withheld only)  {: .summary-stale }
+[View the repository class diagram]    {: .diagram-link }
+[View the repository use-case diagram] {: .diagram-link }
+## Modules
+…
+```
+
+- The `## Features` list is gone; the table links every subsystem in the same order.
+- The header says `(AI-generated)` only when at least one planned description
+  passed `accept_description` and is shown.
+- "Start with" is the subsystem's member with the most entry points (test files
+  passed over while there is anything else), ties by label, else the anchor. It
+  always belongs to the subsystem (spec FR-023).
+- The table is built with no provider at all, so it is identical with and
+  without one (spec FR-024).
 - **The module-list row shape** belongs to User Story 4. Until then, the row is
   unchanged.
 - **Identity checks** (test-enforced):
@@ -242,10 +266,12 @@ missing or reduced:
 | some rejected | `  overview: <k> of <n> narrative paragraphs dropped (named something not in the repository)` |
 | lead withheld (G10) | `  overview: narrative lead withheld (its opening paragraph named something not in the repository)` |
 | `stale` | `  overview: showing the narrative from an earlier version (<staleReason>); <k> of <n> paragraphs still apply` |
+| `previous-prompt` | `  overview: showing the narrative written for an earlier prompt (<staleReason>); <k> of <n> paragraphs still apply` |
 
 | `skipped` because the wiki has no subsystems | `  overview: narrative skipped (no subsystems to describe)` |
 
-When several conditions hold, the `stale` line takes precedence, then the lead
+`<n>` counts lead and subsystem paragraphs together. When several conditions
+hold, the `stale` (or `previous-prompt`) line takes precedence, then the lead
 line, then the others. There is still at most one line per pass. `cached`,
 `generated` with nothing rejected, and `skipped` because `narrateOverview=False`
 (the structure pass) are silent. The line is

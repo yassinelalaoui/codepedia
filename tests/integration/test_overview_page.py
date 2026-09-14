@@ -274,6 +274,29 @@ def test_changed_repository_without_provider_shows_the_earlier_narrative_marked_
     )
 
 
+def test_a_prompt_change_on_an_unchanged_repository_is_not_marked_stale(tmp_path, monkeypatch):
+    """Analyze finding I2. A new format version or a reworded prompt misses the
+    cache for a repository that did not change; with no provider, its narrative
+    still describes it exactly, so no "earlier version" caveat is shown."""
+    import doc_generator.overview.narrator as narrator_module
+
+    root, store, graph = build_indexed_repo(tmp_path)
+    notices: list[str] = []
+    generator = _generator(tmp_path, "g", root, store, graph, ScriptedEngine(_reply(OPENING, FLOW)), notices=notices)
+    first = _home(generator.generateRepositoryDocumentation(root, incremental=False)).contentMarkdown
+
+    monkeypatch.setattr(narrator_module, "NARRATIVE_FORMAT_VERSION", "next")
+    generator.overviewNarrator.llmEngine = wrap_llm(ScriptedEngine(available=False))
+    second = _home(generator.generateRepositoryDocumentation(root, incremental=False)).contentMarkdown
+
+    assert second == first
+    assert "summary-stale" not in second
+    assert notices[-1] == (
+        "  overview: showing the narrative written for an earlier prompt (no provider could answer); "
+        "2 of 2 paragraphs still apply"
+    )
+
+
 def test_the_structure_pass_does_not_narrate(tmp_path):
     root, store, graph = build_indexed_repo(tmp_path)
     engine = ScriptedEngine(_reply(OPENING))
@@ -380,13 +403,3 @@ def test_home_has_no_inline_mermaid_and_no_last_indexed_line(tmp_path):
     assert "```mermaid" not in home.contentMarkdown
     assert "Last indexed" not in home.contentMarkdown
     assert "[View the repository class diagram]" in home.contentMarkdown
-
-
-def test_features_list_shows_titles_only(tmp_path):
-    root, store, graph = build_indexed_repo(tmp_path)
-    home = _home(_generator(tmp_path, "g", root, store, graph, ScriptedEngine(_reply(OPENING))).generateRepositoryDocumentation(root, incremental=False))
-    section = home.contentMarkdown.split("## Features", 1)[1].split("## Modules", 1)[0]
-    items = [line for line in section.splitlines() if line.startswith("- ")]
-
-    assert items
-    assert all(re.fullmatch(r"- \[[^\]]+\]\([^)]+\)", item) for item in items), items

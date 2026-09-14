@@ -27,11 +27,13 @@ def test_home_page_presents_architecture_summary(tmp_path):
 
     assert "Architecture overview" in home_page.contentMarkdown
     assert "3 documented modules" in home_page.contentMarkdown
-    # The architecture table now counts modules per derived section rather than
-    # per raw directory name, and each row links to that section's own page.
-    assert "| Feature | Modules |" in home_page.contentMarkdown
+    # 038 User Story 2: the table says what each subsystem is for and where to
+    # start, not how many modules it has, and it replaces the Features list.
+    # No planner here, so no description is shown and the column is unlabelled.
+    assert "| Feature | Modules |" not in home_page.contentMarkdown
+    assert "| Subsystem | Responsibility | Start with |" in home_page.contentMarkdown
     assert "features/" in home_page.contentMarkdown
-    assert "## Features" in home_page.contentMarkdown
+    assert "## Features" not in home_page.contentMarkdown
     # The existing flat module list must still be present alongside the summary.
     assert "## Modules" in home_page.contentMarkdown
     # 038: the run timestamp left the page's content (it made reruns differ),

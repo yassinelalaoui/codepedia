@@ -198,6 +198,29 @@ def test_paragraph_three_lists_every_place_results_can_go_never_one_file():
     assert "then, next or finally" in SYSTEM_PROMPT
 
 
+def test_prompt_asks_for_subsystem_paragraphs_keyed_by_handle():
+    """User Story 2: one paragraph per *major* subsystem, keyed by its handle.
+    Majors are marked in their own block, so the header does not grow."""
+    evidence = replace(_evidence(3), majorFeatureKeys=("feature-0", "feature-2"))
+    text = build_overview_prompt(evidence).promptText
+
+    assert '"subsystems"' in SYSTEM_PROMPT
+    assert "marked paragraph" in SYSTEM_PROMPT
+    assert "at most three sentences" in SYSTEM_PROMPT
+    assert "f0: Feature 0 (capability, 0 entry points, paragraph)" in text
+    assert "f1: Feature 1 (capability, 1 entry points)" in text
+    assert "f2: Feature 2 (capability, 2 entry points, paragraph)" in text
+
+
+def test_format_version_two_changes_the_cache_key(monkeypatch):
+    assert narrator_module.NARRATIVE_FORMAT_VERSION == "2"
+    envelope = build_overview_prompt(_evidence())
+    current = narrative_cache_key(envelope)
+    monkeypatch.setattr(narrator_module, "NARRATIVE_FORMAT_VERSION", "1")
+
+    assert narrator_module.narrative_cache_key(envelope) != current
+
+
 def test_no_feature_key_or_url_reaches_the_prompt():
     text = build_overview_prompt(_evidence()).to_prompt_text()
 
@@ -348,7 +371,44 @@ def test_a_failure_never_overwrites_the_earlier_row(tmp_path):
 
     OverviewNarrator(RecordingEngine("not json"), cache=store, repositoryId="repo").narrate(_evidence())
 
-    assert store.load_latest_overview_narrative("repo") == (REPLY, {"f0": "feature-old"})
+    assert store.load_latest_overview_narrative("repo") == (REPLY, {"f0": "feature-old"}, "")
+
+
+def test_a_saved_reply_records_the_repository_fingerprint(tmp_path):
+    narrator, store = _narrator(tmp_path, RecordingEngine())
+
+    narrator.narrate(replace(_evidence(), repositoryFingerprint="fp-now"))
+
+    assert store.load_latest_overview_narrative("repo")[2] == "fp-now"
+
+
+def test_an_earlier_prompt_about_the_same_repository_is_not_stale(tmp_path):
+    """Analyze finding I2: a prompt or format change alone - User Story 2's
+    format version, a reworded system prompt - leaves the repository as it was,
+    so its narrative must not be captioned "describes an earlier version"."""
+    store = open_doc_manifest_store(tmp_path / "m.sqlite")
+    store.save_overview_narrative("repo", "an-older-prompt", REPLY, {"f0": "feature-0"}, repository_fingerprint="fp-same")
+
+    outcome = OverviewNarrator(RecordingEngine(available=False), cache=store, repositoryId="repo").narrate(
+        replace(_evidence(), repositoryFingerprint="fp-same")
+    )
+
+    assert outcome.status == "previous-prompt"
+    assert outcome.staleReason == "unavailable"
+    assert outcome.reply.lead
+    assert outcome.handleMap == {"f0": "feature-0"}
+
+
+@pytest.mark.parametrize(("stored", "current"), [("fp-before", "fp-after"), ("", "fp-after"), ("", "")])
+def test_a_different_or_unknown_fingerprint_is_still_stale(tmp_path, stored, current):
+    store = open_doc_manifest_store(tmp_path / "m.sqlite")
+    store.save_overview_narrative("repo", "an-older-prompt", REPLY, {}, repository_fingerprint=stored)
+
+    outcome = OverviewNarrator(RecordingEngine(available=False), cache=store, repositoryId="repo").narrate(
+        replace(_evidence(), repositoryFingerprint=current)
+    )
+
+    assert outcome.status == "stale"
 
 
 # --------------------------------------------------------------------------
@@ -358,6 +418,15 @@ def test_a_failure_never_overwrites_the_earlier_row(tmp_path):
 
 def test_parse_accepts_an_object_with_a_lead():
     assert parse_narrative_reply(REPLY).lead == ("The system starts in `alpha_entry` and hands work to [[f0]].",)
+
+
+def test_parse_reads_the_subsystems_object():
+    reply = parse_narrative_reply(
+        json.dumps({"lead": ["One `a.py`."], "subsystems": {"f0": "Core `a.py`.", "f1": 7, "f2": "Io `b.py`."}})
+    )
+
+    assert reply.lead == ("One `a.py`.",)
+    assert reply.subsystems == {"f0": "Core `a.py`.", "f2": "Io `b.py`."}
 
 
 def test_parse_splits_blank_line_separated_paragraphs_in_one_string():

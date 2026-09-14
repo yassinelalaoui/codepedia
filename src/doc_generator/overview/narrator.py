@@ -39,15 +39,16 @@ from .evidence import (
 
 # Bumped whenever the reply's shape changes, so a cached reply to the old
 # question is never read as an answer to the new one.
-NARRATIVE_FORMAT_VERSION = "1"
+NARRATIVE_FORMAT_VERSION = "2"
 
 # Worst-case sizes of each prompt part. Constants rather than measurements of
 # the live strings, because the budget assertion in `test_overview_narrator.py`
 # has to bound what the prompt *could* be, not what one example happens to be.
 # Every part is hard-truncated to its constant when the prompt is built.
 # 1400 until the entry/uncalled distinction was spelled out (038 research
-# Decisions 15 and 16); +50 tokens on the worst case.
-SYSTEM_PROMPT_CHARS = 1600
+# Decisions 15 and 16), 1600 until User Story 2 asked for subsystem paragraphs;
+# each step is under 100 tokens on the worst case.
+SYSTEM_PROMPT_CHARS = 1900
 # Repository name, languages, the subsystem count, and the one line that says
 # how to read the entry lines below.
 HEADER_CHARS = 300
@@ -61,8 +62,8 @@ MAX_NARRATIVE_RESPONSE_TOKENS = 1400
 
 SYSTEM_PROMPT = (
     "You write the opening of a source repository's documentation page, using only the evidence given. "
-    'Reply with only a JSON object {"lead": ["...", "..."]} holding two to four paragraphs, '
-    "under 400 words in total.\n"
+    'Reply with only a JSON object {"lead": ["...", "..."], "subsystems": {"fN": "..."}}, '
+    "under 550 words in all. The lead holds two to four paragraphs.\n"
     "Paragraph 1 says what the repository is and does. If a line is marked entry, it names that line's "
     "file as where work enters; if none is, it claims no entry point and names a subsystem's start file.\n"
     "Paragraph 2 follows one line: name its function and file, then the subsystems its calls reach. "
@@ -70,6 +71,8 @@ SYSTEM_PROMPT = (
     "Call order is not data flow: list what it reaches without then, next or finally.\n"
     "Paragraph 3, only if a subsystem's description or start-file summary says it stores, sends or "
     "returns data, names every such subsystem as a place results can go, never a single file as the only destination.\n"
+    '"subsystems" holds one paragraph for each subsystem marked paragraph, keyed by its handle: '
+    "at most three sentences on what it does and which listed subsystems it works with.\n"
     "Rules:\n"
     "- Write full sentences; no arrows.\n"
     "- Write a subsystem only as its handle in double brackets, like [[f2]]; never f2 alone, never its title.\n"
@@ -86,7 +89,9 @@ SYSTEM_PROMPT = (
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 _PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
 
-NarrationStatus = Literal["cached", "generated", "stale", "unavailable", "failed", "unparseable", "skipped"]
+NarrationStatus = Literal[
+    "cached", "generated", "stale", "previous-prompt", "unavailable", "failed", "unparseable", "skipped"
+]
 
 
 class OverviewNarrativeCache(Protocol):
@@ -94,10 +99,16 @@ class OverviewNarrativeCache(Protocol):
 
     def load_overview_narrative(self, repository_id: str, narrative_key: str) -> tuple[str, dict[str, str]] | None: ...
 
-    def load_latest_overview_narrative(self, repository_id: str) -> tuple[str, dict[str, str]] | None: ...
+    def load_latest_overview_narrative(self, repository_id: str) -> tuple[str, dict[str, str], str] | None: ...
 
     def save_overview_narrative(
-        self, repository_id: str, narrative_key: str, reply_text: str, handle_map: Mapping[str, str]
+        self,
+        repository_id: str,
+        narrative_key: str,
+        reply_text: str,
+        handle_map: Mapping[str, str],
+        *,
+        repository_fingerprint: str = "",
     ) -> None: ...
 
 
@@ -114,8 +125,8 @@ class NarrationOutcome:
     status: NarrationStatus
     reply: NarrativeReply | None = None
     handleMap: Mapping[str, str] = field(default_factory=dict)
-    #: For `stale` only: the failure (`unavailable`, `failed`, `unparseable`)
-    #: that made the earlier reply the best available one.
+    #: For `stale` and `previous-prompt`: the failure (`unavailable`, `failed`,
+    #: `unparseable`) that made the earlier reply the best available one.
     staleReason: str = ""
     #: For `skipped` only: `structure-pass` (silent) or `no-features` (reported).
     skipReason: str = ""
@@ -170,7 +181,11 @@ def build_overview_prompt(evidence: OverviewEvidence) -> PromptEnvelope:
         lead = excerpt(evidence.readmeLead, max_chars=MAX_README_LEAD_CHARS - len(label) - 1)
         parts.append(label + lead)
 
-    parts.extend(_fit(_feature_block(brief), FEATURE_BLOCK_CHARS) for brief in evidence.features)
+    majors = set(evidence.majorFeatureKeys)
+    parts.extend(
+        _fit(_feature_block(brief, paragraph=brief.featureKey in majors), FEATURE_BLOCK_CHARS)
+        for brief in evidence.features
+    )
     parts.extend(_fit(_flow_line(flow), ENTRY_FLOW_CHARS) for flow in evidence.entryFlows)
 
     return PromptEnvelope(
@@ -309,17 +324,26 @@ class OverviewNarrator:
                 text = getattr(result, "value", "") or ""
                 reply = parse_narrative_reply(text if isinstance(text, str) else str(text))
                 if reply is not None:
-                    self._save(key, text, handle_map)
+                    self._save(key, text, handle_map, evidence.repositoryFingerprint)
                     return NarrationOutcome("generated", reply=reply, handleMap=handle_map)
                 failure = "unparseable"
 
         # Spec FR-017a: no answer for this prompt, so the repository's most
-        # recent narrative - re-grounded against the repository as it is now,
-        # and marked as describing an earlier version. Never overwritten here.
+        # recent narrative - re-grounded against the repository as it is now.
+        # Never overwritten here.
         latest = self._load_latest()
         if latest is not None:
-            reply, stored_map = latest
-            return NarrationOutcome("stale", reply=reply, handleMap=stored_map, staleReason=failure)
+            reply, stored_map, fingerprint = latest
+            # Only the prompt changed - a format version, a reworded rule - and
+            # the repository is byte for byte the one this narrative described.
+            # It is not "an earlier version", so the page carries no caveat
+            # (038 analyze finding I2). An unknown fingerprint stays stale.
+            status: NarrationStatus = (
+                "previous-prompt"
+                if fingerprint and fingerprint == evidence.repositoryFingerprint
+                else "stale"
+            )
+            return NarrationOutcome(status, reply=reply, handleMap=stored_map, staleReason=failure)
         return NarrationOutcome(failure)
 
     def _load(self, key: str) -> tuple[NarrativeReply, dict[str, str]] | None:
@@ -332,20 +356,25 @@ class OverviewNarrator:
             return None
         return _parsed(row)
 
-    def _load_latest(self) -> tuple[NarrativeReply, dict[str, str]] | None:
+    def _load_latest(self) -> tuple[NarrativeReply, dict[str, str], str] | None:
         if self.cache is None:
             return None
         try:
             row = self.cache.load_latest_overview_narrative(self.repositoryId)
         except Exception:
             return None
-        return _parsed(row)
+        if row is None:
+            return None
+        parsed = _parsed(row[:2])
+        return (*parsed, row[2]) if parsed is not None else None
 
-    def _save(self, key: str, text: str, handle_map: Mapping[str, str]) -> None:
+    def _save(self, key: str, text: str, handle_map: Mapping[str, str], fingerprint: str) -> None:
         if self.cache is None:
             return
         try:
-            self.cache.save_overview_narrative(self.repositoryId, key, text, handle_map)
+            self.cache.save_overview_narrative(
+                self.repositoryId, key, text, handle_map, repository_fingerprint=fingerprint
+            )
         except Exception:
             return
 
@@ -379,8 +408,12 @@ def _fit(text: str, limit: int) -> str:
     return cut
 
 
-def _feature_block(brief: FeatureBrief) -> str:
-    lines = [f"{brief.handle}: {brief.title} ({brief.kind}, {brief.entryPointCount} entry points)"]
+def _feature_block(brief: FeatureBrief, *, paragraph: bool = False) -> str:
+    # A major subsystem is marked in its own block rather than listed in the
+    # header, so asking for its paragraph costs a word, not a line the header's
+    # truncation could drop (User Story 2).
+    marker = ", paragraph" if paragraph else ""
+    lines = [f"{brief.handle}: {brief.title} ({brief.kind}, {brief.entryPointCount} entry points{marker})"]
     if brief.description:
         lines[0] += f" - {brief.description}"
     if brief.anchorPath:

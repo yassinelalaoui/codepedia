@@ -774,6 +774,94 @@ not less. Two 038-scope refinements remain possible, neither applied:
   the kinds, for example "HTTP routes in … and CLI commands in …".
 - ¶3 could be told to cite one start file, so that G7 does not drop it.
 
+## Decision 17: User Story 2 as built, and analyze finding I2
+
+**I2 first: an earlier prompt is not an earlier version.** User Story 2 bumps
+`NARRATIVE_FORMAT_VERSION` to `"2"`, and Decisions 15 and 16 reworded the prompt
+twice. Each change misses the cache for a repository that did not change. With
+no provider, the FR-017a fallback then showed the old narrative under "This
+overview describes an earlier version of the repository", which is false: only
+the question changed. The cache key cannot tell the two apart, because it
+hashes the prompt, and the prompt covers both the repository and the wording.
+
+- `OverviewEvidence.repositoryFingerprint` is SHA-1 of the README lead plus
+  every file's `(repo-relative path, contentHash)`. It is deliberately not in the
+  prompt. The README lead is included because the evidence reads it from disk,
+  not from the index: the existing FR-017a test, whose Markdown is not indexed,
+  caught a first version that left it out.
+- Each saved reply stores it. `doc_overview_narratives.repository_fingerprint`
+  is added in place (`ADDED_COLUMNS`) to databases from User Story 1.
+- On fallback, an equal fingerprint gives the new status `previous-prompt`:
+  the prose is shown with **no** caveat, and the terminal says `showing the
+  narrative written for an earlier prompt (…)`, so a pending rewrite is never
+  silent (FR-018). A different or unknown (`''`) fingerprint is `stale`, as
+  before.
+
+**User Story 2 as built:**
+
+- **Grounding.** `ground` now grounds `reply.subsystems` too (`_ground_subsystems`):
+  - G3: the handle maps to a live feature;
+  - G9: only majors, one each, ≤ 8;
+  - `_check`, which includes G7;
+  - G8: ≤ 3 sentences;
+  - G11: table order.
+
+  The word budget trims subsystem paragraphs from the last before any lead
+  paragraph. G10 never reaches subsystem paragraphs. Sentence counting masks
+  code spans and does not count a full stop after e.g., i.e., etc., vs., cf.,
+  approx., incl. or resp. `accept_description` applies G1, G2 (a `[[fN]]` handle
+  rejects), G4, G5 and G6, and returns escaped Markdown.
+- **Prompt.** The reply shape is `{"lead": [...], "subsystems": {"fN": "..."}}`,
+  under 550 words in all. A major subsystem is marked `, paragraph` inside its
+  own feature block rather than listed in the header, so asking costs a word
+  and not a header line that `_fit` could drop. `SYSTEM_PROMPT_CHARS` goes from
+  1,600 to 1,900: the worst case is 4,590 tokens per call, 42.6% headroom. The
+  response cap (1,400) is unchanged, as T035 requires.
+- **Generator.** The overview evidence is built on every pass, narrated or not,
+  because the table checks descriptions against it and must be identical with
+  and without a provider (FR-024). `RepositoryEvidence` is kept from feature
+  derivation (`_repository_evidence`) for "Start with". Test files are passed
+  over for "Start with" while the subsystem has other members (Decision 15's
+  reasoning). Each subsystem paragraph ends in `[<title>](features/…)`.
+- **Template.** `| Subsystem | Responsibility[ (AI-generated)] | Start with |`
+  replaces `| Feature | Modules |`, and the `## Features` list is deleted. The
+  paragraphs follow the table, each `{: .ai-generated }`. When the lead was
+  withheld but stale subsystem paragraphs survive, the caveat sits under the
+  last of them (contract §6).
+- **Unrelated regression found and fixed.** The User Story 1 commit `2539226`
+  had re-saved `generator.py` (and `tasks.md`) through a cp1252 round trip, so
+  every Overview, dependency-diagram and call-sequence page title read
+  "… â€” …". Both files were repaired by exact reverse decoding, and
+  `tests/unit/test_source_encoding.py` now fails on any such sequence under
+  `src/` or `frontend/src/`.
+
+**Verification** (2026-09-14; `gpt-oss-120b` temporarily first in the chain,
+config restored; one call per repository):
+
+| | Sample | Nextgen |
+| --- | --- | --- |
+| Prompt / worst case | ~1,902 / 3,302 tokens | ~1,434 / 2,834 tokens (ceiling 4,590) |
+| Table | 12 rows, navigation order, 12 accepted descriptions, header labelled, every "Start with" a member | 7 rows, likewise |
+| Offered → kept | 10 → 5: lead 2 of 3 (¶3 cites no file, G7); subsystems 3 of 7 (4 written for **unmarked** subsystems, G9) | 7 → 2: lead 2 of 3 (¶3, G7); subsystems 0 of 4 (3 cite no file, G7; 1 unmarked, G9) |
+| Lead ¶1 | **Regressed**: opens "Work enters through the `list_overdue` command…" and no longer says what the repository is | Says what it is and where work enters (correct) |
+| Links / appearance | 28 links, 0 problems; the table scrolls within itself at 700 px; subsystem paragraphs form one marked block | 6 links, 0 problems |
+
+The mechanics hold: grounding dropped exactly the paragraphs that broke a rule,
+and the table is complete with or without prose. The prompt is followed poorly
+for the new part:
+
+- subsystem paragraphs omit the file citation (G7) and name subsystems by title
+  instead of handle;
+- the model writes for subsystems it judges important (Storage, Core) rather
+  than the marked ones;
+- the larger prompt diluted paragraph 1's "what it is".
+
+The marked majors are the first eight non-tooling subsystems in navigation
+order. 033's kind ranking puts "overview" and "capability" first, so on the
+sample "Documentation" and "Tests (Test Fines)" are majors while both Storage
+subsystems are not. That selection is evidence-side (`majorFeatureKeys`) and
+worth revisiting. T042's stranger test is deferred until the prompt is fixed.
+
 ---
 
 ## Spec amendments made during planning

@@ -36,8 +36,8 @@ description: "Task list for the Narrative Overview Page feature"
 
 **Purpose**: Baseline and package skeleton. No behaviour changes.
 
-- [X] T001 Record the baseline: run the full suite with the command in Conventions on `038-narrative-overview-page`, confirm `.venv` is Python 3.11â€“3.13, and note any pre-existing failures in `<scratchpad>\baseline.txt`. That file, not this branch, is what later "suite green" claims are compared against.
-- [X] T002 [P] Create `src/doc_generator/overview/__init__.py` with the package docstring stating the invariant verbatim from contract Â§1 (`evidence` and `grounding` take no LLM engine argument, not even an optional one; `narrator` is the only module that accepts one). Re-export `PROVIDER_TOKEN_BUDGET` and `CHARS_PER_TOKEN` from `doc_generator.features`; do not redefine them.
+- [X] T001 Record the baseline: run the full suite with the command in Conventions on `038-narrative-overview-page`, confirm `.venv` is Python 3.11–3.13, and note any pre-existing failures in `<scratchpad>\baseline.txt`. That file, not this branch, is what later "suite green" claims are compared against.
+- [X] T002 [P] Create `src/doc_generator/overview/__init__.py` with the package docstring stating the invariant verbatim from contract §1 (`evidence` and `grounding` take no LLM engine argument, not even an optional one; `narrator` is the only module that accepts one). Re-export `PROVIDER_TOKEN_BUDGET` and `CHARS_PER_TOKEN` from `doc_generator.features`; do not redefine them.
 - [X] T003 [P] Delete the stale, sourceless `src/doc_generator/__pycache__/section_narrator.*.pyc` files (research Decision 0). Confirm with a grep that nothing imports `section_narrator`.
 
 ---
@@ -62,15 +62,15 @@ description: "Task list for the Narrative Overview Page feature"
 
 ---
 
-## Phase 3: User Story 1 â€” Read what the repository is before what it contains (Priority: P1) ðŸŽ¯ MVP
+## Phase 3: User Story 1 — Read what the repository is before what it contains (Priority: P1) 🎯 MVP
 
 **Goal**: One to four grounded, marked paragraphs directly under the Overview's title say what the repository is, name its major subsystems as links, and describe where work enters and ends up. The page's structure is unchanged without a provider; an unchanged repository regenerates identical Markdown.
 
-**Independent Test**: Index a repository with a provider. One to four `.ai-generated` paragraphs (two to four requested) precede the repository facts, each cites at least one real file, module or symbol, every backticked name is a link, and every subsystem link opens. Then regenerate with a failing engine: the same headings and link destinations, and no prose (quickstart Â§2â€“Â§4).
+**Independent Test**: Index a repository with a provider. One to four `.ai-generated` paragraphs (two to four requested) precede the repository facts, each cites at least one real file, module or symbol, every backticked name is a link, and every subsystem link opens. Then regenerate with a failing engine: the same headings and link destinations, and no prose (quickstart §2–Â§4).
 
 ### Tests for User Story 1 (write first; confirm they fail)
 
-- [X] T006 [P] [US1] Write `tests/unit/test_overview_package.py::test_only_the_narrator_accepts_an_engine`. It walks every public function and class constructor in `doc_generator.overview.evidence` and `doc_generator.overview.grounding` with `inspect.signature`, and asserts that no parameter is named `llmEngine`, `engine` or `llm_engine`. It also asserts that neither module's source imports `local_llm` (contract Â§1).
+- [X] T006 [P] [US1] Write `tests/unit/test_overview_package.py::test_only_the_narrator_accepts_an_engine`. It walks every public function and class constructor in `doc_generator.overview.evidence` and `doc_generator.overview.grounding` with `inspect.signature`, and asserts that no parameter is named `llmEngine`, `engine` or `llm_engine`. It also asserts that neither module's source imports `local_llm` (contract §1).
 - [X] T007 [P] [US1] Write `tests/unit/test_manifest_overview_narratives.py`:
   - `test_save_then_load_by_key_round_trips_reply_and_handle_map`
   - `test_load_with_a_different_key_is_a_miss`
@@ -93,7 +93,7 @@ description: "Task list for the Narrative Overview Page feature"
 - [X] T009 [P] [US1] Write `tests/unit/test_overview_narrator.py`. **The budget tests are computed from the constants, never from a literal.**
   - `test_worst_case_call_fits_the_provider_budget` asserts `worst_case_call_tokens() <= PROVIDER_TOKEN_BUDGET`.
   - `test_the_budget_arithmetic_is_the_documented_one` recomputes `(SYSTEM_PROMPT_CHARS + HEADER_CHARS + MAX_README_LEAD_CHARS + MAX_README_PROMPT_CHARS + MAX_PROMPTED_FEATURES * FEATURE_BLOCK_CHARS + MAX_PROMPTED_ENTRY_FLOWS * ENTRY_FLOW_CHARS) // CHARS_PER_TOKEN` independently and adds `MAX_NARRATIVE_RESPONSE_TOKENS`.
-  - `test_raising_a_cap_would_break_the_budget` monkeypatches `MAX_PROMPTED_FEATURES` Ã—4 and expects the budget to be exceeded.
+  - `test_raising_a_cap_would_break_the_budget` monkeypatches `MAX_PROMPTED_FEATURES` ×4 and expects the budget to be exceeded.
   - `test_system_prompt_fits_its_declared_size`
   - `test_a_real_prompt_stays_under_the_worst_case`, using maximum-size evidence
   - `test_prompt_sets_low_reasoning_effort_and_the_response_cap`
@@ -115,7 +115,7 @@ description: "Task list for the Narrative Overview Page feature"
   - `test_parse_accepts_an_object_with_a_lead`
   - `test_parse_accepts_json_wrapped_in_prose`
   - `test_parse_rejects_a_list_prose_and_empty_objects`
-- [X] T010 [P] [US1] Write `tests/unit/test_overview_grounding.py`, one test per rule on hand-written replies with no model (contract Â§3):
+- [X] T010 [P] [US1] Write `tests/unit/test_overview_grounding.py`, one test per rule on hand-written replies with no model (contract §3):
   - `test_empty_paragraph_is_dropped` (G1)
   - `test_unbalanced_backtick_rejects_the_paragraph` (G2)
   - `test_unknown_handle_rejects_the_paragraph` (G3)
@@ -129,7 +129,7 @@ description: "Task list for the Narrative Overview Page feature"
   - `test_second_person_rejects` (G6)
   - `test_a_banned_promotional_term_rejects` (G6)
   - `test_a_lead_paragraph_without_a_resolved_name_rejects` (G7)
-  - `test_a_lead_paragraph_citing_only_a_subsystem_handle_rejects` (G7, constitution Â§2.4)
+  - `test_a_lead_paragraph_citing_only_a_subsystem_handle_rejects` (G7, constitution §2.4)
   - `test_the_lead_is_trimmed_to_four_paragraphs` (G9)
   - `test_the_word_budget_trims_from_the_end` (G9)
   - `test_a_rejected_opening_paragraph_withholds_the_lead` (G10)
@@ -147,9 +147,9 @@ description: "Task list for the Narrative Overview Page feature"
 
     Heading sequence equal; set of `href`s outside `.ai-generated` equal; no `.ai-generated` element; no placeholder text.
 
-    **Each no-provider page is generated into a fresh output root with a fresh manifest store that holds no `doc_overview_narratives` row.** The with-provider reference page is generated separately. Otherwise, per FR-014, FR-015 and contract Â§2 step 2, the narrator correctly returns `cached` or `stale` and prose appears.
+    **Each no-provider page is generated into a fresh output root with a fresh manifest store that holds no `doc_overview_narratives` row.** The with-provider reference page is generated separately. Otherwise, per FR-014, FR-015 and contract §2 step 2, the narrator correctly returns `cached` or `stale` and prose appears.
   - `test_an_already_narrated_unchanged_repository_keeps_its_prose_without_a_provider` (FR-014, FR-016): same store, second run with an unavailable engine, identical `index.md`.
-  - `test_no_subsystems_means_no_lead_and_a_skip_notice` (spec edge case, contract Â§7)
+  - `test_no_subsystems_means_no_lead_and_a_skip_notice` (spec edge case, contract §7)
   - **`test_unchanged_repository_regenerates_identical_markdown`**: two `incremental=False` runs; `index.md` bytes equal; the second run makes 0 engine calls.
   - `test_the_lead_precedes_every_list_table_and_diagram`
   - `test_every_backticked_name_in_the_lead_renders_as_a_link`
@@ -157,7 +157,7 @@ description: "Task list for the Narrative Overview Page feature"
   - `test_incremental_pass_on_an_unchanged_repository_does_not_rewrite_home`
   - `test_changed_repository_without_provider_shows_the_earlier_narrative_marked_stale` (FR-017a, US1 #10)
   - `test_the_structure_pass_does_not_narrate` (`narrateOverview=False` gives 0 calls)
-  - `test_on_notice_receives_the_contract_line_for_each_outcome` (contract Â§7)
+  - `test_on_notice_receives_the_contract_line_for_each_outcome` (contract §7)
   - `test_home_has_no_inline_mermaid_and_no_last_indexed_line`
   - `test_features_list_shows_titles_only` (FR-012a)
 - [X] T012 [P] [US1] Write `tests/integration/test_cli_overview_wiring.py` (moved from `tests/unit/` during implementation: it reuses `test_cli.py`'s `cli_home`/`fake_engines` fixtures the way `test_serve_refreshes_wiki_shell.py` does):
@@ -172,24 +172,24 @@ description: "Task list for the Narrative Overview Page feature"
 - [X] T013 [US1] Add the `doc_overview_narratives` table to `SCHEMA_STATEMENTS` in `src/doc_generator/manifest_store.py` (columns per data-model), plus `load_overview_narrative`, `load_latest_overview_narrative` and `save_overview_narrative`. They mirror `load_feature_plan`/`save_feature_plan`: bad JSON and exceptions are a miss, never a crash; one row per repository. Makes T007 pass.
 - [X] T014 [US1] Add `find_readme(repository_root) -> Path | None` to `src/doc_generator/features/evidence.py`, and make `read_readme_bullets` use it. This is a pure refactor of the `_README_CANDIDATES` loop: `tests/unit/test_feature_evidence.py` and `tests/unit/test_feature_planner.py` must pass unchanged. Add `test_find_readme_follows_candidate_order` to `tests/unit/test_feature_evidence.py`.
 - [X] T015 [US1] Implement `src/doc_generator/overview/evidence.py`: `FeatureBrief`, `EntryFlow`, `OverviewEvidence`, `build_overview_evidence`, `read_readme_lead` (via `find_readme` + `plain_text.excerpt`), and the constants `MAX_README_LEAD_CHARS=600`, `MAX_PROMPTED_FEATURES=12`, `MAX_PROMPTED_ENTRY_FLOWS=6`. The depth-tracking BFS is bounded by `features.evidence.MAX_EVIDENCE_CALL_DEPTH`. **No engine parameter anywhere.** Makes T008 and the evidence half of T006 pass.
-- [X] T016 [US1] Implement `src/doc_generator/overview/grounding.py` rules G1â€“G7, G9 and G10, plus `ground(reply, evidence, lookup, *, handle_map, is_stale=False)`, `render_paragraph`, `GroundedNarrative` (with `leadWithheld` and `isStale`), `Segment`, `GroundedParagraph`, `Rejection`, `BANNED_PROMOTIONAL_TERMS`, `MAX_LEAD_PARAGRAPHS=4` and `MAX_NARRATIVE_WORDS=600`. G4/G5 resolve through `cross_references.resolve_reference`; text segments go through `markdown_render._markdown_escape`. **No engine parameter.** Makes T010 (including **`test_a_fabricated_symbol_rejects_its_paragraph`**) and the grounding half of T006 pass. G8, G11 and `accept_description` belong to User Story 2.
-- [X] T017 [US1] Implement `src/doc_generator/overview/narrator.py`: `OverviewNarrator` (constructor mirrors `FeaturePlanner`), `build_overview_prompt` asking for `{"lead": [...]}` only, `narrative_cache_key`, `parse_narrative_reply`, `NarrativeReply`, `NarrationOutcome` (including `stale`), `worst_case_prompt_tokens`, `worst_case_call_tokens`, `SYSTEM_PROMPT` and the constants from data-model Â§ Constants. `NARRATIVE_FORMAT_VERSION = "1"`. Follow the step order in contract Â§2 exactly: cache before availability; `run(lambda engine: engine.generate(prompt))`; catch `RuntimeError` only; the stale fallback never overwrites. Makes T009 pass, including **`test_worst_case_call_fits_the_provider_budget`**, `test_the_budget_arithmetic_is_the_documented_one` and `test_raising_a_cap_would_break_the_budget`.
+- [X] T016 [US1] Implement `src/doc_generator/overview/grounding.py` rules G1–G7, G9 and G10, plus `ground(reply, evidence, lookup, *, handle_map, is_stale=False)`, `render_paragraph`, `GroundedNarrative` (with `leadWithheld` and `isStale`), `Segment`, `GroundedParagraph`, `Rejection`, `BANNED_PROMOTIONAL_TERMS`, `MAX_LEAD_PARAGRAPHS=4` and `MAX_NARRATIVE_WORDS=600`. G4/G5 resolve through `cross_references.resolve_reference`; text segments go through `markdown_render._markdown_escape`. **No engine parameter.** Makes T010 (including **`test_a_fabricated_symbol_rejects_its_paragraph`**) and the grounding half of T006 pass. G8, G11 and `accept_description` belong to User Story 2.
+- [X] T017 [US1] Implement `src/doc_generator/overview/narrator.py`: `OverviewNarrator` (constructor mirrors `FeaturePlanner`), `build_overview_prompt` asking for `{"lead": [...]}` only, `narrative_cache_key`, `parse_narrative_reply`, `NarrativeReply`, `NarrationOutcome` (including `stale`), `worst_case_prompt_tokens`, `worst_case_call_tokens`, `SYSTEM_PROMPT` and the constants from data-model § Constants. `NARRATIVE_FORMAT_VERSION = "1"`. Follow the step order in contract §2 exactly: cache before availability; `run(lambda engine: engine.generate(prompt))`; catch `RuntimeError` only; the stale fallback never overwrites. Makes T009 pass, including **`test_worst_case_call_fits_the_provider_budget`**, `test_the_budget_arithmetic_is_the_documented_one` and `test_raising_a_cap_would_break_the_budget`.
 - [X] T018 [US1] Export `OverviewNarrator` from `src/doc_generator/__init__.py`, next to `FeaturePlanner`.
 - [X] T019 [US1] In `src/doc_generator/generator.py`:
   - `_ensure_features` keeps the `RepositoryEvidence` as `self._repository_evidence`.
   - `DocGenerator.__init__` gains `overviewNarrator` and `onNotice`.
   - `generateRepositoryDocumentation` / `_generate_repository_documentation` gain `narrateOverview: bool = True`.
-  - `generateOverviewPage` loses `classDiagramSource` and gains the narrative: build evidence â†’ `narrate` (or `skipped`) â†’ `ground` against `self._symbol_lookup` â†’ `render_paragraph` â†’ `lead_paragraphs` + `lead_is_stale`.
-  - Emit at most one `onNotice` line per contract Â§7.
+  - `generateOverviewPage` loses `classDiagramSource` and gains the narrative: build evidence → `narrate` (or `skipped`) → `ground` against `self._symbol_lookup` → `render_paragraph` → `lead_paragraphs` + `lead_is_stale`.
+  - Emit at most one `onNotice` line per contract §7.
   - Stop passing `classDiagramSource=self._class_diagram_source()` at the home call site (line 841).
 
   Tests: T011 `test_no_engine_page_has_the_same_outline`, `test_on_notice_receives_the_contract_line_for_each_outcome`, `test_changed_repository_without_provider_shows_the_earlier_narrative_marked_stale`, `test_the_structure_pass_does_not_narrate`.
-- [X] T020 [US1] In `src/doc_generator/generator.py`, on an incremental run where `home` is not otherwise targeted, **always** build the home page, and write it only when `writer._content_hash(page.contentMarkdown)` differs from the stored manifest `contentHash` for `home` (research Decision 7; contract Â§5). **Use that function, not another digest**: the stored value is SHA-1 (`writer.py` 202â€“203), and any other algorithm never matches, so the page would be rewritten every pass. Tests: T011 `test_removed_symbol_drops_its_paragraph_on_the_next_incremental_pass`, `test_incremental_pass_on_an_unchanged_repository_does_not_rewrite_home`, **`test_unchanged_repository_regenerates_identical_markdown`**.
+- [X] T020 [US1] In `src/doc_generator/generator.py`, on an incremental run where `home` is not otherwise targeted, **always** build the home page, and write it only when `writer._content_hash(page.contentMarkdown)` differs from the stored manifest `contentHash` for `home` (research Decision 7; contract §5). **Use that function, not another digest**: the stored value is SHA-1 (`writer.py` 202–203), and any other algorithm never matches, so the page would be rewritten every pass. Tests: T011 `test_removed_symbol_drops_its_paragraph_on_the_next_incremental_pass`, `test_incremental_pass_on_an_unchanged_repository_does_not_rewrite_home`, **`test_unchanged_repository_regenerates_identical_markdown`**.
 - [X] T021 [US1] Edit `src/doc_generator/templates/home.md.jinja`:
   - emit `lead_paragraphs` immediately under the H1, each followed by `{: .ai-generated }`;
-  - when `lead_is_stale` and there is at least one paragraph, add the `.summary-stale` caveat line from contract Â§6;
+  - when `lead_is_stale` and there is at least one paragraph, add the `.summary-stale` caveat line from contract §6;
   - delete line 5 (`Last indexed`);
-  - delete the inline `mermaid` block (lines 23â€“28), keeping both diagram links;
+  - delete the inline `mermaid` block (lines 23–28), keeping both diagram links;
   - reduce the Features list (line 41) to `[title](link)`, with no description (FR-012a).
 
   Tests: T011 `test_the_lead_precedes_every_list_table_and_diagram`, `test_home_has_no_inline_mermaid_and_no_last_indexed_line`, `test_features_list_shows_titles_only`, `test_every_backticked_name_in_the_lead_renders_as_a_link`.
@@ -200,22 +200,22 @@ description: "Task list for the Narrative Overview Page feature"
   - In `serve_command.py` (next to line 124), pass `overviewNarrator=OverviewNarrator(summary_executor, cache=manifest_store)` and `onNotice=typer.echo`.
 
   Makes T012 pass.
-- [X] T025 [US1] Run the full suite and compare against `<scratchpad>\baseline.txt`. Every test from T006â€“T012 passes, and there is no new failure.
+- [X] T025 [US1] Run the full suite and compare against `<scratchpad>\baseline.txt`. Every test from T006–T012 passes, and there is no new failure.
 
 ### Manual verification for User Story 1 (prose cannot be judged by a unit test)
 
 - [X] T026 [US1] Index both reference repositories: `codepedia index C:\Users\ASUS\IdeaProjects\codepedia-sample-repo` and `codepedia index C:\Users\ASUS\IdeaProjects\codepedia`. Record each run's `overview:` notice line, if any.
-- [X] T027 [US1] **Read both Overview pages end to end** (`<state>\docs\index.html` and `index.md`) against quickstart Â§2 items 1â€“8. Record every failure with the offending sentence in `<scratchpad>\us1-review.md`.
+- [X] T027 [US1] **Read both Overview pages end to end** (`<state>\docs\index.html` and `index.md`) against quickstart §2 items 1–8. Record every failure with the offending sentence in `<scratchpad>\us1-review.md`.
 - [X] T028 [US1] **The stranger test (SC-001)**, in two steps, with the implementer never acting as reviewer:
   1. **Answer key first.** Before anyone reads the new Overview, write `<scratchpad>\sc001-key-<repo>.md` for each repository from the code alone. It lists the major subsystems and the places where operations begin.
   2. **An independent reviewer.** Give a fresh AI session (a new subagent with no repository access and no conversation history), or a person who has not seen the repository, **only** the generated `index.md`. Ask them to name the main subsystems and where an operation begins, within the five-minute reading budget.
 
   Score their answers against the key. Record the key, the answers, the score, whether a newcomer would now understand how the project works, and which paragraph failed them if not, in `<scratchpad>\us1-review.md`. Also record any lead of fewer than two paragraphs on a repository with at least two subsystems (SC-007's review-only minimum).
 - [X] T029 [US1] **The tense review (SC-013)**: copy every generated sentence from both Overviews into `<scratchpad>\tense-review-<repo>.md` and mark each one declarative present or not. The expected count of "not" is zero.
-- [X] T030 [US1] No-provider check (quickstart Â§3): with `<scratchpad>\nopro_check.py` on a copy of the sample repository's state, run with no narrator at all (`overviewNarrator=None`), and with engines that raise `RuntimeError`, return `""`, and return `"not json"`, each against a store with the narrative row deleted. Confirm the outlines are equal and no prose remains. Then run `--keep-cache` and confirm the earlier narrative shows with its stale caveat.
-- [X] T031 [US1] Rerun check (quickstart Â§4): re-index the sample repository and `git diff --no-index` the two `index.md` files; the diff must be empty. The HTML may differ only in the footer's timestamp. Start `serve` and confirm `index.md`'s write time is unchanged.
-- [X] T032 [US1] Appearance (quickstart Â§5): both `<state>\docs\index.html` Overviews in light and dark, at about 400 px and at full width. The lead reads as one marked block with one badge, and there is no horizontal scroll.
-- [X] T033 [US1] Cost (quickstart Â§6): with `<scratchpad>\cost.py`, record the real prompt tokens, the response cap, their sum and `worst_case_call_tokens()` for both repositories, for the implementation report.
+- [X] T030 [US1] No-provider check (quickstart §3): with `<scratchpad>\nopro_check.py` on a copy of the sample repository's state, run with no narrator at all (`overviewNarrator=None`), and with engines that raise `RuntimeError`, return `""`, and return `"not json"`, each against a store with the narrative row deleted. Confirm the outlines are equal and no prose remains. Then run `--keep-cache` and confirm the earlier narrative shows with its stale caveat.
+- [X] T031 [US1] Rerun check (quickstart §4): re-index the sample repository and `git diff --no-index` the two `index.md` files; the diff must be empty. The HTML may differ only in the footer's timestamp. Start `serve` and confirm `index.md`'s write time is unchanged.
+- [X] T032 [US1] Appearance (quickstart §5): both `<state>\docs\index.html` Overviews in light and dark, at about 400 px and at full width. The lead reads as one marked block with one badge, and there is no horizontal scroll.
+- [X] T033 [US1] Cost (quickstart §6): with `<scratchpad>\cost.py`, record the real prompt tokens, the response cap, their sum and `worst_case_call_tokens()` for both repositories, for the implementation report.
 
 ### Post-review fix for User Story 1 (owner: "fix the issue before us2")
 
@@ -230,7 +230,7 @@ description: "Task list for the Narrative Overview Page feature"
 
 ---
 
-## Phase 4: User Story 2 â€” See the subsystems as a map, not a tally (Priority: P2)
+## Phase 4: User Story 2 — See the subsystems as a map, not a tally (Priority: P2)
 
 **Goal**: The count table becomes a subsystems table (subsystem, responsibility, where to start), followed by at most eight grounded paragraphs of up to three sentences, one per major subsystem, each ending in a link to that subsystem's page.
 
@@ -238,7 +238,7 @@ description: "Task list for the Narrative Overview Page feature"
 
 ### Tests for User Story 2
 
-- [ ] T034 [P] [US2] Extend `tests/unit/test_overview_grounding.py`:
+- [X] T034 [P] [US2] Extend `tests/unit/test_overview_grounding.py`:
   - `test_a_subsystem_paragraph_citing_no_resolved_name_rejects` (G7 applies to subsystem paragraphs too, FR-025)
   - `test_a_four_sentence_subsystem_paragraph_rejects` (G8)
   - `test_sentence_counting_ignores_dotted_names_and_abbreviations` (G8)
@@ -247,13 +247,13 @@ description: "Task list for the Narrative Overview Page feature"
   - `test_only_major_features_receive_paragraphs_and_at_most_eight`
   - `test_accept_description_rejects_second_person_and_fabricated_names`
   - `test_accept_description_passes_a_plain_sentence_through_escaped`
-- [ ] T035 [P] [US2] Extend `tests/unit/test_overview_narrator.py`:
+- [X] T035 [P] [US2] Extend `tests/unit/test_overview_narrator.py`:
   - `test_prompt_asks_for_subsystem_paragraphs_keyed_by_handle`
   - `test_format_version_two_changes_the_cache_key`
   - `test_parse_reads_the_subsystems_object`
 
   **Re-run `test_worst_case_call_fits_the_provider_budget` unchanged**: the response cap already covers User Story 2.
-- [ ] T036 [P] [US2] Write `tests/integration/test_overview_subsystems.py`:
+- [X] T036 [P] [US2] Write `tests/integration/test_overview_subsystems.py`:
   - `test_subsystems_table_lists_every_feature_once_in_navigation_order`
   - `test_start_with_module_belongs_to_its_subsystem_and_prefers_the_most_entry_points`
   - `test_the_table_is_complete_without_a_provider`
@@ -265,11 +265,11 @@ description: "Task list for the Narrative Overview Page feature"
 
 ### Implementation for User Story 2
 
-- [ ] T037 [US2] In `src/doc_generator/overview/grounding.py`, add G8 (`MAX_SUBSYSTEM_SENTENCES=3`), G11, the `subsystems` half of `ground` (`MAX_SUBSYSTEM_PARAGRAPHS=8`, keys âŠ† `majorFeatureKeys`) and `accept_description`. **No engine parameter.** Makes T034 pass, and T006 still passes.
-- [ ] T038 [US2] In `src/doc_generator/overview/narrator.py`, extend `SYSTEM_PROMPT` and `build_overview_prompt` to request `"subsystems": {"<handle>": "..."}` for the major features, extend `parse_narrative_reply`, and set `NARRATIVE_FORMAT_VERSION = "2"`. Makes T035 pass. **`test_worst_case_call_fits_the_provider_budget`, `test_the_budget_arithmetic_is_the_documented_one` and `test_raising_a_cap_would_break_the_budget` must still pass without their constants being touched.**
-- [ ] T039 [US2] In `src/doc_generator/generator.py`, build `subsystem_rows`: title link; responsibility = `accept_description(...)` for planned features, else `""`; start-with module = the member with the most entry points (`self._repository_evidence.entryPointKeysByModuleKey`), ties by label, else the anchor, linked to its module page. Also build `subsystem_paragraphs`: `render_paragraph` plus a trailing link to the feature page, and `responsibility_is_generated`. Tests: T036, plus **`test_no_engine_page_has_the_same_outline`** and **`test_unchanged_repository_regenerates_identical_markdown`** re-run against the User Story 2 outline.
-- [ ] T040 [US2] In `src/doc_generator/templates/home.md.jinja`, replace the `| Feature | Modules |` table with `| Subsystem | Responsibility | Start with |`, whose header reads `Responsibility (AI-generated)` when `responsibility_is_generated` and whose empty cells show `â€”`. Render `subsystem_paragraphs` beneath it, each with `{: .ai-generated }`. Delete the `## Features` list (the table supersedes it). When the lead was withheld but stale subsystem paragraphs remain, put the stale caveat under the last paragraph (contract Â§6). Update `tests/unit/test_doc_generator_home_overview.py` to the new outline.
-- [ ] T041 [US2] Run the full suite against `<scratchpad>\baseline.txt`: T034â€“T036 and every User Story 1 test pass.
+- [X] T037 [US2] In `src/doc_generator/overview/grounding.py`, add G8 (`MAX_SUBSYSTEM_SENTENCES=3`), G11, the `subsystems` half of `ground` (`MAX_SUBSYSTEM_PARAGRAPHS=8`, keys ⊆ `majorFeatureKeys`) and `accept_description`. **No engine parameter.** Makes T034 pass, and T006 still passes.
+- [X] T038 [US2] In `src/doc_generator/overview/narrator.py`, extend `SYSTEM_PROMPT` and `build_overview_prompt` to request `"subsystems": {"<handle>": "..."}` for the major features, extend `parse_narrative_reply`, and set `NARRATIVE_FORMAT_VERSION = "2"`. Makes T035 pass. **`test_worst_case_call_fits_the_provider_budget`, `test_the_budget_arithmetic_is_the_documented_one` and `test_raising_a_cap_would_break_the_budget` must still pass without their constants being touched.**
+- [X] T039 [US2] In `src/doc_generator/generator.py`, build `subsystem_rows`: title link; responsibility = `accept_description(...)` for planned features, else `""`; start-with module = the member with the most entry points (`self._repository_evidence.entryPointKeysByModuleKey`), ties by label, else the anchor, linked to its module page. Also build `subsystem_paragraphs`: `render_paragraph` plus a trailing link to the feature page, and `responsibility_is_generated`. Tests: T036, plus **`test_no_engine_page_has_the_same_outline`** and **`test_unchanged_repository_regenerates_identical_markdown`** re-run against the User Story 2 outline.
+- [X] T040 [US2] In `src/doc_generator/templates/home.md.jinja`, replace the `| Feature | Modules |` table with `| Subsystem | Responsibility | Start with |`, whose header reads `Responsibility (AI-generated)` when `responsibility_is_generated` and whose empty cells show `—`. Render `subsystem_paragraphs` beneath it, each with `{: .ai-generated }`. Delete the `## Features` list (the table supersedes it). When the lead was withheld but stale subsystem paragraphs remain, put the stale caveat under the last paragraph (contract §6). Update `tests/unit/test_doc_generator_home_overview.py` to the new outline.
+- [X] T041 [US2] Run the full suite against `<scratchpad>\baseline.txt`: T034–T036 and every User Story 1 test pass.
 
 ### Manual verification for User Story 2
 
@@ -280,19 +280,19 @@ description: "Task list for the Narrative Overview Page feature"
   - the stranger test still holds (SC-001).
 
   Extend `<scratchpad>\tense-review-<repo>.md` with the new paragraphs and the table's generated cells (SC-013).
-- [ ] T043 [US2] Appearance of both `<state>\docs\index.html` Overviews at about 400 px and full width, light and dark: the table scrolls inside itself when narrow, with no page overflow.
+- [X] T043 [US2] Appearance of both `<state>\docs\index.html` Overviews at about 400 px and full width, light and dark: the table scrolls inside itself when narrow, with no page overflow.
 
 **Checkpoint**: User Stories 1 and 2 both work; the page is the full first-release narrative.
 
 ---
 
-## Phase 5: User Story 3 â€” Getting started (Priority: P3) â€” DEFERRED
+## Phase 5: User Story 3 — Getting started (Priority: P3) — DEFERRED
 
-Not in this release (spec Clarifications Q4). Its design is fixed in research Decision 5 and contract Â§8. **No tasks are generated.** A later `/speckit-tasks` run adds them against FR-026â€“FR-028.
+Not in this release (spec Clarifications Q4). Its design is fixed in research Decision 5 and contract §8. **No tasks are generated.** A later `/speckit-tasks` run adds them against FR-026–FR-028.
 
 ---
 
-## Phase 6: User Story 4 â€” A module list that can be read (Priority: P4)
+## Phase 6: User Story 4 — A module list that can be read (Priority: P4)
 
 **Goal**: No stray punctuation, no two identical labels, and plain-text descriptions that end cleanly. Every row keeps its module and dependency links.
 
@@ -319,8 +319,8 @@ Not in this release (spec Clarifications Q4). Its design is fixed in research De
 ### Implementation for User Story 4
 
 - [ ] T046 [US4] Add `disambiguated_labels(modules, repository_root) -> dict[str, str]` to `src/doc_generator/prose.py`, per research Decision 12. It is display-only: slugs, page ids and stored links keep deriving from `module.name`. Makes T044 pass.
-- [ ] T047 [US4] In `src/doc_generator/generator.py`'s `generateOverviewPage` module-entry loop (lines 131â€“155), add `label` from `disambiguated_labels` and `description` from `plain_text.excerpt(module.docstring)`. Sort by label. Link `label` values stay `module.name`-based for page ids.
-- [ ] T048 [US4] In `src/doc_generator/templates/home.md.jinja`, change the module row (line 52) to `- [{{ entry.label | mdesc }}](â€¦){% if entry.description %} â€” {{ entry.description | mdesc }}{% endif %} [dependencies](â€¦)`, with no parentheses around the dependency link. **No CSS change** (research Decision 12). Makes T045 pass. Run the full suite against the baseline.
+- [ ] T047 [US4] In `src/doc_generator/generator.py`'s `generateOverviewPage` module-entry loop (lines 131–155), add `label` from `disambiguated_labels` and `description` from `plain_text.excerpt(module.docstring)`. Sort by label. Link `label` values stay `module.name`-based for page ids.
+- [ ] T048 [US4] In `src/doc_generator/templates/home.md.jinja`, change the module row (line 52) to `- [{{ entry.label | mdesc }}](…){% if entry.description %} — {{ entry.description | mdesc }}{% endif %} [dependencies](…)`, with no parentheses around the dependency link. **No CSS change** (research Decision 12). Makes T045 pass. Run the full suite against the baseline.
 - [ ] T049 [US4] Manual: re-index `codepedia-sample-repo`. In the module list, confirm eight distinguishable `__init__` rows, no loose punctuation at either edge in light and dark at about 400 px, and a README row that reads as a plain sentence.
 
 **Checkpoint**: All first-release stories work independently.
@@ -332,7 +332,7 @@ Not in this release (spec Clarifications Q4). Its design is fixed in research De
 - [ ] T050 [P] Update `docs/architecture.md` per its "> Maintenance:" rule: the new `doc_generator/overview/` package with its one-engine-taker invariant, the `doc_overview_narratives` table in `doc-manifest.sqlite`, and the Overview's always-recomputed, write-if-changed regeneration.
 - [ ] T051 [P] Update `docs/diagrams/class-diagram.md` per its "> Maintenance:" rule with `OverviewNarrator`, `OverviewEvidence`, `GroundedNarrative` and their relationships to `DocGenerator`, `FeaturePlanner` and `DocPageManifestStore`.
 - [ ] T052 [P] Update `README.md`'s description of the generated wiki: the Overview now opens with a grounded, AI-generated explanation. Confirm `docs/stack.md` needs no change, since no dependency was added.
-- [ ] T053 Run the whole of `quickstart.md` (Â§1â€“Â§6) once more on the final tree, and attach the results to the implementation report: files touched, where narration lives and why, tokens per run from T033, and the generated sample-repository `index.md`.
+- [ ] T053 Run the whole of `quickstart.md` (§1–Â§6) once more on the final tree, and attach the results to the implementation report: files touched, where narration lives and why, tokens per run from T033, and the generated sample-repository `index.md`.
 
 ---
 
@@ -342,7 +342,7 @@ Not in this release (spec Clarifications Q4). Its design is fixed in research De
 
 - **Setup (Phase 1)**: none.
 - **Foundational (Phase 2)**: after Setup. Blocks User Story 1 (the README lead uses `excerpt`) and User Story 4.
-- **User Story 1 (Phase 3)**: after Foundational. **Must reach its checkpoint, including the manual tasks T026â€“T033, before any User Story 2 task starts.**
+- **User Story 1 (Phase 3)**: after Foundational. **Must reach its checkpoint, including the manual tasks T026–T033, before any User Story 2 task starts.**
 - **User Story 2 (Phase 4)**: after User Story 1. It extends User Story 1's narrator and grounding, and the same template and generator code.
 - **User Story 3 (Phase 5)**: deferred, no tasks.
 - **User Story 4 (Phase 6)**: after Foundational only. **Independent of User Stories 1 and 2**; it shares files with them (`generator.py`, `home.md.jinja`) but not code paths, so run it sequentially with whichever story holds those files.
@@ -350,20 +350,20 @@ Not in this release (spec Clarifications Q4). Its design is fixed in research De
 
 ### Within User Story 1
 
-- T006â€“T012 (tests) first; they fail.
-- T013 â†’ T015 â†’ T016 â†’ T017 are ordered because each needs the previous one's types. T014 can run alongside T013.
-- T018 â†’ T019 â†’ T020 â†’ T021 â†’ T022 are sequential, sharing `generator.py` and the template.
+- T006–T012 (tests) first; they fail.
+- T013 → T015 → T016 → T017 are ordered because each needs the previous one's types. T014 can run alongside T013.
+- T018 → T019 → T020 → T021 → T022 are sequential, sharing `generator.py` and the template.
 - T023 [P] can run any time after T021 settles the markup.
 - T024 comes after T018.
-- T025, then the manual tasks T026â€“T033.
+- T025, then the manual tasks T026–T033.
 
 ### Within User Story 2
 
-T034â€“T036 (tests) â†’ T037 â†’ T038 â†’ T039 â†’ T040 â†’ T041 â†’ T042â€“T043.
+T034–T036 (tests) → T037 → T038 → T039 → T040 → T041 → T042–T043.
 
 ### Within User Story 4
 
-T044 and T045 (tests) â†’ T046 â†’ T047 â†’ T048 â†’ T049.
+T044 and T045 (tests) → T046 → T047 → T048 → T049.
 
 ---
 
@@ -393,13 +393,13 @@ T050 docs/architecture.md  ||  T051 docs/diagrams/class-diagram.md  ||  T052 REA
 
 ### MVP: User Story 1 only (the runbook's stage 6)
 
-1. Phase 1 â†’ Phase 2 â†’ Phase 3 (T001â€“T033).
+1. Phase 1 → Phase 2 → Phase 3 (T001–T033).
 2. **Stop.** Report the files touched, where narration lives and why (research Decision 1), the tokens per run (T033), and the generated `index.md` for `codepedia-sample-repo`.
 3. Correct the narrative's tone on those paragraphs before the page grows.
 
 ### Incremental delivery
 
-1. User Story 1 â†’ review â†’ User Story 2 â†’ review.
+1. User Story 1 → review → User Story 2 → review.
 2. User Story 4 at any point after Phase 2, including first, as it needs no model.
 3. User Story 3 in a later release.
 

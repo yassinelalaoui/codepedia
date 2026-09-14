@@ -28,12 +28,33 @@ _This overview describes an earlier version of the repository and has not been r
 
 This repository has {{ architecture_summary.moduleCount }} documented module{{ '' if architecture_summary.moduleCount == 1 else 's' }}, {{ architecture_summary.classCount }} class{{ '' if architecture_summary.classCount == 1 else 'es' }}, and {{ architecture_summary.functionCount }} top-level function{{ '' if architecture_summary.functionCount == 1 else 's' }}{% if architecture_summary.documentCount %}, alongside {{ architecture_summary.documentCount }} documentation page{{ '' if architecture_summary.documentCount == 1 else 's' }}{% endif %}.
 
-{% if feature_entries %}
-| Feature | Modules |
-| --- | --- |
-{% for entry in feature_entries %}
-| [{{ entry.feature.title | mdesc }}]({{ entry.featureLink.relativePath if entry.featureLink else '#' }}) | {{ entry.feature.members | length }} |
+{# The subsystems table (038 User Story 2): what each part is for and where to
+   start reading it, not how big it is. Built with no provider at all, so it is
+   identical either way (spec FR-024). A responsibility is a planned description
+   that passed grounding; the column says so in its heading, because a table
+   cell cannot carry the generated marker (spec FR-012). #}
+{% if subsystem_rows %}
+| Subsystem | Responsibility{{ ' (AI-generated)' if responsibility_is_generated else '' }} | Start with |
+| --- | --- | --- |
+{% for row in subsystem_rows %}
+| [{{ row.feature.title | mdesc }}]({{ row.featureLink.relativePath if row.featureLink else '#' }}) | {{ row.responsibility if row.responsibility else '—' }} | {% if row.startLink %}[{{ row.startLabel | mdesc }}]({{ row.startLink.relativePath }}){% else %}—{% endif %} |
 {% endfor %}
+
+{% else %}
+_No subsystems derived yet._
+
+{% endif %}
+{# One paragraph per major subsystem, in the table's order, each ending in its
+   subsystem's link (spec FR-025, FR-025a). Already rendered and escaped by
+   `overview.grounding.render_paragraph`. #}
+{% for paragraph in subsystem_paragraphs %}
+{{ paragraph }}
+{: .ai-generated }
+
+{% endfor %}
+{% if subsystem_paragraphs and lead_is_stale and not lead_paragraphs %}
+_This overview describes an earlier version of the repository and has not been regenerated yet._
+{: .summary-stale }
 
 {% endif %}
 {# The repository class diagram is reached by its link, not drawn inline: at
@@ -46,19 +67,8 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 [View the repository use-case diagram]({{ use_case_diagram_link.relativePath }}){: .diagram-link }
 
 {% endif %}
-## Features
-
-{# Titles only. A planned description is model-written, and a list item cannot
-   carry the generated marker for half its text (spec FR-012a). #}
-{% if feature_entries %}
-{% for entry in feature_entries %}
-- [{{ entry.feature.title | mdesc }}]({{ entry.featureLink.relativePath if entry.featureLink else '#' }})
-{% endfor %}
-{: .module-list }
-{% else %}
-_No features derived yet._
-{% endif %}
-
+{# No "## Features" list: the subsystems table above links every subsystem,
+   in the same order, so the list only repeated it (038 User Story 2). #}
 ## Modules
 
 {% if module_entries %}

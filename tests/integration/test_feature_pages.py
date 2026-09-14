@@ -191,8 +191,12 @@ def test_home_and_module_pages_are_wired_to_their_feature(tmp_path):
     doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
 
     home = next(p for p in doc_set.pages if p.kind == "home")
-    assert "## Features" in home.contentMarkdown
-    assert "features/" in home.contentMarkdown
+    # Since 038 User Story 2 the subsystems table, not a "## Features" list,
+    # is the home page's door to every feature page.
+    feature_links = {link.toPageId for link in home.links if link.toPageId.startswith("feature:")}
+    assert "| Subsystem |" in home.contentMarkdown
+    assert feature_links
+    assert all(f"]({link.relativePath})" in home.contentMarkdown for link in home.links if link.toPageId in feature_links)
 
     module_page = next(p for p in doc_set.pages if p.kind == "module")
     assert any(link.toPageId.startswith("feature:") for link in module_page.links)

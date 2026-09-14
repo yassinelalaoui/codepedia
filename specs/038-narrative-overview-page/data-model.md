@@ -55,6 +55,7 @@ number of distinct modules reached (descending), then by `stableKey`. The first
 | `entryFlows` | `tuple[EntryFlow, ...]` | ≤ `MAX_PROMPTED_ENTRY_FLOWS` |
 | `majorFeatureKeys` | `tuple[str, ...]` | First ≤ `MAX_SUBSYSTEM_PARAGRAPHS` (8) features in navigation order whose `kind != "tooling"`. The subsystems that may receive a paragraph (User Story 2) |
 | `featureTitles` | `tuple[tuple[str, str], ...]` | Every current feature as `(key, title)`, prompted or not, in navigation order. Grounding uses it to confirm a handle's feature still exists and to title its link |
+| `repositoryFingerprint` | `str` | `repository_fingerprint(bundle, root, readme_lead=…)`: SHA-1 of the README lead and every file's `(repo-relative path, contentHash)`, sorted. **Never part of the prompt.** Stored with each saved reply, so a fallback can tell an earlier *prompt* about the same repository from an earlier *version* of it (research Decision 17, analyze I2) |
 
 `build_overview_evidence(features, bundle, graph, *, repository_root) ->
 OverviewEvidence` is deterministic. Every collection is
@@ -114,11 +115,11 @@ template adds that.
 
 | Field | Type | Values |
 | --- | --- | --- |
-| `status` | `Literal[...]` | `cached` (a key hit, no call); `generated` (call succeeded and parsed); `stale` (no answer for the current key, so the repository's earlier reply is used, spec FR-017a); `unavailable` (`isAvailable()` false and no earlier reply); `failed` (`RuntimeError` from the chain and no earlier reply); `unparseable` (and no earlier reply); `skipped` (`narrateOverview=False`, silent; or no features, which gets a notice — spec edge case "no subsystems at all") |
+| `status` | `Literal[...]` | `cached` (a key hit, no call); `generated` (call succeeded and parsed); `stale` (no answer for the current key, so the repository's earlier reply is used, spec FR-017a); `previous-prompt` (the same fallback, but the stored fingerprint equals the current one: only the prompt changed, so no caveat; research Decision 17); `unavailable` (`isAvailable()` false and no earlier reply); `failed` (`RuntimeError` from the chain and no earlier reply); `unparseable` (and no earlier reply); `skipped` (`narrateOverview=False`, silent; or no features, which gets a notice — spec edge case "no subsystems at all") |
 | `skipReason` | `str` | For `skipped` only: `"structure-pass"` or `"no-features"`, which selects the notice (contract §7) |
-| `reply` | `NarrativeReply \| None` | Present for `cached`, `generated` and `stale` |
-| `handleMap` | `Mapping[str, str]` | Handle → feature key for the prompt that produced `reply`: the current evidence's for `cached`/`generated`, the stored map for `stale` |
-| `staleReason` | `str` | For `stale` only: which of `unavailable`, `failed` or `unparseable` triggered it, for the notice |
+| `reply` | `NarrativeReply \| None` | Present for `cached`, `generated`, `stale` and `previous-prompt` |
+| `handleMap` | `Mapping[str, str]` | Handle → feature key for the prompt that produced `reply`: the current evidence's for `cached`/`generated`, the stored map for `stale`/`previous-prompt` |
+| `staleReason` | `str` | For `stale` and `previous-prompt`: which of `unavailable`, `failed` or `unparseable` triggered it, for the notice |
 
 ## Persistent state
 
@@ -134,13 +135,19 @@ CREATE TABLE IF NOT EXISTS doc_overview_narratives (
     reply_text TEXT NOT NULL,
     handle_map_json TEXT NOT NULL,
     generated_at TEXT NOT NULL,
+    repository_fingerprint TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (repository_id)
 )
 ```
 
+`repository_fingerprint` arrived after User Story 1 shipped, so `_connect` also
+adds it in place (`ADDED_COLUMNS`, via `PRAGMA table_info` + `ALTER TABLE … ADD
+COLUMN`) to a table created without it. Earlier rows read `''`, meaning
+unknown, and an unknown fingerprint always falls back as `stale`.
+
 | Rule | Why |
 | --- | --- |
-| One row per repository; a save overwrites | As `doc_feature_plans`. `load` matches `narrative_key`, so a key hit is always the answer to *this* prompt. Only `load_latest`, the FR-017a fallback, ignores the key, and its result is always shown as earlier-version |
+| One row per repository; a save overwrites | As `doc_feature_plans`. `load` matches `narrative_key`, so a key hit is always the answer to *this* prompt. Only `load_latest`, the FR-017a fallback, ignores the key. Its result is shown as earlier-version unless the stored `repository_fingerprint` equals the current one (`previous-prompt`, research Decision 17) |
 | `handle_map_json` stores `{handle: featureKey}` for the prompt that produced the reply | A stale reply's `[[fN]]` handles must be mapped through the numbering *it* was given, not the current evidence's (research Decision 13) |
 | `reply_text` is the raw model reply, not the grounded result | Grounding is re-run on every load against the current lookup, so a changed rule or a removed symbol takes effect with no new call (research Decision 6) |
 | Saved only when the reply parses | An unparseable reply is retried next run; a parseable one is final for its key, which is what makes reruns identical (research Decision 7) |
@@ -150,8 +157,9 @@ CREATE TABLE IF NOT EXISTS doc_overview_narratives (
 `DocPageManifestStore` gains three methods:
 
 - `load_overview_narrative(repository_id, narrative_key) -> tuple[str, dict] | None`
-- `load_latest_overview_narrative(repository_id) -> tuple[str, dict] | None`
-- `save_overview_narrative(repository_id, narrative_key, reply_text, handle_map) -> None`
+- `load_latest_overview_narrative(repository_id) -> tuple[str, dict, str] | None`
+  (the third item is the stored repository fingerprint)
+- `save_overview_narrative(repository_id, narrative_key, reply_text, handle_map, *, repository_fingerprint="") -> None`
 
 A load that raises, or finds unreadable JSON, is treated as a miss and never
 causes a crash, as in `planner._load_cached`.
@@ -170,7 +178,7 @@ carries. So `manifest_store`, `search_index`, `cross_references` and
 | Constant | Value | Module | Reason |
 | --- | --- | --- | --- |
 | `PROVIDER_TOKEN_BUDGET`, `CHARS_PER_TOKEN` | 8000, 4 | `features/__init__` (re-exported) | Single source; the test must not import the module that could move them |
-| `SYSTEM_PROMPT_CHARS` | 1600 | `overview/narrator.py` | Asserted ≥ `len(SYSTEM_PROMPT)`; 1400 until research Decision 15 |
+| `SYSTEM_PROMPT_CHARS` | 1900 | `overview/narrator.py` | Asserted ≥ `len(SYSTEM_PROMPT)`; 1400 until research Decision 15, 1600 until User Story 2's subsystem request (Decision 17). Worst case 4,590 tokens per call |
 | `ENTRY_KINDS` | `("cli-command", "api-route", "main")` | `overview/evidence.py` | The kinds the prompt may call an entry point; ranked first |
 | `HEADER_CHARS` | 300 | `overview/narrator.py` | Repository name, languages, subsystem count, how to read entry lines (200 in the plan; research Decision 14) |
 | `MAX_README_LEAD_CHARS` | 600 | `overview/evidence.py` | ~150 tok |
@@ -179,7 +187,7 @@ carries. So `manifest_store`, `search_index`, `cross_references` and
 | `MAX_PROMPTED_ENTRY_FLOWS` | 6 | `overview/evidence.py` | |
 | `ENTRY_FLOW_CHARS` | 240 | `overview/narrator.py` | |
 | `MAX_NARRATIVE_RESPONSE_TOKENS` | 1400 | `overview/narrator.py` | 600 words ≈ 800 tok + JSON/handles ≈ 150, with margin |
-| `NARRATIVE_FORMAT_VERSION` | `"1"` | `overview/narrator.py` | Bumped by User Story 2's schema change |
+| `NARRATIVE_FORMAT_VERSION` | `"2"` | `overview/narrator.py` | `"2"` since User Story 2 added `"subsystems"` |
 | `MAX_LEAD_PARAGRAPHS` | 4 | `overview/grounding.py` | FR-005 |
 | `MAX_SUBSYSTEM_PARAGRAPHS` | 8 | `overview/grounding.py` | FR-025 |
 | `MAX_SUBSYSTEM_SENTENCES` | 3 | `overview/grounding.py` | FR-025 |
@@ -204,17 +212,22 @@ evidence ─► key ┤
                              parse ── None ──────┤
                                 │ reply          ▼
                                 │         load_latest(repo)?
-                                │           │ row        │ none
-                                │           ▼            ▼
-                                │         stale     unavailable | failed | unparseable
+                                │           │ row                     │ none
+                                │           ▼                         ▼
+                                │   fingerprint == current?     unavailable | failed | unparseable
+                                │     │ yes         │ no / unknown
+                                │     ▼             ▼
+                                │  previous-prompt  stale
                                 ▼
-                     save(key, raw, handles) ─► generated
+                     save(key, raw, handles, fingerprint) ─► generated
 
-cached | generated | stale ─► ground(reply, handle_map, is_stale) ─► render
+cached | generated | stale | previous-prompt ─► ground(reply, handle_map, is_stale) ─► render
 unavailable | failed | unparseable | skipped ─► ground(None) ─► render (no prose)
 ```
 
 Every path ends at `ground(...)`, and every path yields a page. Only `stale`
 renders the earlier-version caveat, and only if at least one paragraph survived
-grounding. A stale reply that grounds to nothing renders exactly as no prose,
-with no caveat.
+grounding: under the lead, or, when the lead was withheld, under the last
+subsystem paragraph. A stale reply that grounds to nothing renders exactly as no
+prose, with no caveat. `previous-prompt` renders its prose with no caveat and is
+reported on the terminal only.

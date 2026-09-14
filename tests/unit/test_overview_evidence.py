@@ -20,6 +20,7 @@ from doc_generator.features.candidates import build_candidates  # noqa: E402
 from doc_generator.features.evidence import build_repository_evidence  # noqa: E402
 from doc_generator.features.fallback import build_import_adjacency  # noqa: E402
 from doc_generator.features.validate import Feature, FeatureMember, repair  # noqa: E402
+from doc_generator.overview.narrator import build_overview_prompt  # noqa: E402
 from doc_generator.overview.evidence import (  # noqa: E402
     MAX_ANCHOR_SUMMARY_CHARS,
     MAX_MEMBER_NAMES,
@@ -228,6 +229,23 @@ def test_readme_lead_is_capped(tmp_path):
 
 def test_readme_lead_is_empty_without_a_readme(tmp_path):
     assert read_readme_lead(tmp_path) == ""
+
+
+def test_the_repository_fingerprint_follows_file_contents_not_prompt_wording(tmp_path):
+    """I2: the fingerprint says whether the *repository* changed, so it must move
+    with a file's content and with nothing else."""
+    root, bundle, graph, _, features = _real(tmp_path)
+    first = build_overview_evidence(features, bundle, graph, repository_root=root).repositoryFingerprint
+
+    gamma = root / "gamma.py"
+    gamma.write_text(gamma.read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8")
+    store, graph = index_repo(tmp_path, root, [root / "alpha.py", root / "beta.py", gamma], "edited.sqlite")
+    edited = build_overview_evidence(features, store.load_repository(root), graph, repository_root=root)
+
+    assert len(first) == 40
+    assert build_overview_evidence(features, bundle, graph, repository_root=root).repositoryFingerprint == first
+    assert edited.repositoryFingerprint != first
+    assert edited.repositoryFingerprint not in build_overview_prompt(edited).to_prompt_text()
 
 
 def test_building_twice_gives_equal_evidence(tmp_path):

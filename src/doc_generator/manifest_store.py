@@ -131,9 +131,21 @@ SCHEMA_STATEMENTS = (
         reply_text TEXT NOT NULL,
         handle_map_json TEXT NOT NULL,
         generated_at TEXT NOT NULL,
+        repository_fingerprint TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (repository_id)
     )
     """,
+)
+
+# Columns added after a table first shipped. `CREATE TABLE IF NOT EXISTS` never
+# alters an existing table, so each is added in place when missing - rows
+# written before it read back the column's default.
+#
+# `repository_fingerprint` (038 analyze finding I2): which repository contents a
+# narrative described, so a prompt change alone is not reported as an earlier
+# version of the repository. An empty value means "unknown", which stays stale.
+ADDED_COLUMNS = (
+    ("doc_overview_narratives", "repository_fingerprint", "TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -149,6 +161,10 @@ def _connect(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.
     apply_write_pragmas(connection)
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
+    for table, column, declaration in ADDED_COLUMNS:
+        present = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+        if column not in present:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
     return connection
 
 
@@ -390,30 +406,47 @@ class DocPageManifestStore:
             ).fetchone()
         return _narrative_row(row)
 
-    def load_latest_overview_narrative(self, repository_id: str) -> tuple[str, dict[str, str]] | None:
-        """This repository's most recent reply, whatever prompt it answered."""
+    def load_latest_overview_narrative(self, repository_id: str) -> tuple[str, dict[str, str], str] | None:
+        """This repository's most recent reply, whatever prompt it answered.
+
+        Returned with the repository fingerprint it was written for (`""` when
+        unknown), so the fallback can tell an earlier *prompt* about the same
+        repository from an earlier *version* of the repository.
+        """
         with self._connection() as connection:
             row = connection.execute(
-                "SELECT reply_text, handle_map_json FROM doc_overview_narratives WHERE repository_id = ?",
+                "SELECT reply_text, handle_map_json, repository_fingerprint FROM doc_overview_narratives "
+                "WHERE repository_id = ?",
                 (repository_id,),
             ).fetchone()
-        return _narrative_row(row)
+        narrative = _narrative_row(row)
+        if narrative is None:
+            return None
+        return (*narrative, str(row["repository_fingerprint"] or ""))
 
     def save_overview_narrative(
-        self, repository_id: str, narrative_key: str, reply_text: str, handle_map: Mapping[str, str]
+        self,
+        repository_id: str,
+        narrative_key: str,
+        reply_text: str,
+        handle_map: Mapping[str, str],
+        *,
+        repository_fingerprint: str = "",
     ) -> None:
         with self._connection() as connection:
             with connection:
                 connection.execute(
                     """
                     INSERT INTO doc_overview_narratives
-                        (repository_id, narrative_key, reply_text, handle_map_json, generated_at)
-                    VALUES (?, ?, ?, ?, ?)
+                        (repository_id, narrative_key, reply_text, handle_map_json, generated_at,
+                         repository_fingerprint)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(repository_id) DO UPDATE SET
                         narrative_key = excluded.narrative_key,
                         reply_text = excluded.reply_text,
                         handle_map_json = excluded.handle_map_json,
-                        generated_at = excluded.generated_at
+                        generated_at = excluded.generated_at,
+                        repository_fingerprint = excluded.repository_fingerprint
                     """,
                     (
                         repository_id,
@@ -421,6 +454,7 @@ class DocPageManifestStore:
                         reply_text,
                         json.dumps(dict(handle_map), sort_keys=True),
                         datetime.now(timezone.utc).isoformat(),
+                        repository_fingerprint,
                     ),
                 )
 

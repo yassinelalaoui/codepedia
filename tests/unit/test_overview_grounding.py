@@ -20,6 +20,8 @@ from doc_generator.overview.evidence import FeatureBrief, OverviewEvidence
 from doc_generator.overview.grounding import (
     MAX_LEAD_PARAGRAPHS,
     MAX_NARRATIVE_WORDS,
+    MAX_SUBSYSTEM_PARAGRAPHS,
+    accept_description,
     ground,
     render_paragraph,
 )
@@ -270,3 +272,142 @@ def test_render_paragraph_links_handles_to_their_feature_pages():
     assert render_paragraph(result.lead[0], links) == (
         "The repository enters through `alpha_entry`, which hands work to [Core Engine](features/core.md)\\."
     )
+
+
+# --------------------------------------------------------------------------
+# User Story 2 - one paragraph per major subsystem (FR-025, FR-025a)
+# --------------------------------------------------------------------------
+
+CORE = "The engine starts in `alpha_entry`, which lives in `alpha.py`."
+IO = "Input and output pass through `beta.py`, where `Child.run` does the work."
+
+
+def _ground_subsystems(subsystems, *lead, evidence=EVIDENCE, handle_map=HANDLES):
+    reply = SimpleNamespace(lead=list(lead), subsystems=dict(subsystems))
+    return ground(reply, evidence, LOOKUP, handle_map=handle_map)
+
+
+def _subsystem_keys(result):
+    return [key for key, _ in result.subsystems]
+
+
+def test_a_subsystem_paragraph_is_accepted_under_its_feature_key():
+    result = _ground_subsystems({"f0": CORE})
+
+    assert _subsystem_keys(result) == ["feat-core"]
+    assert result.rejected == ()
+
+
+def test_a_subsystem_paragraph_citing_no_resolved_name_rejects():  # G7, FR-025
+    result = _ground_subsystems({"f0": "The engine is where everything important happens in [[f0]].", "f1": IO})
+
+    assert _subsystem_keys(result) == ["feat-io"]
+    assert [(r.section, r.rule) for r in result.rejected] == [("subsystem", "G7")]
+
+
+def test_a_four_sentence_subsystem_paragraph_rejects():  # G8
+    four = "It starts in `alpha_entry`. It reads input. It checks it. It stops."
+    result = _ground_subsystems({"f0": four, "f1": IO})
+
+    assert _subsystem_keys(result) == ["feat-io"]
+    assert [(r.section, r.rule) for r in result.rejected] == [("subsystem", "G8")]
+
+
+def test_sentence_counting_ignores_dotted_names_and_abbreviations():  # G8
+    three = (
+        "It starts in `alpha_entry`, e.g. when a request arrives. "
+        "Then `Child.run` in `beta.py` handles it, i.e. Work is done there. "
+        "It returns vs. Raising an error."
+    )
+    result = _ground_subsystems({"f0": three})
+
+    assert _subsystem_keys(result) == ["feat-core"]
+    assert result.subsystems[0][1].sentenceCount == 3
+
+
+def test_subsystem_paragraphs_follow_table_order_not_reply_order():  # G11
+    result = _ground_subsystems({"f1": IO, "f0": CORE})
+
+    assert _subsystem_keys(result) == ["feat-core", "feat-io"]
+
+
+def test_a_withheld_subsystem_paragraph_leaves_the_others():  # FR-025a
+    result = _ground_subsystems({"f0": "It is priced by `LoanPricingEngine`.", "f1": IO}, GOOD)
+
+    assert _subsystem_keys(result) == ["feat-io"]
+    assert len(result.lead) == 1
+    assert [(r.section, r.rule) for r in result.rejected] == [("subsystem", "G4")]
+
+
+def test_a_withheld_lead_leaves_the_subsystem_paragraphs():  # G10 does not reach them
+    result = _ground_subsystems({"f0": CORE}, "It begins in `NoSuchModule`.")
+
+    assert result.leadWithheld is True
+    assert _subsystem_keys(result) == ["feat-core"]
+
+
+def test_only_major_features_receive_paragraphs_and_at_most_eight():
+    briefs = tuple(_brief(f"f{i}", f"feat-{i}", f"Feature {i}") for i in range(10))
+    evidence = replace(
+        EVIDENCE,
+        features=briefs,
+        majorFeatureKeys=tuple(f"feat-{i}" for i in range(10) if i != 3)[:8],
+        featureTitles=tuple((brief.featureKey, brief.title) for brief in briefs),
+    )
+    handles = {brief.handle: brief.featureKey for brief in briefs}
+
+    result = _ground_subsystems({f"f{i}": CORE for i in range(10)}, evidence=evidence, handle_map=handles)
+
+    assert len(result.subsystems) == MAX_SUBSYSTEM_PARAGRAPHS
+    assert "feat-3" not in _subsystem_keys(result)
+    assert _subsystem_keys(result) == list(evidence.majorFeatureKeys)
+
+
+def test_an_unknown_subsystem_handle_rejects_its_paragraph():  # G3
+    result = _ground_subsystems({"f7": CORE, "f1": IO})
+
+    assert _subsystem_keys(result) == ["feat-io"]
+    assert [r.rule for r in result.rejected] == ["G3"]
+
+
+def test_the_word_budget_trims_subsystem_paragraphs_before_the_lead():  # G9
+    long = "It passes through `beta.py` " + "and keeps working " * 190 + "until done."
+    result = _ground_subsystems({"f0": CORE, "f1": long}, GOOD)
+
+    assert len(result.lead) == 1
+    assert _subsystem_keys(result) == ["feat-core"]
+    assert [(r.section, r.rule) for r in result.rejected] == [("subsystem", "G9")]
+
+
+def test_offered_count_includes_subsystem_paragraphs():
+    result = _ground_subsystems({"f0": CORE, "f1": IO}, GOOD)
+
+    assert result.offeredCount == 3
+    assert result.paragraphCount == 3
+
+
+# --------------------------------------------------------------------------
+# accept_description - a planned description entering the table (FR-021)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Helps you load data from disk.",
+        "Stores loans with `LoanStore`.",
+        "Wraps the fabricated loan_pricing_engine helper.",
+        "A powerful engine for everything.",
+        "Links to [[f0]] directly.",
+        "   ",
+    ],
+    ids=["second-person", "fabricated-code", "fabricated-snake", "promotional", "handle", "empty"],
+)
+def test_accept_description_rejects_second_person_and_fabricated_names(description):
+    assert accept_description(description, EVIDENCE, LOOKUP) is None
+
+
+def test_accept_description_passes_a_plain_sentence_through_escaped():
+    accepted = accept_description("Runs the work in `alpha_entry` | and\nreports (results).", EVIDENCE, LOOKUP)
+
+    assert accepted == "Runs the work in `alpha_entry` \\| and reports \\(results\\)\\."

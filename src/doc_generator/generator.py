@@ -17,14 +17,14 @@ from .entry_point_diagram import build_entry_point_call_sequence, build_method_c
 from .html_render import render_page_html
 from .impact import compute_regeneration_impact
 from .manifest_store import DocPageManifestStore
-from .markdown_render import render_markdown_template, template_fingerprint
+from .markdown_render import _markdown_escape, render_markdown_template, template_fingerprint
 from .features.candidates import build_candidates
-from .features.evidence import build_repository_evidence
+from .features.evidence import RepositoryEvidence, build_repository_evidence
 from .features.fallback import build_import_adjacency
 from .features.planner import FeaturePlanner
-from .features.validate import Feature, repair
-from .overview.evidence import build_overview_evidence
-from .overview.grounding import GroundedNarrative, ground, render_paragraph
+from .features.validate import Feature, FeatureMember, repair
+from .overview.evidence import OverviewEvidence, build_overview_evidence, is_test_path
+from .overview.grounding import GroundedNarrative, accept_description, ground, render_paragraph
 from .overview.narrator import NarrationOutcome, OverviewNarrator
 from .mermaid_diagram import (
     ClassDiagramSource,
@@ -91,6 +91,9 @@ class DocGenerator:
         self._search_index: SearchIndexDocument | None = None
         self._symbol_lookup: SymbolLookup | None = None
         self._features: tuple[Feature, ...] | None = None
+        # Kept from feature derivation for the Overview's "Start with" column,
+        # which needs each module's entry points (038 User Story 2).
+        self._repository_evidence: RepositoryEvidence | None = None
 
     def generateOverviewPage(
         self,
@@ -121,8 +124,23 @@ class DocGenerator:
                 feature_links_by_key[feature.key] = feature_link
             feature_entries.append({"feature": feature, "featureLink": feature_link})
 
-        narrative = self._overview_narrative(features)
+        # Built on every pass, narrated or not: the subsystems table checks
+        # planned descriptions against it, and the table must be the same with
+        # and without a provider (038 spec FR-024).
+        overview_evidence = build_overview_evidence(
+            features, bundle, self.dependencyGraph, repository_root=self.repositoryRoot
+        )
+        narrative = self._overview_narrative(overview_evidence)
         lead_paragraphs = [render_paragraph(paragraph, feature_links_by_key) for paragraph in narrative.lead]
+        subsystem_rows = self._subsystem_rows(feature_entries, overview_evidence)
+        subsystem_paragraphs = []
+        for feature_key, paragraph in narrative.subsystems:
+            text = render_paragraph(paragraph, feature_links_by_key)
+            link = feature_links_by_key.get(feature_key)
+            # Each ends in its subsystem's page (spec FR-025), whatever it cited.
+            if link is not None:
+                text = f"{text} [{_markdown_escape(link.label)}]({link.relativePath})"
+            subsystem_paragraphs.append(text)
         class_diagram_link: PageLink | None = None
         if classDiagramPage is not None:
             class_diagram_link = links.build_page_link(
@@ -174,7 +192,7 @@ class DocGenerator:
             module_entries.append({"module": module, "moduleLink": module_link, "diagramLink": diagram_link})
 
         repository_name = Path(repository.rootPath).name or repository.rootPath
-        title = f"{repository_name} â€” Documentation"
+        title = f"{repository_name} — Documentation"
         content = render_markdown_template(
             "home.md.jinja",
             repository=repository,
@@ -186,6 +204,9 @@ class DocGenerator:
             use_case_diagram_link=use_case_diagram_link,
             lead_paragraphs=lead_paragraphs,
             lead_is_stale=narrative.isStale,
+            subsystem_rows=subsystem_rows,
+            subsystem_paragraphs=subsystem_paragraphs,
+            responsibility_is_generated=any(row["responsibility"] for row in subsystem_rows),
         )
         referenced_page_ids: set[str] = set()
         html = self._render_page(
@@ -207,23 +228,80 @@ class DocGenerator:
             links=tuple(page_links),
         )
 
-    def _overview_narrative(self, features: Sequence[Feature]) -> GroundedNarrative:
-        """The Overview's lead, accepted paragraph by paragraph (038).
+    def _subsystem_rows(
+        self, feature_entries: Sequence[Mapping[str, object]], evidence: OverviewEvidence
+    ) -> list[dict[str, object]]:
+        """One row per subsystem, in navigation order (038 spec FR-021 to FR-024).
+
+        Nothing here needs a provider. The responsibility is the planned
+        description only when it passes `accept_description`; otherwise the
+        cell is empty and renders as a dash, as for an unplanned subsystem.
+        """
+        rows: list[dict[str, object]] = []
+        for entry in feature_entries:
+            feature = entry["feature"]
+            assert isinstance(feature, Feature)
+            responsibility = ""
+            if feature.isPlanned and feature.description:
+                responsibility = accept_description(feature.description, evidence, self._symbol_lookup) or ""
+            start = self._start_with_member(feature)
+            start_link: PageLink | None = None
+            if start is not None:
+                module_md, _ = links.module_output_paths(links.page_slug(start.name, start.moduleKey))
+                start_link = links.build_page_link(
+                    from_page_id=links.HOME_PAGE_ID,
+                    from_output_path_markdown=links.HOME_OUTPUT_MARKDOWN,
+                    to_page_id=links.module_page_id(start.moduleKey),
+                    to_output_path_markdown=module_md,
+                    label=start.name,
+                )
+            rows.append(
+                {
+                    "feature": feature,
+                    "featureLink": entry["featureLink"],
+                    "responsibility": responsibility,
+                    "startLabel": start.name if start is not None else "",
+                    "startLink": start_link,
+                }
+            )
+        return rows
+
+    def _start_with_member(self, feature: Feature) -> FeatureMember | None:
+        """The member to open first: the most entry points, ties by label, else the anchor.
+
+        Always one of the subsystem's own modules (spec FR-023). A test file's
+        entry points are not where work enters (038 research Decision 15), so
+        tests are passed over while the subsystem has anything else.
+        """
+        if not feature.members:
+            return None
+        entry_points = self._repository_evidence.entryPointKeysByModuleKey if self._repository_evidence else {}
+        candidates = [member for member in feature.members if not is_test_path(self._relative_to_root(member.filePath))]
+        counted = sorted(
+            ((len(entry_points.get(member.moduleKey, ())), member) for member in candidates or feature.members),
+            key=lambda item: (-item[0], item[1].name, item[1].moduleKey),
+        )
+        if counted and counted[0][0] > 0:
+            return counted[0][1]
+        return next((member for member in feature.members if member.moduleKey == feature.key), feature.members[0])
+
+    def _relative_to_root(self, file_path: str) -> str:
+        try:
+            return Path(file_path).resolve().relative_to(Path(self.repositoryRoot).resolve()).as_posix()
+        except (OSError, ValueError):
+            return Path(file_path).as_posix()
+
+    def _overview_narrative(self, evidence: OverviewEvidence) -> GroundedNarrative:
+        """The Overview's lead and subsystem paragraphs, accepted one by one (038).
 
         Every path ends at `ground`, and `ground` turns "no reply" into "no
         prose", so no narrator, no provider, a refused call and an unreadable
         reply all produce the same page as a reply whose every paragraph
-        failed: the same headings and links, nothing where the lead would be.
+        failed: the same headings and links, nothing where the prose would be.
         """
         if not self._narrate_overview:
             return GroundedNarrative()
 
-        evidence = build_overview_evidence(
-            features,
-            self._ensure_bundle(),
-            self.dependencyGraph,
-            repository_root=self.repositoryRoot,
-        )
         if self.overviewNarrator is None:
             outcome = NarrationOutcome("unavailable")
         else:
@@ -243,7 +321,7 @@ class DocGenerator:
     def _report_narrative(self, outcome: NarrationOutcome, narrative: GroundedNarrative, *, configured: bool) -> None:
         """At most one line per pass, and only when prose is missing or reduced.
 
-        The wording is 038 contract Â§7's. A plain line, not a `progress_stream`
+        The wording is 038 contract §7's. A plain line, not a `progress_stream`
         event: the hub folds only the events it knows, so its display is
         unaffected while the terminal says what the page cannot.
         """
@@ -264,9 +342,13 @@ class DocGenerator:
         )
 
         line: str | None = None
-        if outcome.status == "stale":
+        if outcome.status in ("stale", "previous-prompt"):
+            # An earlier version of the repository, or the same repository asked
+            # an earlier question (I2) - only the first is captioned on the page,
+            # but both are reported, so a pending rewrite is never silent.
+            source = "from an earlier version" if outcome.status == "stale" else "written for an earlier prompt"
             line = (
-                f"overview: showing the narrative from an earlier version "
+                f"overview: showing the narrative {source} "
                 f"({failure_text.get(outcome.staleReason, outcome.staleReason)}); {kept} of {offered} paragraphs still apply"
             )
         elif outcome.status == "skipped":
@@ -538,7 +620,7 @@ class DocGenerator:
             resolve_module=self._resolve_module_key_by_path,
         )
 
-        title = f"{module_name} â€” Dependency diagram"
+        title = f"{module_name} — Dependency diagram"
         content = render_markdown_template(
             "diagram.md.jinja",
             module_name=module_name,
@@ -669,7 +751,7 @@ class DocGenerator:
             slug = links.page_slug(entry_point.name, entry_point.stableKey)
             output_md, output_html = links.diagram_output_paths(slug)
             page_id = links.sequence_diagram_page_id(entry_point.stableKey)
-            title = f"{entry_point.name} â€” Call sequence"
+            title = f"{entry_point.name} — Call sequence"
 
             content = render_markdown_template(
                 "sequence_diagram.md.jinja",
@@ -840,6 +922,7 @@ class DocGenerator:
         self._writer.repositoryId = self.repositoryId
         self._bundle = None
         self._features = None
+        self._repository_evidence = None
         bundle = self._ensure_bundle()
         _ensure_output_root_is_separate(self.outputRoot, repository_root=Path(repositoryRoot), bundle=bundle)
 
@@ -1098,6 +1181,7 @@ class DocGenerator:
             evidence = build_repository_evidence(
                 bundle, self.dependencyGraph, repository_root=self.repositoryRoot
             )
+            self._repository_evidence = evidence
             adjacency = build_import_adjacency(bundle, self.dependencyGraph)
             candidates = build_candidates(evidence, adjacency)
 
@@ -1250,7 +1334,7 @@ class DocGenerator:
         kwargs.setdefault("commit_sha", self._commit_sha())
         # Same reasoning as commit_sha: stamped once here so the theme storage
         # key is identical on every page of a wiki, and so a page kind added
-        # later inherits it (036 contracts/wiki-theme-shell.md Â§1).
+        # later inherits it (036 contracts/wiki-theme-shell.md §1).
         kwargs.setdefault("repository_id", self.repositoryId)
         return render_page_html(**kwargs)
 
