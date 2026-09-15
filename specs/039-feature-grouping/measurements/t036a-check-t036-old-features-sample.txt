@@ -1,0 +1,13 @@
+﻿   live     app-3896e145.html
+   redirect architecture-b1a67dd3.html -> readme-655dedd8.html
+   redirect book-2978f2bd.html -> catalog-service-f0beb6a1.html
+   live     clock-454d4781.html
+   redirect errors-bfae1a2d.html -> catalog-service-f0beb6a1.html
+   redirect fine-calculator-654802b6.html -> routes-loans-af189e3d.html
+   redirect ids-4328d3f4.html -> lending-service-d5594134.html
+   redirect init-1fd76890.html -> memory-store-b293ed03.html
+   redirect init-a42fbde1.html -> lending-service-d5594134.html
+   redirect member-c27bc105.html -> routes-loans-af189e3d.html
+   redirect migrations-4af0220b.html -> memory-store-b293ed03.html
+   redirect routes-books-d22113df.html -> routes-loans-af189e3d.html
+== 12 old addresses: 2 live, 10 redirect to a live page, 0 broken

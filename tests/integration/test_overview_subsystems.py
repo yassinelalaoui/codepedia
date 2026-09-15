@@ -141,8 +141,65 @@ def test_start_with_module_belongs_to_its_subsystem_and_prefers_the_most_entry_p
         label = re.match(r"\[([^\]]+)\]\((modules/[^)]+)\)", row[2])
         assert label, row
         assert label.group(1) in {member.name for member in features[title].members}
-    # core.py has three uncalled functions, helpers.py one: core wins whatever the anchor.
+    # core.py has three uncalled functions, helpers.py one: core is the anchor
+    # (039 FR-010, the seed with the most entry points), so it is where to start.
     assert rows["Core"][2].startswith("[core](modules/")
+
+
+def test_start_with_is_the_subsystems_anchor(tmp_path):
+    """039 T037: the table and the paragraphs name the same module to open first.
+
+    A CLI command makes `cli.py` Core's anchor (an entry module, FR-010), while
+    `core.py` holds more entry points. 038 picked the member with the most entry
+    points, so the table said `core` while the paragraph's start file was
+    `cli.py` - a contradiction both T037 reviewers flagged.
+    """
+    root = tmp_path / "anchor-repo"
+    sources = {
+        "core.py": SOURCES["core.py"],
+        "helpers.py": SOURCES["helpers.py"],
+        "cli.py": '"""Commands."""\n\nfrom core import run_a\n\n\n@app.command()\ndef go():\n    return run_a()\n',
+        "storage/store.py": '"""Keeps results."""\n\nfrom storage.disk import _write\n\n\ndef save():\n    return _write()\n',
+        "storage/disk.py": '"""Writes to disk."""\n\n\ndef _write():\n    return 0\n',
+    }
+    for name, text in sources.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    store, graph = index_repo(tmp_path, root, [root / name for name in sources], "anchor.sqlite")
+
+    class MergingPlanner(StubPlanner):
+        """The model's kind of merge: the CLI's group and core's group become one subsystem."""
+
+        def plan(self, candidates, evidence):
+            names = evidence.by_module_key()
+            core = [f"c{i}" for i, c in enumerate(candidates) if {names[k].moduleName for k in c.memberKeys} & {"cli", "core"}]
+            rest = [f"c{i}" for i in range(len(candidates)) if f"c{i}" not in core]
+            return FeaturePlan(
+                features=(
+                    PlannedFeature(title="Core", kind="subsystem", memberCandidateIds=tuple(core)),
+                    PlannedFeature(title="Storage", kind="subsystem", memberCandidateIds=tuple(rest)),
+                )
+            )
+
+    manifest = open_doc_manifest_store(tmp_path / "anchor-manifest.sqlite")
+    generator = DocGenerator(
+        metadataStore=store,
+        dependencyGraph=graph,
+        manifestStore=manifest,
+        outputRoot=tmp_path / "anchor-docs",
+        repositoryRoot=root,
+        featurePlanner=MergingPlanner({}),
+        overviewNarrator=None,
+    )
+    doc_set = generator.generateRepositoryDocumentation(root, incremental=False)
+    home = next(page for page in doc_set.pages if page.kind == "home")
+    core = next(feature for feature in generator._ensure_features() if feature.title == "Core")
+    assert {member.name for member in core.members} >= {"cli", "core"}, "the fixture must merge the CLI into Core"
+    rows = {re.match(r"\[([^\]]+)\]", row[0]).group(1): row for row in _rows(home.contentMarkdown)}
+
+    anchor = next(member for member in core.members if member.moduleKey == core.key)
+    assert anchor.name == "cli", "the fixture must anchor Core at its entry module"
+    assert rows["Core"][2].startswith("[cli](modules/")
 
 
 def test_the_table_is_complete_without_a_provider(tmp_path):

@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Literal, Mapping, Sequence
 
-from .candidates import TERMINAL_FEATURE_TITLE, Candidate, anchor_module_key
+from .candidates import TERMINAL_FEATURE_TITLE, Candidate, anchor_for
 from .fallback import Weight
 from .evidence import RepositoryEvidence
 
@@ -262,7 +262,10 @@ def _build_features(
         )
         if not member_keys:
             continue
-        anchor = anchor_module_key(member_keys, adjacency, name_by_key)
+        # Entry module, then seed, then most connected (039 FR-010). Computed
+        # here, after the model's merges, so a merge keeps the anchor a reader
+        # should open rather than whichever helper connects the merged parts.
+        anchor = anchor_for(member_keys, evidence, adjacency, name_by_key)
         member_set = set(member_keys)
         internal_edges = sorted(
             {
@@ -303,7 +306,7 @@ def _resolve_anchor_collisions(
     """Two features must never share a key, because a key *is* a page address.
 
     Cannot happen while candidates partition the repository - two features hold
-    disjoint modules, so their most-connected members differ. It is asserted
+    disjoint modules, and an anchor is always a member. It is asserted
     anyway because the cost of being wrong is two features overwriting each
     other's page, which would look like one of them silently disappearing.
     """

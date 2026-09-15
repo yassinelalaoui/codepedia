@@ -46,15 +46,15 @@ identical to 033's (FR-005, asserted by a test).
 | Field | Rule after 039 |
 | --- | --- |
 | `seedModuleKey` | The seed for a seeded group. The lead module (`lead_module_key`) for a directory or leftover group. A fixed sentinel for the terminal group, which is not a member key, so "seed first" (FR-012) skips it |
-| `seedTitle` | As 033 (`default_group_title`). The terminal group uses `TERMINAL_FEATURE_TITLE` ("Support & Utilities") |
-| `memberKeys` | Every module in exactly one candidate (033 FR-001). Test files are added after production grouping (research Decision 5) |
+| `seedTitle` | For a group holding a seed, `default_group_title(anchor directory, anchor name, split=True)`, where the anchor follows FR-010 (owner decision, 2026-09-15). Directory and leftover groups keep `default_group_title(directory, lead, split=False)`. The terminal group uses `TERMINAL_FEATURE_TITLE` ("Support & Utilities") |
+| `memberKeys` | Every module in exactly one candidate (033 FR-001). Test files are added after production grouping (research Decision 5). **Order carries relevance** (T027, FR-012): the seed, then production members by entry points (descending), by coupling to the rest of the group (descending), by label; test files last (owner decision, 2026-09-15). Feature pages still list members by name; the plan cache key sorts them |
 | `exposedEntryPointCount` | **Recomputed from members**: the entry points of its non-test members (Decision 8) |
 
 ### `Feature`, `features/validate.py` (fields unchanged; rules changed)
 
 | Field | Rule after 039 |
 | --- | --- |
-| `key` | Anchor, chosen in this order: the entry module with the most entry points, then the non-test seed with the most entry points, then `lead_module_key`. Ties go to the module name, then the key (FR-010; Decision 7) |
+| `key` | Anchor (`candidates.anchor_for`), chosen in this order: the entry module with the most entry points, then the non-test seed with the most entry points, then `lead_module_key` among production members when there are any (a test never anchors; owner decision, 2026-09-15). A tie on entry points goes to the module whose entry points reach the most modules, then the module name, then the key (FR-010; Decision 7; owner decision after T036) |
 | `exposedEntryPointCount` | The entry points of its non-test members, after merges (FR-007) |
 | `title` | Unchanged, except that at most one feature carries `TERMINAL_FEATURE_TITLE`: repair's terminal bucket joins the feature already holding that title instead of building a second (FR-006; research Decision 6 step 5) |
 | everything else | Unchanged |
@@ -87,6 +87,7 @@ grouping never matches (FR-018; Decision 9).
 | --- | --- | --- | --- |
 | `GROUPING_VERSION` | `"3"` | `features/planner.py` | New. `"2"` when the key starts hashing the grouping (T006b); `"3"` when User Story 4 changes the prompt (T029). Bump whenever the grouping rules or the planning prompt change; a bump makes one cache miss per repository |
 | `MAX_MEMBER_LABEL_CHARS` | 40 | `features/planner.py` | New. Counted by `worst_case_prompt_tokens()` |
+| `MEMBER_LINE_OVERHEAD_CHARS` | 10 (was 40) | `features/planner.py` | Now the bullet, separator and newline only; the name is bounded by `MAX_MEMBER_LABEL_CHARS`. Worst-case call 6,385 tokens (was 6,145) of 8,000 |
 | `JS_RESOLVE_EXTENSIONS` | `(".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")` | `features/imports.py` | New. The order is the resolution order |
 | `MIN_CANDIDATE_MODULES` | 2 | `features/candidates.py` | Unchanged; entry groups are exempt (FR-006a) |
 | `MAX_PROMPTED_CANDIDATES` | 32 | `features/candidates.py` | Unchanged |

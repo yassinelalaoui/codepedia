@@ -19,11 +19,11 @@ from .impact import compute_regeneration_impact
 from .manifest_store import DocPageManifestStore
 from .markdown_render import _markdown_escape, render_markdown_template, template_fingerprint
 from .features.candidates import build_candidates
-from .features.evidence import RepositoryEvidence, build_repository_evidence
+from .features.evidence import build_repository_evidence
 from .features.fallback import build_import_adjacency
 from .features.planner import FeaturePlanner
 from .features.validate import Feature, FeatureMember, repair
-from .overview.evidence import OverviewEvidence, build_overview_evidence, is_test_path
+from .overview.evidence import OverviewEvidence, build_overview_evidence
 from .overview.grounding import GroundedNarrative, accept_description, ground, render_paragraph
 from .overview.narrator import NarrationOutcome, OverviewNarrator
 from .mermaid_diagram import (
@@ -92,9 +92,6 @@ class DocGenerator:
         self._search_index: SearchIndexDocument | None = None
         self._symbol_lookup: SymbolLookup | None = None
         self._features: tuple[Feature, ...] | None = None
-        # Kept from feature derivation for the Overview's "Start with" column,
-        # which needs each module's entry points (038 User Story 2).
-        self._repository_evidence: RepositoryEvidence | None = None
 
     def generateOverviewPage(
         self,
@@ -281,29 +278,18 @@ class DocGenerator:
         return rows
 
     def _start_with_member(self, feature: Feature) -> FeatureMember | None:
-        """The member to open first: the most entry points, ties by label, else the anchor.
+        """The member to open first: the feature's anchor (039 FR-010).
 
-        Always one of the subsystem's own modules (spec FR-023). A test file's
-        entry points are not where work enters (038 research Decision 15), so
-        tests are passed over while the subsystem has anything else.
+        Always one of the subsystem's own modules (038 spec FR-023). 038 picked
+        the member with the most entry points here, because 033 anchored
+        features at helpers. Since 039 the anchor *is* where work starts - an
+        entry module, else a seed, never a test - and it is the start file the
+        subsystem's paragraph cites. Two rules made the table contradict the
+        prose on five subsystems of the reference wikis (039 T037).
         """
         if not feature.members:
             return None
-        entry_points = self._repository_evidence.entryPointKeysByModuleKey if self._repository_evidence else {}
-        candidates = [member for member in feature.members if not is_test_path(self._relative_to_root(member.filePath))]
-        counted = sorted(
-            ((len(entry_points.get(member.moduleKey, ())), member) for member in candidates or feature.members),
-            key=lambda item: (-item[0], item[1].name, item[1].moduleKey),
-        )
-        if counted and counted[0][0] > 0:
-            return counted[0][1]
         return next((member for member in feature.members if member.moduleKey == feature.key), feature.members[0])
-
-    def _relative_to_root(self, file_path: str) -> str:
-        try:
-            return Path(file_path).resolve().relative_to(Path(self.repositoryRoot).resolve()).as_posix()
-        except (OSError, ValueError):
-            return Path(file_path).as_posix()
 
     def _overview_narrative(self, evidence: OverviewEvidence) -> GroundedNarrative:
         """The Overview's lead and subsystem paragraphs, accepted one by one (038).
@@ -944,7 +930,6 @@ class DocGenerator:
         self._writer.repositoryId = self.repositoryId
         self._bundle = None
         self._features = None
-        self._repository_evidence = None
         bundle = self._ensure_bundle()
         _ensure_output_root_is_separate(self.outputRoot, repository_root=Path(repositoryRoot), bundle=bundle)
 
@@ -1106,6 +1091,7 @@ class DocGenerator:
         # and nothing called it for the case it was built for. Only regenerating
         # a real wiki twice found that.
         self._redirect_superseded_pages(previous_entries, features)
+        self._restore_redirects(features)
 
         self.manifestStore.save_feature_titles(
             self.repositoryId, {feature.key: feature.title for feature in features}
@@ -1203,7 +1189,6 @@ class DocGenerator:
             evidence = build_repository_evidence(
                 bundle, self.dependencyGraph, repository_root=self.repositoryRoot
             )
-            self._repository_evidence = evidence
             adjacency = build_import_adjacency(
                 bundle, self.dependencyGraph, repository_root=self.repositoryRoot
             )
@@ -1288,6 +1273,58 @@ class DocGenerator:
         # nothing would report it - the wiki would simply always be slow.
         self.manifestStore.delete_entries(superseded_page_ids)
         self.manifestStore.drop_section_narrations(self.repositoryId)
+
+    def _restore_redirects(self, features: Sequence[Feature]) -> None:
+        """Every address the alias table holds leads to a page that exists now (039 T036a).
+
+        `_redirect_superseded_pages` writes a stub only for a page superseded by
+        *this* run. Two things escaped it, both measured on the reference wikis
+        at 039 T036:
+
+        1. `codepedia index` builds every wiki into a fresh directory and carries
+           only the manifest forward, so the stubs earlier runs wrote were gone
+           after the next full re-index - 9 of 11 on the sample - while the
+           alias table still promised them;
+        2. an alias whose destination moved again kept pointing at a page that
+           no longer exists (`errors` -> `book`, after `book` became a redirect
+           itself).
+
+        So each alias is followed along the table to the page that is live now,
+        re-pointed there if its destination moved, and its stub rewritten when
+        the file is missing or stale. An old address that is a live page again
+        is left alone, and an alias leading nowhere live is left for a later
+        run. Cheap on an ordinary run: one lookup per alias, and a write only
+        where something is missing.
+        """
+        aliases = {alias.oldPageId: alias for alias in self.manifestStore.list_aliases(self.repositoryId)}
+        title_by_page_id = {links.feature_page_id(feature.key): feature.title for feature in features}
+        for alias in aliases.values():
+            if self.manifestStore.load_entry(alias.oldPageId) is not None:
+                continue  # the address is a live page again
+            target_id = alias.newPageId
+            seen = {alias.oldPageId}
+            while self.manifestStore.load_entry(target_id) is None and target_id in aliases and target_id not in seen:
+                seen.add(target_id)
+                target_id = aliases[target_id].newPageId
+            target = self.manifestStore.load_entry(target_id)
+            if target is None:
+                continue
+            stub_missing = not (self.outputRoot / alias.oldOutputPathHtml).exists()
+            if target_id == alias.newPageId and not stub_missing:
+                continue
+            if target_id != alias.newPageId:
+                self.manifestStore.record_alias(
+                    self.repositoryId,
+                    old_page_id=alias.oldPageId,
+                    new_page_id=target_id,
+                    old_output_path_markdown=alias.oldOutputPathMarkdown,
+                    old_output_path_html=alias.oldOutputPathHtml,
+                )
+            self._writer.write_redirect_stub(
+                old_paths=(alias.oldOutputPathMarkdown, alias.oldOutputPathHtml),
+                new_paths=(target.outputPathMarkdown, target.outputPathHtml),
+                title=title_by_page_id.get(target_id, "its new page"),
+            )
 
     def recordPageMove(
         self,

@@ -280,7 +280,7 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
 
 ### Tests for User Story 3 (write first; they must fail)
 
-- [ ] T021 [P] [US3] Extend `tests/unit/test_feature_validate.py` (contract §6):
+- [X] T021 [P] [US3] Extend `tests/unit/test_feature_validate.py` (contract §6):
   - `test_the_anchor_is_the_entry_module_over_a_seed_with_more_uncalled_functions`
   - `test_the_anchor_is_the_seed_over_a_better_connected_helper`
   - `test_a_feature_without_a_seed_keeps_the_most_connected_member`
@@ -288,7 +288,7 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
   - `test_anchor_ties_go_to_the_module_name_then_the_key`
 
   Update `test_a_feature_is_keyed_by_its_anchor_module` only if its fixture's expected anchor now differs by FR-010, with a comment.
-- [ ] T022 [P] [US3] Extend `tests/integration/test_feature_navigation.py` with `test_an_address_published_before_regrouping_still_resolves`:
+- [X] T022 [P] [US3] Extend `tests/integration/test_feature_navigation.py` with `test_an_address_published_before_regrouping_still_resolves`:
   1. generate the fixture repository, and record one feature's `outputPathHtml`;
   2. add an entry point to another member of that feature, so its anchor moves under FR-010;
   3. regenerate;
@@ -296,19 +296,19 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Add `anchor_for(member_keys, evidence, adjacency, name_by_key)` to `src/doc_generator/features/candidates.py`, following research Decision 7:
+- [X] T023 [US3] Add `anchor_for(member_keys, evidence, adjacency, name_by_key)` to `src/doc_generator/features/candidates.py`, following research Decision 7:
   - the entry module with the most entry points;
   - else the non-test seed with the most entry points;
   - else `lead_module_key`;
   - ties go to the module name, then the key.
 
   `anchor_module_key` stays for directory titles. Use `anchor_for` in `validate._build_features` in `src/doc_generator/features/validate.py`. Makes T021 pass. `_resolve_anchor_collisions` stays as the assertion it is.
-- [ ] T024 [US3] Add to `tests/integration/test_feature_grouping_languages.py`:
+- [X] T024 [US3] Add to `tests/integration/test_feature_grouping_languages.py`:
   - the anchor assertions: the controller's feature is anchored at its seed, and a directory-only feature at its most connected member;
   - `test_a_body_only_java_edit_keeps_the_grouping` (FR-019, constitution 2.5; analyze finding C2). Change one method body of one Java file, touching no import or entry point. Re-index that file and regenerate with `incremental=True, changedPaths=[…]`, as `test_feature_navigation.py` does. Assert that the candidates and the plan cache key are unchanged, that no model is called, and that the impact does not set `requiresNavigationRegeneration`.
 
   Run T022, then T015's suites.
-- [ ] T025 [US3] Measure, with no model: the anchors on both reference repositories (SC-005).
+- [X] T025 [US3] Measure, with no model: the anchors on both reference repositories (SC-005).
   - Expected on the sample: `cli`, the route modules, `lending_service`, `catalog_service`, `memory_store` and `sqlite_store`. Not `ids`, `errors`, `member` or `fine_calculator`.
   - Expected on nextgen: never `animations.ts`.
 
@@ -335,7 +335,7 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
 
 ### Tests for User Story 4 (write first; they must fail)
 
-- [ ] T026 [P] [US4] Extend `tests/unit/test_feature_planner.py` (contract §7):
+- [X] T026 [P] [US4] Extend `tests/unit/test_feature_planner.py` (contract §7):
   - `test_the_seed_is_the_first_member_described`
   - `test_members_are_ordered_by_entry_points_then_coupling_then_label`
   - `test_same_named_members_get_distinct_labels`
@@ -348,7 +348,7 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
 
 ### Implementation for User Story 4
 
-- [ ] T027 [US4] Order each candidate's `memberKeys` by relevance at the end of `build_candidates` in `src/doc_generator/features/candidates.py`, where the adjacency is available:
+- [X] T027 [US4] Order each candidate's `memberKeys` by relevance at the end of `build_candidates` in `src/doc_generator/features/candidates.py`, where the adjacency is available:
   1. the seed, when it is a member (the terminal candidate's placeholder seed is not);
   2. non-test members by entry points, descending;
   3. by summed coupling inside the candidate, descending;
@@ -357,16 +357,16 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
   The planner then describes the first `MAX_MEMBERS_PER_CANDIDATE`. `validate._build_features` keeps sorting `Feature.members` by name, so pages are unaffected.
 
   Note in data-model.md § Candidate that `memberKeys` order now carries relevance.
-- [ ] T028 [US4] In `src/doc_generator/features/planner.py`:
+- [X] T028 [US4] In `src/doc_generator/features/planner.py`:
   - describe members by `evidence.moduleLabels`, cut to their trailing path segments within the new `MAX_MEMBER_LABEL_CHARS = 40`;
   - send `evidence.readmeLead` in place of `readmeBullets`, still bounded by `MAX_README_PROMPT_CHARS`;
   - make `worst_case_prompt_tokens()` count the label cap.
 
   The budget test must still pass (FR-015).
-- [ ] T029 [US4] In `src/doc_generator/features/planner.py`, bump `GROUPING_VERSION` from `"2"` to `"3"`, because T028 changes what the model is shown. A plan cached from the MVP's prompt is then not reused for an unchanged grouping (research Decision 9). The key itself was built in T006b.
+- [X] T029 [US4] In `src/doc_generator/features/planner.py`, bump `GROUPING_VERSION` from `"2"` to `"3"`, because T028 changes what the model is shown. A plan cached from the MVP's prompt is then not reused for an unchanged grouping (research Decision 9). The key itself was built in T006b.
 
   Then run T015's suites plus `tests/integration/test_feature_navigation.py`: one call per grouping, zero on an unchanged rerun.
-- [ ] T030 [US4] Measure, with no model: print the planning prompt with `planner_probe.py` (updated in T006b) for both repositories and check the Independent Test by eye. Record the prompt size against the `worst_case_call_tokens()` ceiling.
+- [X] T030 [US4] Measure, with no model: print the planning prompt with `planner_probe.py` (updated in T006b) for both repositories and check the Independent Test by eye. Record the prompt size against the `worst_case_call_tokens()` ceiling.
 
 **Checkpoint**: all four stories are done without a model call.
 
@@ -374,11 +374,11 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
 
 ## Phase 7: Polish, verification and docs
 
-- [ ] T031 Run the full suite in the background and compare it with `<scratchpad>\baseline-039.txt`. No new failure is accepted; the known flaky Groq test does not count as new.
-- [ ] T032 Confirm determinism and the no-model path on real data (quickstart §3):
+- [X] T031 Run the full suite in the background and compare it with `<scratchpad>\baseline-039.txt`. No new failure is accepted; the known flaky Groq test does not count as new.
+- [X] T032 Confirm determinism and the no-model path on real data (quickstart §3):
   - run `planner_probe.py` twice per repository and confirm the outputs are byte-identical;
   - with a planner stub that refuses, confirm the modules and candidates equal the no-planner run (033 SC-006).
-- [ ] T033 [P] `docs/architecture.md`, per its "> Maintenance:" rule. In the `doc_generator` Presentation row, describe feature grouping (033 never documented it):
+- [X] T033 [P] `docs/architecture.md`, per its "> Maintenance:" rule. In the `doc_generator` Presentation row, describe feature grouping (033 never documented it):
   - seeds from entry points, tests excluded;
   - coupling from imports in Python, Java and JS/TS;
   - directory-based folding with no catch-all group;
@@ -386,16 +386,16 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
   - one cached planner call keyed on the grouping.
 
   In Storage, add `doc_feature_plans` next to `doc_overview_narratives`.
-- [ ] T034 [P] `docs/diagrams/class-diagram.md`, per its "> Maintenance:" rule:
+- [X] T034 [P] `docs/diagrams/class-diagram.md`, per its "> Maintenance:" rule:
   - add `RepositoryEvidence`, `Candidate` and `Feature` to `DocGeneratorPackage`;
   - add the `resolve_repository_imports` step, shown as a `<<function>>`-annotated class the way `ChatApiApp` is annotated;
   - add relationships: `DocGenerator ..> RepositoryEvidence`, `FeaturePlanner ..> Candidate`, `Feature *-- Candidate` (repair).
 
   Parse it with the scratchpad's `mermaid_parse.cjs`, or rebuild that helper from 038's T051 note.
-- [ ] T035 [P] `README.md`, per the living-docs rule: in "Renders a browsable wiki", say the sidebar groups modules into features that follow how the code connects (Python, Java, JavaScript/TypeScript), with tests shown beside the code they test.
+- [X] T035 [P] `README.md`, per the living-docs rule: in "Renders a browsable wiki", say the sidebar groups modules into features that follow how the code connects (Python, Java, JavaScript/TypeScript), with tests shown beside the code they test.
   - Check whether `docs/diagrams/sequence-diagrams/01-full-indexing.md` needs a grouping note.
   - Confirm `docs/stack.md` needs no change (no new dependency).
-- [ ] T036 **Owner-gated verification round** (quickstart §4). **Ask the owner first**, with a recommendation.
+- [X] T036 **Owner-gated verification round** (quickstart §4). **Ask the owner first**, with a recommendation.
   1. Hash-compare `%USERPROFILE%\.codepedia\config.json` with the backup (`%USERPROFILE%\.codepedia\config.backup-038.json`).
   2. List every `features/*.html` in both wikis' `<state>\docs\` directories.
   3. Set the Groq-first `summaryChain`.
@@ -408,14 +408,22 @@ Old addresses keep resolving (FR-010, FR-011; research Decision 7).
   - every address listed in step 2 still opens, as a live page or a redirect stub to one. The check is scripted over every listed path (SC-008; analyze finding C1);
   - the largest feature's share with the model, recorded, not enforced (clarification Q5);
   - the Overview is re-narrated once per repository (038).
-- [ ] T037 Map the features against 038's answer keys `sc001-key-{sample,nextgen}.md` (SC-006):
+- [X] T036a **Added after T036** (owner decision, 2026-09-15). Fix the defect the second model round exposed: a full `codepedia index` builds into a fresh directory and carries only the manifest forward, so earlier redirect stubs were lost (9 of 11 sample aliases, 7 nextgen), and an alias whose target moved again pointed at a page that no longer existed. It predates 039, but breaks SC-008 and FR-011 from the second full re-index on.
+  - Test first: `tests/integration/test_feature_navigation.py::test_every_published_address_survives_repeated_full_rebuilds` (three full runs into fresh output directories, the anchor moving twice).
+  - Fix: `DocGenerator._restore_redirects`, called after `_redirect_superseded_pages`. Each alias is followed to the live page, re-pointed if its target moved, and its stub rewritten when missing or stale. This stays within 033's alias mechanism, as FR-011 requires.
+  - Then restore both reference wikis with one more re-index (plan and narrative cached, so no model call is expected; same swap and restore procedure), and check all three address lists resolve: `t036-old-features-*`, `round2-old-features-*` and the current pages.
+- [X] T037 Map the features against 038's answer keys `sc001-key-{sample,nextgen}.md` (SC-006):
   - sample: at least 6 of 8, including the CLI;
   - nextgen: at least 6 of 9, including wallets, auth and security, chatbot and frontend.
 
   Then run the stranger test (SC-007): one fresh subagent per repository, told to use Read exactly once on `<state>\docs\index.md` and nothing else, confirming `tool_uses: 1` and scoring against the keys. The implementer never reviews.
 
   Take screenshots of each Overview at 700 px dark and full width light.
-- [ ] T038 Record the results in `specs/039-feature-grouping/research.md` as Decision 13: the implementation's measurements against the prototype, SC-001 to SC-008, the stranger test, and every test changed in T015. Tick this file's tasks. Report to the owner. Do not commit.
+- [X] T037a **Added after T037** (owner decision, 2026-09-15). The Overview table's "Start with" shows the feature's anchor. 038's `_start_with_member` picked the member with the most entry points, so the table contradicted the paragraph's start file on 5 subsystems, and both reviewers flagged it.
+  - Test first: `tests/integration/test_overview_subsystems.py::test_start_with_is_the_subsystems_anchor`.
+  - Fix: `DocGenerator._start_with_member` returns the anchor member. The now-unused `_repository_evidence` and `_relative_to_root` are removed. `docs/architecture.md` says the table and the paragraph share the anchor.
+  - Then regenerate both wikis (no model call expected) and repeat the stranger test with two fresh reviewers.
+- [X] T038 Record the results in `specs/039-feature-grouping/research.md` as Decision 13: the implementation's measurements against the prototype, SC-001 to SC-008, the stranger test, and every test changed in T015. Tick this file's tasks. Report to the owner. Do not commit.
 
 ---
 

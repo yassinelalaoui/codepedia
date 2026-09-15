@@ -115,6 +115,10 @@ Signature unchanged: `(evidence, adjacency) -> tuple[Candidate, ...]`.
 
 ## §6 `features/validate.repair` (anchor and counts)
 
+`candidates.anchor_for(member_keys, evidence, adjacency, name_by_key)` holds
+the anchor rule. `build_candidates` uses it too, to title a seeded candidate
+after its anchor (FR-010's title sentence).
+
 Unchanged signature and repair table (033 FR-013 to FR-015), with one change:
 `_place_remainder`'s terminal bucket joins the feature already titled
 `TERMINAL_FEATURE_TITLE` (the terminal candidate's, or a planned one) instead
@@ -134,9 +138,10 @@ of building a second one. At most one feature carries that title.
 
 ## §7 `features/planner` (input and cache key)
 
-- `build_feature_plan_prompt(candidates, evidence)` orders and labels members
-  per data-model.md § Planning input, and uses `evidence.readmeLead` in place
-  of the bullets.
+- `build_feature_plan_prompt(candidates, evidence)` describes members in the
+  relevance order `build_candidates` gives them, under labels cut to
+  `MAX_MEMBER_LABEL_CHARS`, per data-model.md § Planning input. It uses
+  `evidence.readmeLead` in place of the bullets.
 - `plan_cache_key(evidence, candidates)` gains the `candidates` argument and
   hashes `GROUPING_VERSION` and the grouping (FR-018). `FeaturePlanner.plan`
   passes the candidates it was given. This lands before any grouping rule

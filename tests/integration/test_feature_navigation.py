@@ -17,7 +17,7 @@ from pathlib import Path
 
 from doc_generator import DocGenerator, FeaturePlanner, open_doc_manifest_store
 
-from ._doc_generator_support import build_indexed_repo
+from ._doc_generator_support import build_indexed_repo, index_repo
 
 
 class _PlanningEngine:
@@ -122,3 +122,126 @@ def test_regenerating_an_unchanged_repository_consults_no_model(tmp_path):
     generator.generateRepositoryDocumentation(root, incremental=False)
 
     assert engine.calls == calls_after_first, "the second pass must reuse the cached plan"
+
+
+def _commands(count: int) -> str:
+    return "".join(f"\n\n@app.command()\ndef command_{index}() -> int:\n    return {index}\n" for index in range(count))
+
+
+def _moving_repo(root: Path, *, core_commands: bool, util_commands: int = 0) -> list[Path]:
+    """`cli` (a `main`) reaches `core`, which reaches `util`; `extra` imports `core`.
+
+    With `core_commands`, `core` also holds two commands, so under 039 FR-010 it
+    outranks `cli` as the feature's anchor: the regrouping the upgrade causes.
+    With `util_commands` above two, `util` outranks both.
+    """
+    sources = {
+        "app/cli.py": '"""CLI."""\n\nfrom .core import core_run\n\n\ndef main() -> int:\n    return core_run()\n',
+        "app/core.py": '"""Core."""\n\nfrom .util import helper\n\n\ndef core_run() -> int:\n    return helper()\n'
+        + _commands(2 if core_commands else 0),
+        "app/util.py": '"""Util."""\n\n\ndef helper() -> int:\n    return 1\n' + _commands(util_commands),
+        "app/extra.py": '"""Extra."""\n\nfrom .core import core_run\n\n\ndef _e() -> int:\n    return core_run()\n',
+    }
+    paths = []
+    for relative, text in sources.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
+def test_an_address_published_before_regrouping_still_resolves(tmp_path):
+    """039 FR-011: an anchor moved by the new anchor rule leaves a redirect (033 FR-020, FR-021).
+
+    Run 1 anchors the one feature at `cli`, its only entry module. Run 2 gives
+    `core` two commands, so the same modules are anchored at `core`: a new
+    address. The old one must lead to the feature now holding its modules, and
+    the alias table must say so.
+    """
+    root = tmp_path / "moving"
+    store, graph = index_repo(tmp_path, root, _moving_repo(root, core_commands=False), "run1.sqlite")
+    manifest_store = open_doc_manifest_store(tmp_path / "manifest.sqlite")
+    generator = DocGenerator(
+        metadataStore=store,
+        dependencyGraph=graph,
+        manifestStore=manifest_store,
+        outputRoot=root / "docs",
+        repositoryRoot=root,
+    )
+    first = generator.generateRepositoryDocumentation(root, incremental=False)
+    old_page = next(page for page in first.pages if page.kind == "feature" and "cli" in page.outputPathHtml)
+
+    store, graph = index_repo(tmp_path, root, _moving_repo(root, core_commands=True), "run2.sqlite")
+    generator.metadataStore, generator.dependencyGraph = store, graph
+    generator._bundle = None
+    generator._features = None
+    second = generator.generateRepositoryDocumentation(root, incremental=False)
+
+    new_page = next(page for page in second.pages if page.kind == "feature")
+    assert new_page.outputPathHtml != old_page.outputPathHtml, "the fixture must move the anchor"
+    assert "core" in new_page.outputPathHtml
+
+    stub = root / "docs" / old_page.outputPathHtml
+    body = stub.read_text(encoding="utf-8")
+    assert 'http-equiv="refresh"' in body
+    target = body.split("url=")[1].split('"')[0]
+    assert (stub.parent / target).resolve() == (root / "docs" / new_page.outputPathHtml).resolve()
+
+    aliases = generator.manifestStore.list_aliases(generator.repositoryId)
+    assert any(alias.oldPageId == old_page.id and alias.newPageId == new_page.id for alias in aliases), aliases
+
+
+def _stub_target(stub: Path) -> Path:
+    body = stub.read_text(encoding="utf-8")
+    assert 'http-equiv="refresh"' in body, f"{stub.name} is not a redirect"
+    return (stub.parent / body.split("url=")[1].split('"')[0]).resolve()
+
+
+def test_every_published_address_survives_repeated_full_rebuilds(tmp_path):
+    """039 T036a (SC-008, FR-011): what `codepedia index` does, three times.
+
+    `index` builds each wiki into a fresh directory and carries only the page
+    manifest forward. Measured at T036: the second full re-index after a regroup
+    lost every redirect stub the first one wrote, and an alias whose target moved
+    again kept pointing at a page that no longer existed. Here the anchor moves
+    twice - `cli`, then `core`, then `util` - and both earlier addresses must
+    lead to the page live now.
+    """
+    import shutil
+
+    root = tmp_path / "moving"
+    states = [
+        {"core_commands": False},
+        {"core_commands": True},
+        {"core_commands": True, "util_commands": 3},
+    ]
+    published: list[str] = []
+    generator = None
+    for run, state in enumerate(states):
+        store, graph = index_repo(tmp_path, root, _moving_repo(root, **state), f"run{run}.sqlite")
+        manifest_path = tmp_path / f"manifest-{run}.sqlite"
+        if run:
+            shutil.copy2(tmp_path / f"manifest-{run - 1}.sqlite", manifest_path)
+        generator = DocGenerator(
+            metadataStore=store,
+            dependencyGraph=graph,
+            manifestStore=open_doc_manifest_store(manifest_path),
+            outputRoot=tmp_path / f"docs-{run}",
+            repositoryRoot=root,
+        )
+        result = generator.generateRepositoryDocumentation(root, incremental=False)
+        feature_pages = [page for page in result.pages if page.kind == "feature"]
+        assert len(feature_pages) == 1, "the fixture holds one feature"
+        published.append(feature_pages[0].outputPathHtml)
+
+    assert len(set(published)) == 3, f"the fixture must move the anchor twice: {published}"
+    docs = tmp_path / "docs-2"
+    live = (docs / published[-1]).resolve()
+    for old in published[:-1]:
+        stub = docs / old
+        assert stub.exists(), f"{old} was lost by a later full rebuild"
+        assert _stub_target(stub) == live, f"{old} does not lead to the page live now"
+
+    aliases = {alias.oldPageId: alias.newPageId for alias in generator.manifestStore.list_aliases(generator.repositoryId)}
+    assert len(set(aliases.values())) == 1, f"a chain of moves collapses to where it ended: {aliases}"

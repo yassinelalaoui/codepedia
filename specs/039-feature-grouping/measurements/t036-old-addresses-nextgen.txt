@@ -1,0 +1,8 @@
+﻿   redirect accountstatus-129b1546.html -> ledgerentryrepository-99fb7b32.html
+   redirect activewallet-bfbf5fe5.html -> walletservice-a46b5aaf.html
+   redirect activewalletrepository-077f1def.html -> walletservice-a46b5aaf.html
+   redirect animations-5074657f.html -> walletservice-a46b5aaf.html
+   redirect apierror-a369a98a.html -> walletservice-a46b5aaf.html
+   redirect chat-model-ba90d858.html -> account-service-70c92d08.html
+   redirect environment-5adfd762.html -> account-service-70c92d08.html
+== 7 old addresses: 0 live, 7 redirect to a live page, 0 broken

@@ -1,18 +1,18 @@
-# Handoff: 038 Narrative Overview Page (done) → 039 Feature Grouping (planned)
+# Handoff: 038 Narrative Overview Page (done) → 039 Feature Grouping (implemented)
 
-Updated 2026-09-15; first written 2026-09-14.
+Updated 2026-09-15, evening (039 implemented and verified); first written 2026-09-14.
 
 Read this first in a new session. It covers:
 
 - the owner's conventions (§0);
 - where things stand (§1);
 - everything built for spec 038, and its verification (§2–§3);
-- spec 039, planned up to its task list (§4);
+- spec 039, implemented and verified (§4; details in 039 research Decision 13);
 - the machine state and helper scripts (§5–§6);
-- the exact commands the next agent runs, in order (§7);
+- what the next agent can do (§7);
 - the verification checklist (§8).
 
-> Session scaffolding, not a spec artefact. The owner decides whether to commit or delete it. The 2026-09-14 version was committed in `ff88a41`; this update is uncommitted.
+> Session scaffolding, not a spec artefact. The owner decides whether to commit or delete it. Earlier versions were committed in `ff88a41` and `611643c`; this update is uncommitted.
 
 ---
 
@@ -27,9 +27,9 @@ Read this first in a new session. It covers:
 - **The docs "> Maintenance:" rules** (memory `docs_have_maintenance_contracts.md`). `README.md`, `docs/architecture.md`, `docs/stack.md` and every file under `docs/diagrams/` (the sequence diagrams included) state their own update rule, and updating them is part of each feature. Validate edited Mermaid with `mermaid_parse.cjs` (§6).
 - **The spec-kit implement checklist gate.** `/speckit-implement` counts checkbox items in `checklists/`.
   - 038's `checklists/narrative.md` has 42 reviewer-owned items, all unchecked. The owner answered "Proceed" for User Stories 1, 2 and 4. Never tick it.
-  - 039 has only `checklists/requirements.md`, 16 of 16 checked, so its gate passes without a question. Still tell the owner.
+  - 039 has only `checklists/requirements.md`, 16 of 16 checked (re-validated after every spec amendment; its Notes list them), so its gate passes without a question. Still tell the owner.
 - **Verification that needs real model output.** The owner's chain is `local:qwen2.5-coder:1.5b, groq:openai/gpt-oss-20b, groq:openai/gpt-oss-120b`. The local 1.5B model answers first and its narratives fail grounding. For each round the owner approves:
-  1. Hash-compare `%USERPROFILE%\.codepedia\config.json` with the backup (§5).
+  1. Hash-compare `%USERPROFILE%\.codepedia\config.json` with the backup `%USERPROFILE%\.codepedia\config.backup-038.json` (§5).
   2. Set `summaryChain` to `["groq:openai/gpt-oss-120b","local:qwen2.5-coder:1.5b","groq:openai/gpt-oss-20b"]`.
   3. Re-index the reference repositories one at a time (§6).
   4. Restore the backup byte for byte, and hash-compare again.
@@ -58,10 +58,10 @@ Read this first in a new session. It covers:
 | --- | --- |
 | **038** User Stories 1, 2 and 4, refinements R1–R5, the "not written" notice, polish T050–T052 | **Done, committed and pushed** (`ff88a41`, owner). All 038 tasks are `[X]` except **T053**. |
 | 038 User Story 3 (getting started) | Deferred by clarification; there are no tasks. |
-| **039** Feature Grouping | spec, clarify (6 answers), plan (research, data model, contract, quickstart) and **tasks (T001–T038)** written, **uncommitted** (`specs/039-feature-grouping/`, plus the modified `.specify/feature.json`). **No code yet.** |
-| Next step | `/speckit-analyze` on 039 (read-only), then `/speckit-implement` (§7). |
-| Working tree | `main` is level with `origin/main`. Uncommitted: `specs/039-feature-grouping/`, `.specify/feature.json`, and this `HANDOFF.md` update. |
-| Unmerged local branch `lot-11` | 3 commits from 2026-09-01, not on the remote (`8751377` removes dead code and a meaningless timing assertion; `067828d` bounds three things that grew for the life of `serve`; `ae0fc88` closes the Symbol boundary and changes rate-limit handling). Not in any handoff, untouched. **Ask the owner** whether it is parked or forgotten. |
+| **039** Feature Grouping | **Implemented and verified**: all 41 tasks `[X]` (T001–T038, plus T006a/T006b from analyze and T036a/T037a from verification). The MVP (through T020) was committed by the owner in `611643c`. User Stories 3 and 4, polish, the T036a alias fix and T037a are **uncommitted**. Results: 039 `research.md` Decision 13 and `measurements/`. |
+| Next step | Owner review and commit. Then the follow-ups in §7 (none started). |
+| Working tree | `main`, 1 commit ahead of `ff88a41` (`611643c`, owner). Uncommitted: 039 code, tests, docs and spec updates since `611643c`, plus this `HANDOFF.md` update. |
+| Unmerged local branch `lot-11` | 3 commits from 2026-09-01, not on the remote (`8751377`, `067828d`, `ae0fc88`). **Owner answer (2026-09-15): parked, leave it.** |
 
 ---
 
@@ -164,7 +164,34 @@ Read this first in a new session. It covers:
 
 ---
 
-## 4. Spec 039: Feature Grouping That Follows the Code (planned, no code)
+## 4. Spec 039: Feature Grouping That Follows the Code (implemented)
+
+### 4.0 As implemented (2026-09-15)
+
+The full record is in 039 `research.md` Decision 13, `measurements/t036-round.md` and `measurements/t037-results.md`.
+
+**Code** (`src/doc_generator/features/`):
+
+| File | What changed |
+| --- | --- |
+| `imports.py` (new) | Java and JS/TS import names resolved to modules; a wildcard import split as `Fraction(1, n)` |
+| `evidence.py` | Roles (tests, entry modules, seeds, labels, the README lead); the helpers moved from `overview.evidence` |
+| `fallback.py` | Adjacency merge; the ancestor rule no longer climbs into the root |
+| `candidates.py` | `_Folding` (Decision 6, per group; nothing folds with no survivor); test placement; `anchor_for` (entry module, then seed, ties by reach then name; a test never anchors); titles from the anchor; members by relevance |
+| `validate.py` | Keys from `anchor_for`; counts from members; one terminal feature |
+| `planner.py` | Key over the grouping; `GROUPING_VERSION = "3"`; labels and README lead; tests described last |
+
+In `generator.py`: `_restore_redirects` (T036a), and "Start with" is the anchor (T037a).
+
+**Results:**
+
+- **Met:** SC-001 to SC-005 and SC-008 (every published address resolves).
+- **SC-006:** nextgen 7 of 9, but the sample 3 of 8 with the model. The owner chose to record it as not met, explained.
+- **SC-007:** half met. Reviewers name the subsystems from the table and prose, but still flag 5 (sample) and 8 (nextgen). The causes are 038's relation sentences, the model's names, and cross-stack anchors, because Spring controllers are not routes.
+
+**Owner decisions taken during the implementation:** listed in Decision 13. The two rules approved at T015, the fold order, title-by-anchor, test-never-anchors, tests-last, the reach tie-break, T036a and T037a.
+
+**The planning history below** is kept as written before implementation.
 
 **Why:** 033's grouping (`src/doc_generator/features/`) misleads Overview readers. Measured causes, from the spec Background and research:
 
@@ -231,15 +258,25 @@ The MVP is US1 plus US2, through T020.
 
 ---
 
-## 5. Machine state (checked 2026-09-15)
+## 5. Machine state (checked 2026-09-15, evening)
 
-- **Config** `%USERPROFILE%\.codepedia\config.json` equals the backup (SHA-256 `5434E0916BAF…`) and holds the original chain.
-- **Backup:** `C:\Users\ASUS\AppData\Local\Temp\claude\c--Users-ASUS-IdeaProjects-codepedia\67e7cc23-8892-4208-bfe9-a4fb46d55c2e\scratchpad\config.backup.json`. An identical copy is in the `f07864a4-2c80-4a77-8280-59cffc591df9` scratchpad. **Temp can be cleaned. Ask the owner whether to copy it somewhere durable**, outside the repository, because it may hold API keys. For example `%USERPROFILE%\.codepedia\config.backup-038.json`.
+- **Config** `%USERPROFILE%\.codepedia\config.json` equals the backup (SHA-256 `5434E0916BAF…`) and holds the original chain. It was restored and hash-checked after each of the four 039 rounds.
+- **Backup (durable, owner's choice):** `%USERPROFILE%\.codepedia\config.backup-038.json`, outside the repository. The Temp copies in the `67e7cc23` and `f07864a4` scratchpads are identical.
 - **No `codepedia` process is running.**
-- **Reference wikis:** re-indexed on 2026-09-15 with the final 038 code and Groq 120b first. Sample `index.md` at 00:26, from the re-ask run (all 8 majors); nextgen at 00:20.
+- **Reference wikis:** regenerated at 039's final state (round 4, about 18:00 local). The plans are from round 1 (Groq 120b) and the narratives from round 2. Every published feature address resolves.
 - **Answer keys** for the stranger test are in the `67e7cc23` scratchpad: `sc001-key-sample.md` and `sc001-key-nextgen.md`, written from the code. So are `us1-review.md` and `tense-review-*.md`.
+- **039 measurements (durable):** `specs/039-feature-grouping/measurements/`. It holds the probes (`planner_probe.py` updated for 039, `grouping_proto.py`, `majors_probe.py`), the 033 baselines, every probe output, the prototype comparisons, the address lists and checks, `t036-round.md` and `t037-results.md`.
 
 **Scratchpad directories** (Temp, may be cleaned):
+
+- `…\456e97ec-df2f-47ea-8e7f-48b983dfff5c\scratchpad\` (the 039 implementation session):
+  - `story-suites.ps1`, which runs the §7 suites;
+  - `old_addresses.py <list> <docs>`, which checks that published addresses resolve;
+  - `alias_audit.py <repo>`, which checks every alias's stub and target;
+  - `proto_vs_impl.py <proto-dir> <repo>`, which compares groups with the prototype;
+  - `tiebreak_probe.py`, `nomodel_anchors.py`, `feature_members.py`, `prompt_size.py`, `refusing_planner.py`, `trace_fold.py` and `where_tests.py`;
+  - logs `r*-index-*.log`, `t036-index-*.log`, `full-suite-*.txt` and `baseline-039.txt`;
+  - screenshots `t037-*.png`, and the pre-039 Overviews `index-*.before.md`.
 - `…\67e7cc23-8892-4208-bfe9-a4fb46d55c2e\scratchpad\` (the 038 US1/US2 sessions): `config.backup.json`, the answer keys, `cost.py`, `why2.py`, `lead_links.py`, `shots.ps1`, `entry_probe.py`, `fixture_features.py`, `fix_mojibake.py`, `nopro_check.py`, `probe_models.py`, page snapshots, `full-suite*.txt`.
 - `…\aeafd9e3-9c00-40fd-9211-3aacb5f77b43\scratchpad\` (this session):
   - `why3.py`, `majors_probe.py`, `module_rows_probe.py`, `planner_probe.py`, `grouping_proto.py`, `mermaid_parse.cjs`;
@@ -296,7 +333,11 @@ Do not match a bare `Error`: class names such as `BibliothecaError` contain it. 
 
 - **Restore:** `[IO.File]::WriteAllBytes($cfg,[IO.File]::ReadAllBytes($bak))`, then hash-compare again.
 
-**Forcing a fresh narrative:** `DELETE FROM doc_overview_narratives` in `<state>\doc-manifest.sqlite`. Save the reply first if you want to compare. Any prompt change also misses the cache. After 039, a grouping change misses the plan cache (`doc_feature_plans`) too.
+**Forcing a fresh narrative:** `DELETE FROM doc_overview_narratives` in `<state>\doc-manifest.sqlite`. Save the reply first if you want to compare. Any prompt change also misses the cache. Since 039, a grouping change or a `GROUPING_VERSION` bump misses the plan cache (`doc_feature_plans`) too.
+
+**Did a round call a model?** Compare the `generated_at` of `doc_feature_plans` and `doc_overview_narratives` before and after the round: an unchanged timestamp means the cached row was reused.
+
+**Published addresses:** before a re-index, list `<state>\docs\features\*.html`. After it, run `old_addresses.py <list> <state>\docs` and `alias_audit.py <repo>` (456e97ec scratchpad). The expected result is 0 broken, and no alias missing its stub.
 
 **Full suite:** `.venv\Scripts\python.exe -m pytest --basetemp=<scratchpad>\pytest-x -p no:cacheprovider -q -rfE > <scratchpad>\full-suite.txt 2>&1`, in the background, about 10 minutes.
 - The only accepted failure is `tests/integration/test_cli.py::test_config_before_any_provider_reachable_still_reports_without_failing`, which makes a live Groq call and fails whenever Groq answers.
@@ -304,47 +345,26 @@ Do not match a bare `Error`: class names such as `BibliothecaError` contain it. 
 
 ---
 
-## 7. Next commands for the next agent (in order; ask before each non-trivial step)
+## 7. What the next agent can do (ask before each non-trivial step)
 
 **Step 0: orient.**
-1. Read this file, `specs/039-feature-grouping/spec.md`, `plan.md`, `research.md` and `tasks.md`.
+1. Read this file and 039 `research.md` Decision 13.
 2. Run:
-   - `git status --short`, `git log --oneline -3` and `git branch --show-current`. Expected: `main`; uncommitted only `.specify/feature.json`, `specs/039-feature-grouping/` and this file, unless the owner has committed since.
-   - Check that `.specify/feature.json` is `{"feature_directory":"specs\\039-feature-grouping"}`.
-   - Hash-compare the config with the backup (§5).
+   - `git status --short`, `git log --oneline -3` and `git branch --show-current`. Expected: `main`; uncommitted 039 work since `611643c`, unless the owner has committed since.
+   - Hash-compare the config with `%USERPROFILE%\.codepedia\config.backup-038.json`.
    - `Get-Process codepedia`: expect none.
-   - Check that both scratchpads in §5 still exist.
-3. Tell the owner anything that differs. Ask about `lot-11` and about copying the config backup somewhere durable, if not yet answered.
+3. Tell the owner anything that differs.
 
-**Step 1: `/speckit-analyze` for 039** (read-only; it changes no files).
-- Invoke the Skill `speckit-analyze` with args `specs/039-feature-grouping`.
-- Report the findings by severity, then ask with AskUserQuestion which to fix, recommending the CRITICAL and HIGH ones. For 038, analyze found I2, which mattered.
+**Candidate follow-ups** (039 Decision 13, "Follow-ups"; none started). Ask the owner which, if any:
 
-**Step 2: apply the approved analyze fixes** to the 039 `spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/` and `tasks.md`. Re-validate `checklists/requirements.md` if the spec changes. Do not commit.
+- **038's narrative relation sentences** ("calls", "stores results for", "integrates"): the largest remaining source of SC-007 flags. It needs a 038 prompt change and a model round.
+- **Recognising Spring controllers as routes** (Java annotations). This would anchor nextgen's cross-stack features at their controllers. The parser records no annotations today.
+- **The greeting-only README lead** (nextgen's "Welcome to …"), shared by the planner and the Overview.
+- **SC-006 on the sample:** it scores layers while the grouping forms slices. This is an evaluation question, not code.
+- **The wiki shell's narrow layout:** the table and sidebar clip at 400 to 700 px.
+- 038 T053, and the remaining 038 analyze findings (§3).
 
-**Step 3: `/speckit-implement` for 039.**
-- Invoke the Skill `speckit-implement` with args like `specs/039-feature-grouping; start with Phase 1 and stop after T020 (MVP: US1 + US2) to report`. **Ask the owner first** whether to stop at T020 or continue through T030.
-- Checklist gate: `requirements.md` is 16 of 16, so it passes. Say so.
-- Follow `tasks.md` in order, writing each story's tests first and confirming they fail. Mark tasks `[X]` as they complete.
-- T002: **ask** where the measurements live (the scratchpad or `specs/039-feature-grouping/measurements/`).
-- T015: list every existing test whose expectation changed, with the requirement each change follows.
-- T016, T020, T025, T030: run `planner_probe.py` (no provider) and compare with `proto-run1.txt` and research Decisions 1, 5 and 7.
-- The suites to run after each story: `tests/unit/test_feature_*.py`, `tests/integration/test_feature_*.py`, `tests/unit/test_overview_*.py`, `tests/integration/test_overview_*.py`, `tests/unit/test_prose_labels.py`, `tests/unit/test_plain_text.py`, `tests/unit/test_source_encoding.py`. Then the full suite at T031.
-
-**Step 4: owner-gated verification round, 039 T036.** **Ask first.**
-1. Hash-compare, swap to the Groq-first chain, re-index both repositories one at a time (§6), restore, and hash-compare again.
-2. Expect one planner call and one Overview narrative per repository on the first run. Read the terminal for `overview:` lines.
-3. Open two old `features/*.html` addresses per repository; they must be redirect stubs to live pages.
-4. Record the largest feature's share with the model.
-
-**Step 5: 039 T037.**
-- Map features against the answer keys (SC-006): sample ≥ 6 of 8 including the CLI; nextgen ≥ 6 of 9 including wallets, auth and security, chatbot and frontend.
-- Stranger test (SC-007): fresh subagents, one Read each, `tool_uses: 1`.
-- Screenshots at 700 px dark and full width light. Also run `why3.py` and `lead_links.py` on both repositories, since the Overview is re-narrated.
-
-**Step 6: 039 T038.** Record research Decision 13 (the implementation against the prototype, SC-001 to SC-008, the stranger test, the changed tests). Tick the tasks, update this handoff, and report. **Do not commit.**
-
-**Optional, only if the owner asks:** 038 T053; the remaining 038 analyze findings (§3); the open decisions in §3.
+The suites to run after any grouping change: `story-suites.ps1` (456e97ec scratchpad). It covers `tests/unit/test_feature_*.py`, `tests/integration/test_feature_*.py`, `tests/unit/test_overview_*.py`, `tests/integration/test_overview_*.py`, `tests/unit/test_prose_labels.py`, `tests/unit/test_plain_text.py` and `tests/unit/test_source_encoding.py`. Then the full suite.
 
 ---
 

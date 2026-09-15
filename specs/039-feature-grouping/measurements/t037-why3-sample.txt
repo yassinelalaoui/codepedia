@@ -1,0 +1,23 @@
+﻿majors: ['Public API Endpoints', 'Lending Management Service', 'Catalog Management Service', 'Storage Implementations', 'Time Management Core', 'Application Bootstrap']
+---- raw reply ----
+{
+  "lead": [
+    "The codepedia-sample-repo is a small library lending service that models a public library with a catalog, members, loans, and fines. Work enters through API routes in `src/bibliotheca/api/routes_loans.py` and `src/bibliotheca/api/routes_books.py`, and through CLI commands in `src/bibliotheca/cli.py`.",
+    "`list_overdue` in `src/bibliotheca/api/routes_loans.py` is an entry‑point function and its calls reach [[f5]] and [[f6]].",
+    "Data can be stored in [[f4]] and notifications can be sent from [[f2]]; the storage start file is `src/bibliotheca/storage/memory_store.py`."
+  ],
+  "subsystems": {
+    "f0": "Documentation & Guides provides architecture overviews, getting‑started instructions, and the project README. Its start file is `README.md`. It references [[f1]], [[f2]], [[f3]], [[f4]], [[f5]], [[f6]], [[f7]].",
+    "f1": "Public API Endpoints offers HTTP routes for members, books, and loans to interact with the library system. Its start file is `src/bibliotheca/api/routes_loans.py`. It calls [[f5]] and [[f6]].",
+    "f2": "Lending Management Service handles loan creation, due‑date tracking, overdue fine calculation, and email notifications. Its start file is `src/bibliotheca/services/lending_service.py`. It interacts with [[f5]] and [[f6]].",
+    "f3": "Catalog Management Service manages book information and provides catalogue queries. Its start file is `src/bibliotheca/services/catalog_service.py`. It uses [[f5]] and [[f6]].",
+    "f4": "Storage Implementations offers in‑memory and SQLite back‑ends for persisting library data. Its start file is `src/bibliotheca/storage/memory_store.py`. It stores results for [[f1]], [[f2]], [[f3]], [[f5]], [[f6]], [[f7]].",
+    "f5": "Time Management Core supplies clock utilities and configuration for handling dates and times. Its start file is `src/bibliotheca/core/clock.py`. It provides time services to [[f1]], [[f2]], [[f3]], [[f4]], [[f6]], [[f7]].",
+    "f6": "Application Bootstrap initialises the Bibliotheca application and wires core components together. Its start file is `src/bibliotheca/api/app.py`. It integrates [[f0]], [[f1]], [[f2]], [[f3]], [[f4]], [[f5]], [[f7]].",
+    "f7": "Developer Tools provides a command‑line interface and a thin API client library for interacting with Bibliotheca. Its start file is `src/bibliotheca/cli.py`. It invokes [[f1]], [[f3]], [[f5]], [[f6]]."
+  }
+}
+---- verdicts ----
+kept lead paragraphs: 3; withheld: False
+kept 9 of 9 offered; unasked (ignored): 2
+subsystem paragraphs kept: ['Public API Endpoints', 'Lending Management Service', 'Catalog Management Service', 'Storage Implementations', 'Time Management Core', 'Application Bootstrap']

@@ -1,0 +1,214 @@
+﻿== nextgen-wealth-ledger: 109 modules, 60 seeds, 1 entry modules, 0 test modules
+   entry backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/config/DataInitializationConfig.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/config/SecurityConfig.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/entities/AppUser.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/entities/Client.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/entities/LedgerEntry.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/entities/Wallet.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/exceptions/BalanceNotSufficientException.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/exceptions/ClientNotFoundException.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/exceptions/GlobalExceptionHandler.java  (10 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/exceptions/InvalidOperationException.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/exceptions/ResourceNotFoundException.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/exceptions/UserAlreadyExistsException.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/repositories/AppRoleRepository.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/repositories/AppUserRepository.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/repositories/ClientRepository.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/repositories/LedgerEntryRepository.java  (5 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/repositories/WalletRepository.java  (4 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/security/CustomUserDetailsService.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/security/JwtAuthenticationFilter.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/security/JwtProvider.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/services/AuthService.java  (4 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/services/ChatbotService.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/services/WalletService.java  (21 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/services/impl/AuthServiceImpl.java  (3 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/services/impl/ChatbotServiceImpl.java  (2 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl.java  (21 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/web/controllers/AuthController.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ChatbotController.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ClientController.java  (1 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/web/controllers/DashboardController.java  (4 entry points)
+   seed  backend/src/main/java/ma/yassine/digitalbanking/web/controllers/WalletController.java  (6 entry points)
+   seed  frontend/src/app/app.component.ts  (1 entry points)
+   seed  frontend/src/app/core/guards/auth.guard.ts  (1 entry points)
+   seed  frontend/src/app/core/interceptors/error.interceptor.ts  (1 entry points)
+   seed  frontend/src/app/core/interceptors/jwt.interceptor.ts  (1 entry points)
+   seed  frontend/src/app/core/services/account.service.ts  (7 entry points)
+   seed  frontend/src/app/core/services/auth.service.ts  (6 entry points)
+   seed  frontend/src/app/core/services/chatbot.service.ts  (2 entry points)
+   seed  frontend/src/app/core/services/client.service.ts  (3 entry points)
+   seed  frontend/src/app/core/services/dashboard.service.ts  (1 entry points)
+   seed  frontend/src/app/core/services/toast.service.ts  (1 entry points)
+   seed  frontend/src/app/features/auth/login/login.component.ts  (1 entry points)
+   seed  frontend/src/app/features/auth/register/register.component.ts  (1 entry points)
+   seed  frontend/src/app/features/chatbot/chatbot.component.ts  (4 entry points)
+   seed  frontend/src/app/features/clients/client-detail.component.ts  (2 entry points)
+   seed  frontend/src/app/features/clients/client-form-dialog.component.ts  (3 entry points)
+   seed  frontend/src/app/features/clients/clients.component.ts  (7 entry points)
+   seed  frontend/src/app/features/dashboard/dashboard.component.ts  (3 entry points)
+   seed  frontend/src/app/features/profile/profile.component.ts  (3 entry points)
+   seed  frontend/src/app/features/wallets/account-detail.component.ts  (9 entry points)
+   seed  frontend/src/app/features/wallets/credit-dialog.component.ts  (2 entry points)
+   seed  frontend/src/app/features/wallets/current-account-dialog.component.ts  (3 entry points)
+   seed  frontend/src/app/features/wallets/debit-dialog.component.ts  (2 entry points)
+   seed  frontend/src/app/features/wallets/saving-account-dialog.component.ts  (3 entry points)
+   seed  frontend/src/app/features/wallets/transfer-dialog.component.ts  (2 entry points)
+   seed  frontend/src/app/features/wallets/wallets.component.ts  (6 entry points)
+   seed  frontend/src/app/layout/navbar/navbar.component.ts  (2 entry points)
+   seed  frontend/src/app/shared/dialogs/confirm-dialog.component.ts  (1 entry points)
+   seed  refactor.py  (1 entry points)
+
+-- 20 candidates
+   c0: 'services - WalletService' seed=backend/src/main/java/ma/yassine/digitalbanking/services/WalletService.java n=17 eps=31
+       backend/src/main/java/ma/yassine/digitalbanking/services/WalletService.java, backend/src/main/java/ma/yassine/digitalbanking/web/controllers/WalletController.java, backend/src/main/java/ma/yassine/digitalbanking/web/controllers/DashboardController.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/AccountHistoryDTO.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/AccountStatusStatsDTO.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/AccountTypeStatsDTO.java, ... (+11)
+   c1: 'impl - WalletServiceImpl' seed=backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl.java n=13 eps=36
+       backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl.java, backend/src/main/java/ma/yassine/digitalbanking/exceptions/GlobalExceptionHandler.java, backend/src/main/java/ma/yassine/digitalbanking/exceptions/BalanceNotSufficientException.java, backend/src/main/java/ma/yassine/digitalbanking/exceptions/ClientNotFoundException.java, backend/src/main/java/ma/yassine/digitalbanking/exceptions/InvalidOperationException.java, backend/src/main/java/ma/yassine/digitalbanking/exceptions/ResourceNotFoundException.java, ... (+7)
+   c2: 'services - account.service' seed=frontend/src/app/core/services/account.service.ts n=13 eps=33
+       frontend/src/app/core/services/account.service.ts, frontend/src/app/features/clients/clients.component.ts, frontend/src/app/features/wallets/wallets.component.ts, frontend/src/app/core/services/client.service.ts, frontend/src/app/features/wallets/current-account-dialog.component.ts, frontend/src/app/features/wallets/saving-account-dialog.component.ts, ... (+7)
+   c3: 'impl - AuthServiceImpl' seed=backend/src/main/java/ma/yassine/digitalbanking/config/DataInitializationConfig.java n=12 eps=19
+       backend/src/main/java/ma/yassine/digitalbanking/config/DataInitializationConfig.java, backend/src/main/java/ma/yassine/digitalbanking/services/impl/AuthServiceImpl.java, backend/src/main/java/ma/yassine/digitalbanking/entities/AppUser.java, backend/src/main/java/ma/yassine/digitalbanking/repositories/AppUserRepository.java, backend/src/main/java/ma/yassine/digitalbanking/entities/Client.java, backend/src/main/java/ma/yassine/digitalbanking/repositories/ClientRepository.java, ... (+6)
+   c4: 'services - auth.service' seed=frontend/src/app/features/auth/login/login.component.ts n=8 eps=11
+       frontend/src/app/features/auth/login/login.component.ts, frontend/src/app/core/services/auth.service.ts, frontend/src/app/core/interceptors/error.interceptor.ts, frontend/src/app/core/interceptors/jwt.interceptor.ts, frontend/src/app/features/auth/register/register.component.ts, frontend/src/app/core/services/toast.service.ts, ... (+2)
+   c5: 'services - AuthService' seed=backend/src/main/java/ma/yassine/digitalbanking/services/AuthService.java n=6 eps=5
+       backend/src/main/java/ma/yassine/digitalbanking/services/AuthService.java, backend/src/main/java/ma/yassine/digitalbanking/web/controllers/AuthController.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/AuthResponse.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/ChangePasswordRequest.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/LoginRequest.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/RegisterRequest.java
+   c6: 'services - ChatbotService' seed=backend/src/main/java/ma/yassine/digitalbanking/services/ChatbotService.java n=5 eps=5
+       backend/src/main/java/ma/yassine/digitalbanking/services/ChatbotService.java, backend/src/main/java/ma/yassine/digitalbanking/services/impl/ChatbotServiceImpl.java, backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ChatbotController.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/ChatRequest.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/ChatResponse.java
+   c7: 'navbar - navbar.component' seed=frontend/src/app/app.component.ts n=5 eps=4
+       frontend/src/app/app.component.ts, frontend/src/app/layout/navbar/navbar.component.ts, frontend/src/app/core/guards/auth.guard.ts, frontend/src/app/app.routes.ts, frontend/src/app/shared/animations.ts
+   c8: 'wallets - account-detail.component' seed=frontend/src/app/features/wallets/account-detail.component.ts n=5 eps=15
+       frontend/src/app/features/wallets/account-detail.component.ts, frontend/src/app/features/wallets/credit-dialog.component.ts, frontend/src/app/features/wallets/debit-dialog.component.ts, frontend/src/app/features/wallets/transfer-dialog.component.ts, frontend/src/app/features/wallets/wallets.routes.ts
+   c9: 'controllers - ClientController' seed=backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ClientController.java n=4 eps=1
+       backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ClientController.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/ClientDTO.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/CreateClientRequest.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/UpdateClientRequest.java
+   c10: 'repositories - LedgerEntryRepository' seed=backend/src/main/java/ma/yassine/digitalbanking/entities/LedgerEntry.java n=3 eps=6
+       backend/src/main/java/ma/yassine/digitalbanking/entities/LedgerEntry.java, backend/src/main/java/ma/yassine/digitalbanking/repositories/LedgerEntryRepository.java, backend/src/main/java/ma/yassine/digitalbanking/enums/LedgerAction.java
+   c11: 'repositories - WalletRepository' seed=backend/src/main/java/ma/yassine/digitalbanking/entities/Wallet.java n=3 eps=6
+       backend/src/main/java/ma/yassine/digitalbanking/entities/Wallet.java, backend/src/main/java/ma/yassine/digitalbanking/repositories/WalletRepository.java, backend/src/main/java/ma/yassine/digitalbanking/enums/AccountStatus.java
+   c12: 'Root' seed=README.md n=2 eps=1
+       README.md, refactor.py
+   c13: 'services - chatbot.service' seed=frontend/src/app/core/services/chatbot.service.ts n=2 eps=2
+       frontend/src/app/core/services/chatbot.service.ts, frontend/src/app/core/models/chat.model.ts
+   c14: 'services - dashboard.service' seed=frontend/src/app/core/services/dashboard.service.ts n=2 eps=1
+       frontend/src/app/core/services/dashboard.service.ts, frontend/src/app/core/models/dashboard.model.ts
+   c15: 'chatbot - chatbot.component' seed=frontend/src/app/features/chatbot/chatbot.component.ts n=2 eps=4
+       frontend/src/app/features/chatbot/chatbot.component.ts, frontend/src/app/features/chatbot/chatbot.routes.ts
+   c16: 'clients - client-detail.component' seed=frontend/src/app/features/clients/client-detail.component.ts n=2 eps=2
+       frontend/src/app/features/clients/client-detail.component.ts, frontend/src/app/features/clients/clients.routes.ts
+   c17: 'dashboard - dashboard.component' seed=frontend/src/app/features/dashboard/dashboard.component.ts n=2 eps=3
+       frontend/src/app/features/dashboard/dashboard.component.ts, frontend/src/app/features/dashboard/dashboard.routes.ts
+   c18: 'profile - profile.component' seed=frontend/src/app/features/profile/profile.component.ts n=2 eps=3
+       frontend/src/app/features/profile/profile.component.ts, frontend/src/app/features/profile/profile.routes.ts
+   c19: 'digitalbanking - DigitalBankingApplication' seed=backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java n=1 eps=1
+       backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java
+
+-- planner prompt (what the model saw)
+Organise these 20 module groups into about 13 features.
+
+What the repository says about itself:
+Welcome to the NexGen Wealth Ledger repository!
+
+Groups:
+c0: services - WalletService (17 modules)
+  - WalletService - The `WalletService` module in the repository defines a service layer for managing wallet operations in the `nextgen-weal
+  - WalletController - The `WalletController` is a RESTful controller in a Java Spring application that manages wallet operations.
+  - DashboardController - The `DashboardController` class in the `backend/src/main/java/ma/yassine/digitalbanking/web/controllers` directory is a 
+c1: impl - WalletServiceImpl (13 modules)
+  - WalletServiceImpl - This code defines a `WalletManager` class that provides methods for managing wallets, accounts, and operations.
+  - GlobalExceptionHandler - The `GlobalExceptionHandler` is a Spring Boot REST controller advice that handles various exceptions thrown during the e
+  - BalanceNotSufficientException - The `BalanceNotSufficientException` class in the `backend/src/main/java/ma/yassine/digitalbanking/exceptions` package is
+c2: services - account.service (13 modules)
+  - account.service - The `account.service` module in the repository handles the management of accounts, including creation, search, retrieval
+  - clients.component - `ClientsComponent` is an Angular standalone component that displays a searchable, paginated table of clients.
+  - wallets.component - `wallets.component.ts` defines the `AccountsComponent`, an Angular standalone component that renders a paginated, search
+c3: impl - AuthServiceImpl (12 modules)
+  - DataInitializationConfig - The `DataInitializationConfig` class in the `backend/src/main/java/ma/yassine/digitalbanking/config` directory is respon
+  - AuthServiceImpl - The `AuthServiceImpl` class in the given repository is a concrete implementation of the `AuthService` interface.
+  - AppUser - The `AppUser` class in the `ma.yassine.digitalbanking.entities` package is a data model representing an user in the digi
+c4: services - auth.service (8 modules)
+  - login.component - The `login.component` module in the repository handles the user login process.
+  - auth.service - The `auth.service` module in the `nextgen-wealth-ledger` project is a service responsible for handling authentication-re
+  - error.interceptor - This code snippet defines an Angular HTTP interceptor named `errorInterceptor` that catches errors thrown during HTTP re
+c5: services - AuthService (6 modules)
+  - AuthService - The `AuthService` class in the `backend/src/main/java/ma/yassine/digitalbanking/services` package provides methods for u
+  - AuthController - The `AuthController` class in the `backend/src/main/java/ma/yassine/digitalbanking/web/controllers` directory handles au
+  - AuthResponse - This module, `AuthResponse`, is a class that represents the response from an authentication process.
+c6: services - ChatbotService (5 modules)
+  - ChatbotService - The `ChatbotService` is a module in the `backend` directory of the `nextgen-wealth-ledger` project.
+  - ChatbotServiceImpl - The `ChatbotServiceImpl` class in the given code snippet is a service that implements the `ChatbotService` interface.
+  - ChatbotController - The `ChatbotController` class is a controller for handling chat-related requests in the `/api/chat` endpoint of the appl
+c7: navbar - navbar.component (5 modules)
+  - app.component - The `app.component` is the root component of the Angular application in the `digital-banking-frontend` module.
+  - navbar.component - The `navbar.component` module defines a standalone Angular component that renders a top‑bar navigation bar for the Digit
+  - auth.guard - The `auth.guard` module in the `frontend/src/app/core/guards` directory is a TypeScript service that implements the `Can
+c8: wallets - account-detail.component (5 modules)
+  - account-detail.component - `AccountDetailComponent` is an Angular standalone component that displays a single wallet’s details and its transaction 
+  - credit-dialog.component - `credit-dialog.component` is a standalone Angular component that presents a dialog for crediting a wallet.
+  - debit-dialog.component - `DebitDialogComponent` is a standalone Angular component that presents a modal dialog for debiting a wallet.
+c9: controllers - ClientController (4 modules)
+  - ClientController - The `ClientController` class in the `nextgen-wealth-ledger` repository handles the HTTP requests related to client manag
+  - ClientDTO - The `ClientDTO` class represents a client entity in the `nextgen-wealth-ledger` application, containing details such as 
+  - CreateClientRequest - The `CreateClientRequest` class in the `CreateClientRequest.java` file of the `backend/src/main/java/ma/yassine/digitalb
+c10: repositories - LedgerEntryRepository (3 modules)
+  - LedgerEntry - This module defines a data class `LedgerEntry` within the package `ma.yassine.digitalbanking.entities` that represents l
+  - LedgerEntryRepository - The `LedgerEntryRepository` is a Spring Data JPA repository interface located in the `backend/src/main/java/ma/yassine/d
+  - LedgerAction - The `LedgerAction` class in the `ma.yassine.digitalbanking.enums` package defines two constants: `DEBIT` and `CREDIT`.
+c11: repositories - WalletRepository (3 modules)
+  - Wallet - The Wallet class in the backend/src/main/java/ma/yassine/digitalbanking/entities/ directory is an abstract class that re
+  - WalletRepository - The `WalletRepository` class in the `backend/src/main/java/ma/yassine/digitalbanking/repositories` directory is a Spring
+  - AccountStatus - The `AccountStatus` enum in the `AccountStatus.java` file in the `backend/src/main/java/ma/yassine/digitalbanking/enums`
+c12: Root (2 modules)
+  - README - # NexGen Wealth Ledger Welcome to the **NexGen Wealth Ledger** repository! NexGen Wealth Ledger is a modern, high-perfor
+  - refactor - The `refactor` module is a small utility script that performs a bulk, search‑and‑replace refactor across the project's s
+c13: services - chatbot.service (2 modules)
+  - chatbot.service - The `chatbot.service` module is a TypeScript service that provides functionality for interacting with a chatbot API.
+  - chat.model - The `chat.model` module in the repository defines the interfaces for chat messages in the application.
+c14: services - dashboard.service (2 modules)
+  - dashboard.service - This TypeScript service is responsible for handling dashboard-related data operations such as fetching statistics, month
+  - dashboard.model - The `dashboard.model` module in the `frontend/src/app/core/models` directory provides DTO (Data Transfer Object) interfa
+c15: chatbot - chatbot.component (2 modules)
+  - chatbot.component - The `chatbot.component` module defines the `ChatbotComponent` class, a standalone Angular component that renders a Banki
+  - chatbot.routes - The `chatbot.routes` module defines the routing configuration for the chatbot feature.
+c16: clients - client-detail.component (2 modules)
+  - client-detail.component - `client-detail.component` defines the `ClientDetailComponent`, a standalone Angular component that displays a client's p
+  - clients.routes - The **`clients.routes`** module defines the Angular routing configuration for the *clients* feature.
+c17: dashboard - dashboard.component (2 modules)
+  - dashboard.component - `dashboard.component` is an Angular standalone component that renders the dashboard page.
+  - dashboard.routes - The module **`dashboard.routes`** defines the routing configuration for the dashboard feature.
+c18: profile - profile.component (2 modules)
+  - profile.component - The `frontend/src/app/features/profile/profile.component.ts` module defines the `ProfileComponent`, an Angular standalon
+  - profile.routes - The `profile.routes` module defines the routing configuration for the profile feature.
+c19: digitalbanking - DigitalBankingApplication (1 modules)
+  - DigitalBankingApplication - The `DigitalBankingApplication` class in the `backend/src/main/java/ma/yassine/digitalbanking` directory is a Spring Boo
+
+-- cached plan: none
+
+-- repaired features (sidebar order)
+   [subsystem] impl - WalletServiceImpl  anchor=backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl.java n=13 eps=36 planned=False
+   [subsystem] services - account.service  anchor=frontend/src/app/core/services/account.service.ts n=13 eps=33 planned=False
+   [subsystem] services - WalletService  anchor=backend/src/main/java/ma/yassine/digitalbanking/services/WalletService.java n=17 eps=31 planned=False
+   [subsystem] impl - AuthServiceImpl  anchor=backend/src/main/java/ma/yassine/digitalbanking/services/impl/AuthServiceImpl.java n=12 eps=19 planned=False
+   [subsystem] wallets - account-detail.component  anchor=frontend/src/app/features/wallets/account-detail.component.ts n=5 eps=15 planned=False
+   [subsystem] services - auth.service  anchor=frontend/src/app/core/services/auth.service.ts n=8 eps=11 planned=False
+   [subsystem] repositories - LedgerEntryRepository  anchor=backend/src/main/java/ma/yassine/digitalbanking/repositories/LedgerEntryRepository.java n=3 eps=6 planned=False
+   [subsystem] repositories - WalletRepository  anchor=backend/src/main/java/ma/yassine/digitalbanking/repositories/WalletRepository.java n=3 eps=6 planned=False
+   [subsystem] services - AuthService  anchor=backend/src/main/java/ma/yassine/digitalbanking/services/AuthService.java n=6 eps=5 planned=False
+   [subsystem] services - ChatbotService  anchor=backend/src/main/java/ma/yassine/digitalbanking/services/ChatbotService.java n=5 eps=5 planned=False
+   [subsystem] chatbot - chatbot.component  anchor=frontend/src/app/features/chatbot/chatbot.component.ts n=2 eps=4 planned=False
+   [subsystem] navbar - navbar.component  anchor=frontend/src/app/layout/navbar/navbar.component.ts n=5 eps=4 planned=False
+   [subsystem] dashboard - dashboard.component  anchor=frontend/src/app/features/dashboard/dashboard.component.ts n=2 eps=3 planned=False
+   [subsystem] profile - profile.component  anchor=frontend/src/app/features/profile/profile.component.ts n=2 eps=3 planned=False
+   [subsystem] clients - client-detail.component  anchor=frontend/src/app/features/clients/client-detail.component.ts n=2 eps=2 planned=False
+   [subsystem] services - chatbot.service  anchor=frontend/src/app/core/services/chatbot.service.ts n=2 eps=2 planned=False
+   [subsystem] Root  anchor=refactor.py n=2 eps=1 planned=False
+   [subsystem] controllers - ClientController  anchor=backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ClientController.java n=4 eps=1 planned=False
+   [subsystem] digitalbanking - DigitalBankingApplication  anchor=backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java n=1 eps=1 planned=False
+   [subsystem] services - dashboard.service  anchor=frontend/src/app/core/services/dashboard.service.ts n=2 eps=1 planned=False
+
+-- metrics (no model)
+   SC-001 largest feature: services - WalletService 17/109 = 16%
+   SC-002 Java: 66/66 in-repository imports resolved (100%), 263 external; modules coupled 63/64
+   SC-002 TypeScript: 75/75 in-repository imports resolved (100%), 195 external; modules coupled 42/43
+   SC-003 groups seeded by a test file: 0
+   SC-004 entry points: candidates 189, features 189, non-test total 189
+   entry module backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java -> digitalbanking - DigitalBankingApplication

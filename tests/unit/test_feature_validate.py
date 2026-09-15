@@ -263,6 +263,151 @@ def test_unplaced_candidates_with_unusable_titles_land_in_the_terminal_feature(t
     assert _all_module_keys(features) == {"key::a", "key::b", "key::c"}
 
 
+# --------------------------------------------------------------------------
+# Spec 039 User Story 3: a subsystem starts where its work starts (FR-010)
+# --------------------------------------------------------------------------
+
+
+def _roles(
+    names: tuple[str, ...],
+    *,
+    entries: dict[str, int] | None = None,
+    seeds: dict[str, int] | None = None,
+    tests: tuple[str, ...] = (),
+) -> RepositoryEvidence:
+    """Evidence over `names`: `entries` hold commands (entry modules), `seeds`
+    only uncalled functions, each with the given number of entry points."""
+    counts = {**(seeds or {}), **(entries or {})}
+    entry_points = {f"key::{name}": tuple(f"key::{name}::ep{i}" for i in range(n)) for name, n in counts.items()}
+    test_keys = frozenset(f"key::{name}" for name in tests)
+    return RepositoryEvidence(
+        modules=tuple(
+            FeatureEvidence(moduleKey=f"key::{name}", moduleName=name, filePath=f"/r/{name}.py", directoryPath=".")
+            for name in names
+        ),
+        entryPointModuleKeys=tuple(sorted(entry_points)),
+        entryPointKeysByModuleKey=entry_points,
+        testModuleKeys=test_keys,
+        entryModuleKeys=tuple(sorted(f"key::{name}" for name in (entries or {}))),
+        seedModuleKeys=tuple(sorted(key for key in entry_points if key not in test_keys)),
+    )
+
+
+def _weighted(names: tuple[str, ...], *edges: tuple[str, str, int]) -> dict[str, dict[str, int]]:
+    adjacency: dict[str, dict[str, int]] = {f"key::{name}": {} for name in names}
+    for source, target, weight in edges:
+        adjacency[f"key::{source}"][f"key::{target}"] = weight
+        adjacency[f"key::{target}"][f"key::{source}"] = weight
+    return adjacency
+
+
+def _only_feature(names, evidence, adjacency, *candidates):
+    features = repair(None, list(candidates) or [_candidate(names[0], *names)], evidence=evidence, adjacency=adjacency)
+    return features[0] if len(features) == 1 else features
+
+
+def test_the_anchor_is_the_entry_module_over_a_seed_with_more_uncalled_functions():
+    """The Spring shape: a service implementation outranks the CLI by uncalled methods."""
+    names = ("cli", "service", "hub")
+    evidence = _roles(names, entries={"cli": 1}, seeds={"service": 5})
+    adjacency = _weighted(names, ("hub", "cli", 1), ("hub", "service", 1))
+
+    assert _only_feature(names, evidence, adjacency).key == "key::cli"
+
+
+def test_the_anchor_is_the_seed_over_a_better_connected_helper():
+    """033 anchored at the best-connected member: the sample's lending group started at `ids`."""
+    names = ("lending_service", "ids", "a", "b")
+    evidence = _roles(names, seeds={"lending_service": 1})
+    adjacency = _weighted(names, ("ids", "lending_service", 1), ("ids", "a", 1), ("ids", "b", 1))
+
+    assert _only_feature(names, evidence, adjacency).key == "key::lending_service"
+
+
+def test_a_feature_without_a_seed_keeps_the_most_connected_member():
+    names = ("a", "b", "c")
+    evidence = _roles(names)
+    adjacency = _weighted(names, ("b", "a", 1), ("b", "c", 1))
+
+    assert _only_feature(names, evidence, adjacency).key == "key::b"
+
+
+def test_a_test_is_never_the_anchor_of_a_feature_without_a_seed():
+    """A test is the best-connected module there is; it must not become a page address (FR-008)."""
+    names = ("a", "b", "test_ab")
+    evidence = _roles(names, tests=("test_ab",))
+    adjacency = _weighted(names, ("test_ab", "a", 2), ("test_ab", "b", 2), ("a", "b", 1))
+
+    assert _only_feature(names, evidence, adjacency).key == "key::a"
+
+
+def test_a_model_merge_keeps_the_entry_module_anchor():
+    names = ("cli", "x", "service", "hub", "other")
+    evidence = _roles(names, entries={"cli": 1}, seeds={"service": 3})
+    adjacency = _weighted(names, ("hub", "service", 3), ("hub", "x", 1), ("cli", "x", 1))
+    candidates = [_candidate("cli", "cli", "x"), _candidate("service", "service", "hub"), _candidate("other")]
+    plan = FeaturePlan(
+        features=(
+            PlannedFeature(title="Operations", kind="capability", memberCandidateIds=("c0", "c1")),
+            PlannedFeature(title="Other", kind="subsystem", memberCandidateIds=("c2",)),
+        )
+    )
+
+    features = repair(plan, candidates, evidence=evidence, adjacency=adjacency)
+
+    merged = next(feature for feature in features if feature.title == "Operations")
+    assert merged.key == "key::cli"
+
+
+def test_anchor_ties_go_to_the_widest_reach_before_the_name():
+    """Equal entry points: the seed whose entry points reach the most modules starts the feature.
+
+    Measured at T036: the model merged the sample's lending and email groups, both
+    seeds held two entry points, and name order anchored "Lending Management
+    Service" at `email_gateway` - which the lending service calls (owner
+    decision, 2026-09-15).
+    """
+    names = ("email_gateway", "lending_service", "ids")
+    reached = {"email_gateway": ("gw::ep0", "gw::ep1", "ls::ep0", "ls::ep1"), "lending_service": ("ls::ep0", "ls::ep1"), "ids": ("ls::ep0",)}
+    evidence = RepositoryEvidence(
+        modules=tuple(
+            FeatureEvidence(
+                moduleKey=f"key::{name}",
+                moduleName=name,
+                filePath=f"/r/{name}.py",
+                directoryPath=".",
+                reachingEntryPointKeys=reached[name],
+            )
+            for name in names
+        ),
+        entryPointKeysByModuleKey={"key::email_gateway": ("gw::ep0", "gw::ep1"), "key::lending_service": ("ls::ep0", "ls::ep1")},
+        seedModuleKeys=("key::email_gateway", "key::lending_service"),
+    )
+
+    feature = _only_feature(names, evidence, _weighted(names))
+
+    assert feature.key == "key::lending_service", "its entry points reach 3 modules; the gateway's reach 1"
+
+
+def test_anchor_ties_go_to_the_module_name_then_the_key():
+    names = ("beta", "alpha")
+    evidence = _roles(names, entries={"beta": 2, "alpha": 2})
+    assert _only_feature(names, evidence, _weighted(names)).key == "key::alpha", "same count: the name decides"
+
+    same_name = RepositoryEvidence(
+        modules=tuple(
+            FeatureEvidence(moduleKey=key, moduleName="run", filePath=f"/r/{key}.py", directoryPath=".")
+            for key in ("key::z/run", "key::a/run")
+        ),
+        entryPointKeysByModuleKey={"key::z/run": ("z::ep",), "key::a/run": ("a::ep",)},
+        entryModuleKeys=("key::a/run", "key::z/run"),
+        seedModuleKeys=("key::a/run", "key::z/run"),
+    )
+    candidate = Candidate(seedModuleKey="key::z/run", seedTitle="Area", memberKeys=("key::a/run", "key::z/run"))
+    feature = repair(None, [candidate], evidence=same_name, adjacency={"key::z/run": {}, "key::a/run": {}})[0]
+    assert feature.key == "key::a/run", "same count and name: the key decides"
+
+
 def _terminal_candidate(*members: str) -> Candidate:
     """What `build_candidates` builds for modules left alone (039 research Decision 6 step 5)."""
     return Candidate(

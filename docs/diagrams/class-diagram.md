@@ -266,6 +266,29 @@ classDiagram
             <<features/planner.py, 033>>
             +plan(candidates, evidence) FeaturePlan
         }
+        class RepositoryEvidence {
+            <<features/evidence.py, 033 + 039, no engine>>
+            +tuple~str~ seedModuleKeys
+            +tuple~str~ entryModuleKeys
+            +frozenset~str~ testModuleKeys
+            +str readmeLead
+        }
+        class resolve_repository_imports {
+            <<function, features/imports.py, 039, no engine>>
+            +Java and JS/TS import names to module keys
+        }
+        class Candidate {
+            <<features/candidates.py, no engine>>
+            +str seedModuleKey
+            +str seedTitle
+            +tuple~str~ memberKeys
+        }
+        class Feature {
+            <<features/validate.py, repair>>
+            +str key
+            +str title
+            +tuple~FeatureMember~ members
+        }
         class OverviewEvidence {
             <<overview/evidence.py, 038, no engine>>
             +tuple~FeatureBrief~ features
@@ -300,8 +323,14 @@ classDiagram
     DocGenerator ..> UseCaseDiagramSelection : select_use_cases()
     UseCaseDiagramSelection ..> UseCaseDiagramSource : build_use_case_diagram_mermaid_source()
     DocGenerator --> DocPageManifestStore : page manifest
+    DocGenerator ..> RepositoryEvidence : build_repository_evidence()
+    DocGenerator ..> resolve_repository_imports : build_import_adjacency()
+    resolve_repository_imports ..> DependencyGraph : import node names
+    RepositoryEvidence ..> Candidate : build_candidates(evidence, adjacency)
     DocGenerator --> FeaturePlanner : subsystems (repaired features)
-    FeaturePlanner ..> DocPageManifestStore : doc_feature_plans cache
+    FeaturePlanner ..> Candidate : one call names and combines them
+    FeaturePlanner ..> DocPageManifestStore : doc_feature_plans cache, keyed on the grouping
+    Feature *-- Candidate : repair
     DocGenerator ..> OverviewEvidence : build_overview_evidence(features, bundle, graph)
     DocGenerator --> OverviewNarrator : overviewNarrator
     OverviewNarrator ..> OverviewEvidence : one prompt

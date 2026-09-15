@@ -185,7 +185,8 @@ def test_a_real_anchor_move_across_two_runs_leaves_a_redirect(tmp_path):
 
     root = tmp_path / "repo" / "app"
     root.mkdir(parents=True)
-    #  cli -> core -> util,  extra -> core   =>  anchor is `core`
+    #  cli -> core -> util,  extra -> core   =>  anchor is `cli`, the only
+    #  entry module (`main`), under 039 FR-010
     (root / "cli.py").write_text(
         '"""CLI."""\n\nfrom .core import core_run\n\n\ndef main() -> int:\n    return core_run()\n',
         encoding="utf-8",
@@ -229,13 +230,13 @@ def test_a_real_anchor_move_across_two_runs_leaves_a_redirect(tmp_path):
     published = [p.outputPathHtml for p in first.pages if p.kind == "feature"]
     assert published, "run 1 must publish at least one feature page"
 
-    #  cli -> util, core -> util, extra -> util  =>  anchor becomes `util`
-    (root / "cli.py").write_text(
-        '"""CLI."""\n\nfrom .util import helper\n\n\ndef main() -> int:\n    return helper()\n',
-        encoding="utf-8",
-    )
-    (root / "extra.py").write_text(
-        '"""Extra."""\n\nfrom .util import helper\n\n\ndef _e() -> int:\n    return helper()\n',
+    #  `core` gains two commands  =>  anchor becomes `core`.
+    #  039 FR-010 changed how an anchor moves: an entry module or seed anchors
+    #  its feature, so rewiring imports - 033's way here - no longer moves it.
+    #  Entry points do.
+    (root / "core.py").write_text(
+        '"""Core."""\n\nfrom .util import helper\n\n\ndef core_run() -> int:\n    return helper()\n\n\n'
+        "@app.command()\ndef sync() -> int:\n    return 1\n\n\n@app.command()\ndef purge() -> int:\n    return 2\n",
         encoding="utf-8",
     )
     store2, graph2 = index("meta2.sqlite")
@@ -245,7 +246,7 @@ def test_a_real_anchor_move_across_two_runs_leaves_a_redirect(tmp_path):
     second = generator.generateRepositoryDocumentation(
         repo_root,
         incremental=True,
-        changedPaths=[str(root / "cli.py"), str(root / "extra.py")],
+        changedPaths=[str(root / "core.py")],
     )
     current = {p.outputPathHtml for p in second.pages if p.kind == "feature"}
 

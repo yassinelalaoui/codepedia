@@ -22,6 +22,7 @@ from doc_generator.features.evidence import (
 )
 from doc_generator.features.planner import (
     CANDIDATE_HEADER_CHARS,
+    MAX_MEMBER_LABEL_CHARS,
     MAX_MEMBER_SUMMARY_CHARS,
     MAX_MEMBERS_PER_CANDIDATE,
     MAX_PLAN_RESPONSE_TOKENS,
@@ -138,7 +139,7 @@ def test_the_budget_arithmetic_is_the_documented_one():
     disagree, one of them has stopped describing the prompt that is actually
     built.
     """
-    member_line = MEMBER_LINE_OVERHEAD_CHARS + MAX_MEMBER_SUMMARY_CHARS
+    member_line = MEMBER_LINE_OVERHEAD_CHARS + MAX_MEMBER_LABEL_CHARS + MAX_MEMBER_SUMMARY_CHARS
     per_candidate = CANDIDATE_HEADER_CHARS + MAX_MEMBERS_PER_CANDIDATE * member_line
     total_chars = (
         MAX_PROMPTED_CANDIDATES * per_candidate + MAX_README_PROMPT_CHARS + SYSTEM_PROMPT_CHARS
@@ -219,6 +220,160 @@ def test_only_the_first_members_of_a_candidate_are_described():
 
     described = [line for line in rendered.splitlines() if line.strip().startswith("- mod_")]
     assert len(described) == MAX_MEMBERS_PER_CANDIDATE
+
+
+# --------------------------------------------------------------------------
+# Spec 039 User Story 4: the planner is shown what a group actually is
+# (FR-012 to FR-014; research Decision 10)
+# --------------------------------------------------------------------------
+
+
+def _relevance_repository() -> tuple[RepositoryEvidence, dict[str, dict[str, int]]]:
+    """One group: its seed, a folded-in seed with more entry points, a hub, two
+    plain helpers and a test. Keys are paths; labels are the file stems."""
+    from pathlib import PurePosixPath
+
+    paths = ["pkg/main_seed.py", "pkg/extra_seed.py", "pkg/hub.py", "pkg/plain.py", "pkg/plain2.py", "tests/test_x.py"]
+    entry_points = {
+        "pkg/main_seed.py": ("pkg/main_seed.py::a",),
+        "pkg/extra_seed.py": ("pkg/extra_seed.py::a", "pkg/extra_seed.py::b", "pkg/extra_seed.py::c"),
+        "tests/test_x.py": ("tests/test_x.py::a", "tests/test_x.py::b"),
+    }
+    evidence = RepositoryEvidence(
+        modules=tuple(
+            FeatureEvidence(
+                moduleKey=path,
+                moduleName=PurePosixPath(path).stem,
+                filePath=f"/r/{path}",
+                directoryPath=str(PurePosixPath(path).parent),
+            )
+            for path in paths
+        ),
+        entryPointModuleKeys=tuple(sorted(entry_points)),
+        entryPointKeysByModuleKey=entry_points,
+        testModuleKeys=frozenset({"tests/test_x.py"}),
+        seedModuleKeys=("pkg/extra_seed.py", "pkg/main_seed.py"),
+        moduleLabels={path: PurePosixPath(path).stem for path in paths},
+    )
+    adjacency: dict[str, dict[str, int]] = {path: {} for path in paths}
+    for source, target, weight in (
+        ("pkg/main_seed.py", "pkg/hub.py", 3),
+        ("pkg/main_seed.py", "pkg/plain.py", 1),
+        ("pkg/main_seed.py", "pkg/plain2.py", 1),
+        ("pkg/hub.py", "pkg/plain.py", 1),
+        ("pkg/extra_seed.py", "pkg/hub.py", 1),
+        ("tests/test_x.py", "pkg/main_seed.py", 1),
+    ):
+        adjacency[source][target] = weight
+        adjacency[target][source] = weight
+    return evidence, adjacency
+
+
+def _described(rendered: str) -> list[str]:
+    return [line.strip()[2:].split(" - ")[0] for line in rendered.splitlines() if line.startswith("  - ")]
+
+
+def test_the_seed_is_the_first_member_described():
+    from doc_generator.features.candidates import build_candidates
+
+    evidence, adjacency = _relevance_repository()
+    (candidate,) = build_candidates(evidence, adjacency)
+
+    rendered = build_feature_plan_prompt(assign_handles([candidate]), evidence).to_prompt_text()
+
+    assert candidate.seedModuleKey == "pkg/main_seed.py"
+    assert _described(rendered)[0] == "main_seed"
+
+
+def test_members_are_ordered_by_entry_points_then_coupling_then_label():
+    """FR-012. 033 described the first three alphabetically: the sample's API group read `README`, `__init__`, `__init__`.
+
+    Tests come last: a test holds no non-test entry point, and describing one
+    tells the model nothing the code it tests does not.
+    """
+    from doc_generator.features.candidates import build_candidates
+
+    evidence, adjacency = _relevance_repository()
+    (candidate,) = build_candidates(evidence, adjacency)
+
+    assert candidate.memberKeys == (
+        "pkg/main_seed.py",  # the seed
+        "pkg/extra_seed.py",  # 3 entry points
+        "pkg/hub.py",  # coupling 5 inside the group
+        "pkg/plain.py",  # coupling 2
+        "pkg/plain2.py",  # coupling 1
+        "tests/test_x.py",  # a test, last
+    )
+    rendered = build_feature_plan_prompt(assign_handles([candidate]), evidence).to_prompt_text()
+    assert _described(rendered) == ["main_seed", "extra_seed", "hub"]
+
+
+def test_same_named_members_get_distinct_labels():
+    keys = (f"{MODULE_KEY_PREFIX}/api/__init__.py", f"{MODULE_KEY_PREFIX}/core/__init__.py")
+    evidence = RepositoryEvidence(
+        modules=tuple(
+            FeatureEvidence(moduleKey=key, moduleName="__init__", filePath=f"/r/{i}/__init__.py", directoryPath=".")
+            for i, key in enumerate(keys)
+        ),
+        moduleLabels={keys[0]: "api/__init__", keys[1]: "core/__init__"},
+    )
+    candidate = Candidate(seedModuleKey=keys[0], seedTitle="api", memberKeys=keys)
+
+    rendered = build_feature_plan_prompt(assign_handles([candidate]), evidence).to_prompt_text()
+
+    assert _described(rendered) == ["api/__init__", "core/__init__"]
+
+
+def test_a_long_label_is_cut_to_its_trailing_segments():
+    key = f"{MODULE_KEY_PREFIX}/deep.py"
+    label = "backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl"
+    evidence = RepositoryEvidence(
+        modules=(FeatureEvidence(moduleKey=key, moduleName="WalletServiceImpl", filePath="/r/x.java", directoryPath="."),),
+        moduleLabels={key: label},
+    )
+    candidate = Candidate(seedModuleKey=key, seedTitle="impl", memberKeys=(key,))
+
+    (described,) = _described(build_feature_plan_prompt(assign_handles([candidate]), evidence).to_prompt_text())
+
+    assert described == "services/impl/WalletServiceImpl"
+    assert len(described) <= MAX_MEMBER_LABEL_CHARS
+    assert label.endswith(described)
+
+
+def test_the_readme_lead_is_the_repository_description():
+    evidence = RepositoryEvidence(
+        modules=_evidence(2).modules,
+        readmeBullets=("Installation", "Licence"),
+        readmeLead="Bibliotheca lends books to members and tracks their fines.",
+    )
+
+    rendered = build_feature_plan_prompt(assign_handles(_candidates(2)), evidence).to_prompt_text()
+
+    assert "Bibliotheca lends books to members and tracks their fines." in rendered
+
+
+def test_readme_bullets_are_no_longer_sent():
+    """FR-014: headings and list items are the README's navigation, not what the software does."""
+    evidence = RepositoryEvidence(
+        modules=_evidence(2).modules, readmeBullets=("Installation", "Licence"), readmeLead="A library system."
+    )
+
+    rendered = build_feature_plan_prompt(assign_handles(_candidates(2)), evidence).to_prompt_text()
+
+    assert "Installation" not in rendered and "Licence" not in rendered
+
+
+def test_the_terminal_candidates_placeholder_seed_is_not_described():
+    from doc_generator.features.candidates import TERMINAL_FEATURE_TITLE, TERMINAL_SEED_KEY
+
+    evidence = _evidence(2)
+    member = evidence.modules[1].moduleKey
+    candidate = Candidate(seedModuleKey=TERMINAL_SEED_KEY, seedTitle=TERMINAL_FEATURE_TITLE, memberKeys=(member,))
+
+    rendered = build_feature_plan_prompt(assign_handles([candidate]), evidence).to_prompt_text()
+
+    assert TERMINAL_SEED_KEY not in rendered
+    assert _described(rendered) == ["mod_1"]
 
 
 # --------------------------------------------------------------------------

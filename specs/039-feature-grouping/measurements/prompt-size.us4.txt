@@ -1,0 +1,2 @@
+﻿codepedia-sample-repo: prompt 5663 chars = 1415 tokens; worst case prompt 5185, call 6385 of 8000
+nextgen-wealth-ledger: prompt 8878 chars = 2219 tokens; worst case prompt 5185, call 6385 of 8000

@@ -1,0 +1,24 @@
+﻿== [overview] Application Core (anchor DigitalBankingApplication.java; 3 production, 0 tests)
+   dirs: . 3
+   DigitalBankingApplication.java, README.md, refactor.py
+== [capability] Wallet Management (anchor services/impl/WalletServiceImpl.java; 38 production, 0 tests)
+   dirs: dtos 14, exceptions 8, frontend/src/app/features/wallets 5, entities 3, repositories 3, web/controllers 2, enums 1, services 1, services/impl 1
+   AccountHistoryDTO.java, AccountStatus.java, AccountStatusStatsDTO.java, AccountTypeStatsDTO.java, ActiveWallet.java, ActiveWalletDTO.java, ActiveWalletRepository.java, ApiError.java, BalanceNotSufficientException.java, ClientNotFoundException.java, CreateActiveWalletRequest.java, CreateStashWalletRequest.java, CreditRequest.java, DashboardController.java, DashboardStatsDTO.java, DebitRequest.java, GlobalExceptionHandler.java, InvalidOperationException.java, LedgerEntryDTO.java, MonthlyOperationStatsDTO.java, ResourceNotFoundException.java, StashWallet.java, StashWalletDTO.java, StashWalletRepository.java, TransferRequest.java, UserAlreadyExistsException.java, Wallet.java, WalletController.java, WalletDTO.java, WalletNotFoundException.java, WalletRepository.java, WalletService.java, WalletServiceImpl.java, account-detail.component.ts, credit-dialog.component.ts, debit-dialog.component.ts, transfer-dialog.component.ts, wallets.routes.ts
+== [capability] Authentication and Authorization (anchor frontend/src/app/core/services/auth.service.ts; 31 production, 0 tests)
+   dirs: dtos 4, entities 3, repositories 3, security 3, config 2, frontend/src/app 2, frontend/src/app/core/services 2, frontend/src/app/core/interceptors 2, web/controllers 1, services 1, services/impl 1, frontend/src/app/shared 1, frontend/src/app/core/guards 1, frontend/src/app/features/auth 1, frontend/src/app/features/auth/login 1, frontend/src 1, frontend/src/app/layout/navbar 1, frontend/src/app/features/auth/register 1
+   AppRole.java, AppRoleRepository.java, AppUser.java, AppUserRepository.java, AuthController.java, AuthResponse.java, AuthService.java, AuthServiceImpl.java, ChangePasswordRequest.java, Client.java, ClientRepository.java, CustomUserDetailsService.java, DataInitializationConfig.java, JwtAuthenticationFilter.java, JwtProvider.java, LoginRequest.java, RegisterRequest.java, SecurityConfig.java, animations.ts, app.component.ts, app.routes.ts, auth.guard.ts, auth.routes.ts, auth.service.ts, error.interceptor.ts, jwt.interceptor.ts, login.component.ts, main.ts, navbar.component.ts, register.component.ts, toast.service.ts
+== [capability] Client Management (anchor frontend/src/app/features/clients/clients.component.ts; 19 production, 0 tests)
+   dirs: frontend/src/app/features/clients 4, dtos 3, frontend/src/app/core/models 3, frontend/src/app/features/wallets 3, frontend/src/app/core/services 2, frontend/src/environments 2, web/controllers 1, frontend/src/app/shared/dialogs 1
+   ClientController.java, ClientDTO.java, CreateClientRequest.java, UpdateClientRequest.java, account.service.ts, client-detail.component.ts, client-form-dialog.component.ts, client.model.ts, client.service.ts, clients.component.ts, clients.routes.ts, confirm-dialog.component.ts, current-account-dialog.component.ts, environment.prod.ts, environment.ts, ledger-entry.model.ts, saving-account-dialog.component.ts, wallet.model.ts, wallets.component.ts
+== [capability] Chatbot Assistant (anchor frontend/src/app/features/chatbot/chatbot.component.ts; 9 production, 0 tests)
+   dirs: dtos 2, frontend/src/app/features/chatbot 2, web/controllers 1, services 1, services/impl 1, frontend/src/app/core/models 1, frontend/src/app/core/services 1
+   ChatRequest.java, ChatResponse.java, ChatbotController.java, ChatbotService.java, ChatbotServiceImpl.java, chat.model.ts, chatbot.component.ts, chatbot.routes.ts, chatbot.service.ts
+== [capability] Dashboard Overview (anchor frontend/src/app/features/dashboard/dashboard.component.ts; 4 production, 0 tests)
+   dirs: frontend/src/app/features/dashboard 2, frontend/src/app/core/models 1, frontend/src/app/core/services 1
+   dashboard.component.ts, dashboard.model.ts, dashboard.routes.ts, dashboard.service.ts
+== [capability] User Profile (anchor frontend/src/app/features/profile/profile.component.ts; 2 production, 0 tests)
+   dirs: frontend/src/app/features/profile 2
+   profile.component.ts, profile.routes.ts
+== [subsystem] Ledger Persistence (anchor repositories/LedgerEntryRepository.java; 3 production, 0 tests)
+   dirs: enums 1, entities 1, repositories 1
+   LedgerAction.java, LedgerEntry.java, LedgerEntryRepository.java

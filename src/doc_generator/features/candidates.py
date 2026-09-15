@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from .evidence import FeatureEvidence, RepositoryEvidence
 from .fallback import Weight, build_fallback_groups, default_group_title, lead_module_key
@@ -115,7 +115,7 @@ def build_candidates(
         grouped.setdefault(seed, []).append(module_key)
 
     groups = [
-        _Group(seed=seed, title=_seed_title(seed, directory_by_key, name_by_key), members=set(member_keys))
+        _Group(seed=seed, title="", members=set(member_keys), seeded=True)
         for seed, member_keys in grouped.items()
     ]
 
@@ -147,8 +147,16 @@ def build_candidates(
     candidates = [
         Candidate(
             seedModuleKey=group.seed,
-            seedTitle=group.title,
-            memberKeys=tuple(sorted(group.members, key=lambda key: (name_by_key.get(key, key), key))),
+            # A seeded group is titled after its anchor, not its seed: a fold
+            # keeps the target's seed, so the sample's `routes_members` group
+            # was titled after the data-seeding script it folded into (039
+            # FR-010, owner decision 2026-09-15).
+            seedTitle=(
+                _module_title(anchor_for(group.members, evidence, adjacency, name_by_key), directory_by_key, name_by_key)
+                if group.seeded
+                else group.title
+            ),
+            memberKeys=_by_relevance(group, evidence, adjacency, name_by_key),
             # From the members, excluding tests, however they arrived: 033 summed
             # only the surviving candidates' own counts, so every fold dropped the
             # absorbed ones' and every `nextgen-wealth-ledger` feature showed 0.
@@ -163,15 +171,106 @@ def build_candidates(
     return tuple(sorted(candidates, key=lambda candidate: (-len(candidate.memberKeys), candidate.seedModuleKey)))
 
 
-def _seed_title(seed: str, directory_by_key: Mapping[str, str], name_by_key: Mapping[str, str]) -> str:
-    # Qualified by the seed's package, never the bare module name. This
+def _by_relevance(
+    group: _Group,
+    evidence: RepositoryEvidence,
+    adjacency: Mapping[str, Mapping[str, Weight]],
+    name_by_key: Mapping[str, str],
+) -> tuple[str, ...]:
+    """A candidate's members, most telling first (039 FR-012).
+
+    The seed; then production members by entry points, then by coupling to the
+    rest of the group, then by label; test files last. The planner describes the
+    first `MAX_MEMBERS_PER_CANDIDATE`. 033 kept name order, so the model saw the
+    first three alphabetically - the sample's API group as `README`,
+    `__init__`, `__init__`. Feature pages still list members by name
+    (`validate._build_features`), and the plan cache key sorts them, so the
+    order carries relevance and nothing else.
+    """
+    tests = evidence.testModuleKeys
+    entry_points = evidence.entryPointKeysByModuleKey
+
+    def coupling(key: str) -> Weight:
+        return sum(
+            weight
+            for neighbor, weight in adjacency.get(key, {}).items()
+            if neighbor in group.members and neighbor not in tests
+        )
+
+    def rank(key: str) -> tuple:
+        is_test = key in tests
+        return (
+            key != group.seed,
+            is_test,
+            0 if is_test else -len(entry_points.get(key, ())),
+            -coupling(key),
+            evidence.moduleLabels.get(key) or name_by_key.get(key, key),
+            key,
+        )
+
+    return tuple(sorted(group.members, key=rank))
+
+
+def _module_title(key: str, directory_by_key: Mapping[str, str], name_by_key: Mapping[str, str]) -> str:
+    # Qualified by the module's package, never the bare module name. This
     # repository has eleven modules called `models` and eighteen called
     # `__init__`, so bare names would give four candidates the title
     # "models" - and `validate.py` rejects duplicate titles, so with no model
     # reachable three of those four features would be thrown away and
     # reassigned. The title a candidate carries when nothing named it has to
     # be usable on its own.
-    return default_group_title(directory_by_key.get(seed, "."), name_by_key.get(seed, seed), split=True)
+    return default_group_title(directory_by_key.get(key, "."), name_by_key.get(key, key), split=True)
+
+
+def anchor_for(
+    member_keys: Iterable[str],
+    evidence: RepositoryEvidence,
+    adjacency: Mapping[str, Mapping[str, Weight]],
+    name_by_key: Mapping[str, str],
+) -> str:
+    """A feature's anchor: its page address and the module it starts at (039 FR-010).
+
+    1. the entry module - a command, a route or `main` - with the most entry points;
+    2. else the seed with the most entry points;
+    3. else 033's rule, the most internally connected member, among production
+       modules when there are any: a test is the best-connected module there
+       is, and must not become a page address (FR-008).
+
+    Ties on entry points go to the module whose entry points reach the most
+    modules - where more of the feature's work starts - then to the module
+    name, then the key. Measured at T036: the model merged the sample's lending
+    and email groups, both seeds held two entry points, and name order alone
+    anchored "Lending Management Service" at `email_gateway`, which the lending
+    service calls (owner decision, 2026-09-15). 033 used rule 3 alone, and it
+    picked a helper every time it was checked - `ids` for the lending service,
+    `errors` for the catalog, an animations file for the frontend - so every
+    sentence the Overview wrote about those subsystems described the helper.
+
+    A seeded candidate is titled after the same module when no model names it,
+    so the module that names a feature and the module that addresses its page
+    are one, as 033 required of its own rule.
+    """
+    members = sorted(set(member_keys))
+    entry_points = evidence.entryPointKeysByModuleKey
+
+    def most_entry_points(keys: Sequence[str]) -> str:
+        top = max(len(entry_points.get(key, ())) for key in keys)
+        tied = [key for key in keys if len(entry_points.get(key, ())) == top]
+        if len(tied) == 1:
+            return tied[0]
+        reach = _reach(tied, evidence)
+        return min(tied, key=lambda key: (-reach[key], name_by_key.get(key, key), key))
+
+    entry_keys = set(evidence.entryModuleKeys)
+    entries = [key for key in members if key in entry_keys]
+    if entries:
+        return most_entry_points(entries)
+    seed_keys = set(evidence.seedModuleKeys)
+    seeds = [key for key in members if key in seed_keys]
+    if seeds:
+        return most_entry_points(seeds)
+    production = [key for key in members if key not in evidence.testModuleKeys]
+    return lead_module_key(production or members, adjacency, name_by_key)
 
 
 def _assign_by_coupling(
@@ -246,6 +345,9 @@ class _Group:
     seed: str
     title: str
     members: set[str] = field(default_factory=set)
+    #: Started by a seed, so titled after its anchor once folding is done
+    #: (039 FR-010). Directory and leftover groups keep their directory title.
+    seeded: bool = False
 
 
 class _Folding:
@@ -551,19 +653,16 @@ def _common_prefix_length(left: Sequence[str], right: Sequence[str]) -> int:
     return length
 
 
-def anchor_module_key(
-    member_keys: Sequence[str],
-    adjacency: Mapping[str, Mapping[str, Weight]],
-    name_by_key: Mapping[str, str],
-) -> str:
-    """A feature's anchor: its most internally connected member.
-
-    The same rule `fallback.lead_module_key` uses to name a cluster, reused
-    deliberately rather than reimplemented - the module that best names a group
-    and the module that addresses its page must be the same one, or the page has
-    two identities.
-    """
-    return lead_module_key(member_keys, adjacency, name_by_key)
+def _reach(keys: Sequence[str], evidence: RepositoryEvidence) -> Counter[str]:
+    """How many modules each of `keys`' entry points reach, together (a module counts once per key)."""
+    owner_by_entry_point = {
+        entry_point: key for key in keys for entry_point in evidence.entryPointKeysByModuleKey.get(key, ())
+    }
+    reach: Counter[str] = Counter({key: 0 for key in keys})
+    for item in evidence.modules:
+        for owner in {owner_by_entry_point[entry_point] for entry_point in item.reachingEntryPointKeys if entry_point in owner_by_entry_point}:
+            reach[owner] += 1
+    return reach
 
 
 def evidence_for(evidence: RepositoryEvidence, member_keys: Sequence[str]) -> list[FeatureEvidence]:

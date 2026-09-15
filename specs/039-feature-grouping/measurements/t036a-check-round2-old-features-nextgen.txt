@@ -1,0 +1,16 @@
+﻿   redirect account-service-70c92d08.html -> clients-component-99983a37.html
+   redirect accountstatus-129b1546.html -> ledgerentryrepository-99fb7b32.html
+   redirect activewallet-bfbf5fe5.html -> walletserviceimpl-532fcc10.html
+   redirect activewalletrepository-077f1def.html -> walletserviceimpl-532fcc10.html
+   redirect animations-5074657f.html -> walletserviceimpl-532fcc10.html
+   redirect apierror-a369a98a.html -> walletserviceimpl-532fcc10.html
+   live     auth-service-3be6537c.html
+   live     chatbot-component-74e71c51.html
+   redirect chat-model-ba90d858.html -> clients-component-99983a37.html
+   live     dashboard-component-a1eaef11.html
+   live     digitalbankingapplication-d9029a38.html
+   redirect environment-5adfd762.html -> clients-component-99983a37.html
+   live     ledgerentryrepository-99fb7b32.html
+   live     profile-component-f9ab7037.html
+   redirect walletservice-a46b5aaf.html -> walletserviceimpl-532fcc10.html
+== 15 old addresses: 6 live, 9 redirect to a live page, 0 broken

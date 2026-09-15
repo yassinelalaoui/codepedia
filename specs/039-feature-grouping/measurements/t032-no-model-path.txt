@@ -1,0 +1,2 @@
+﻿codepedia-sample-repo: plan=None, calls=1, refused == no planner: True, rebuilt == first: True, features=14
+nextgen-wealth-ledger: plan=None, calls=2, refused == no planner: True, rebuilt == first: True, features=20

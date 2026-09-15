@@ -316,6 +316,45 @@ from `RepositoryEvidence`, so it holds after the model's merges.
   `auth.service.ts`, `navbar.component.ts`, `account-detail.component.ts`,
   among others. `animations.ts` is no longer an anchor.
 
+**Ties on entry points go to reach** (owner decision, 2026-09-15, after
+T036). The tie-break became: entry points, then the number of modules the
+module's entry points reach, then name, then key. At T036 the model merged
+groups whose seeds held equal entry points, and name order alone anchored
+"Lending Management Service" at `email_gateway` and "Catalog Management
+Service" at `book`. With reach, they are `lending_service` and
+`catalog_service`. Compared by `tiebreak_probe.py` against the cached plans,
+coupling as the tie-break fixed only the catalog.
+
+Without a model, the sample's 14 anchors are unchanged. Two of nextgen's 20
+change: the `account.service` group now starts at `clients.component.ts`, and
+the chatbot group at `ChatbotServiceImpl.java` instead of `ChatbotService.java`
+(`nomodel_anchors.py`).
+
+**As implemented (T021–T025):**
+
+- **Where the rule lives:** `candidates.anchor_for`, used by
+  `validate._build_features` and for titles. `anchor_module_key` had no
+  caller left and was removed.
+- **Production members first (owner decision, 2026-09-15):** rule 3 picks the most
+  connected *production* member when there is one, because a test is the
+  best-connected module there is and must not become a page address (FR-008).
+- **Measured anchors:** they match the list above on both repositories.
+- **An existing test adapted:**
+  `test_feature_page_identity.py::test_a_real_anchor_move_across_two_runs_leaves_a_redirect`
+  moved its anchor by rewiring imports, which FR-010 no longer allows while a
+  seed is present. It now moves it by giving `core` two commands.
+
+**Titles without a model follow the anchor** (owner decision, 2026-09-15,
+before T021). 033 titled a candidate after its seed (`<directory> - <seed>`).
+A fold keeps the target's seed, so after the MVP the sample's group holding
+`routes_members` was titled "scripts - seed_data", because `routes_members`
+folded into the data-seeding script's group. The same group is anchored at
+`routes_members`, which has more entry points. So a seeded candidate's
+deterministic title is built from its anchor instead. Groups formed by
+directory (fallback, leftovers) keep their directory title, and the terminal
+group keeps `TERMINAL_FEATURE_TITLE`. The seed stays the candidate's identity
+(`seedModuleKey`), which repair and the planner use.
+
 **Consequence**: most feature keys change on the first run after upgrading,
 and 033's plurality redirect (`_redirect_superseded_pages`) keeps every old
 address resolving (FR-011). No new mechanism is needed.
@@ -395,6 +434,23 @@ format. It is recorded as a possible follow-up.
   constants, and the existing test asserts it stays ≤ 8,000.
   `test_feature_planner.py` gains the label cap in its arithmetic.
 
+**As implemented (T026–T030):**
+
+- **Budget:** `MEMBER_LINE_OVERHEAD_CHARS` falls from 40 to 10, since it no
+  longer has to cover the uncapped name. The worst-case call is 6,385 tokens
+  (was 6,145).
+- **Measured prompts:** 1,415 tokens on the sample and 2,219 on nextgen.
+- **Tests last (owner decision, 2026-09-15):** test files are described last. A
+  test holds no non-test entry point, and describing one tells the model
+  nothing the code it tests does not.
+- **The anchor is not always described:** it titles the group, but members
+  are ranked by entry points. On the sample the `routes_members` group
+  describes `seed_data` (its seed), then `policies` and `catalog`, which hold
+  more entry points.
+- **Weak README lead:** nextgen's is only "Welcome to the NexGen Wealth Ledger
+  repository!", because its first prose paragraph is a greeting.
+  `read_readme_lead` is shared with 038's Overview.
+
 ---
 
 ## Decision 11: Known limits, measured and accepted
@@ -458,6 +514,116 @@ explain rather than chase the differences:
   *largest* group, a shortcut FR-006 forbids.
 - Its directory walk may climb into the root. Neither reference repository
   exercised that path.
+
+---
+
+## Decision 13: The implementation, measured (T001–T038, 2026-09-15)
+
+Everything below is recorded in `measurements/`: the probe outputs
+`probe-*.{033,us1,us2,us3,us4,t036,round2}.txt`, `proto-vs-impl.*`,
+`t036-round.md` and `t037-results.md`.
+
+### Against the prototype
+
+- **Grouping without a model:** the sample's 14 groups match the prototype
+  exactly. On nextgen, 19 of 20 match; the other is `README.md` and
+  `refactor.py` combining into "Root", as step 4 requires and the prototype
+  lacked.
+- **Where it got there:** only after the T020 fold-order correction (Decision
+  6). Running all coupling folds first let the seeding script absorb the CLI.
+- **Anchors:** they match Decision 7, with the two nextgen changes the reach
+  tie-break made (`clients.component.ts`, `ChatbotServiceImpl.java`).
+
+### Success criteria
+
+| SC | Result |
+| --- | --- |
+| SC-001 | **Met.** Without a model, the largest feature is 18% on the sample and 16% on nextgen (was 23% and 85%). With the model: 35% and 35%, recorded only (clarification Q5). |
+| SC-002 | **Met.** Per import: Java 66 of 66 and TypeScript 75 of 75 in-repository imports resolved. Coupled modules: Java 63 of 64, TypeScript 42 of 43. |
+| SC-003 | **Met.** 0 groups seeded by a test file (was 5 on the sample). |
+| SC-004 | **Met.** Counts add up: 76 = 76 and 189 = 189 (every nextgen feature showed 0 before). |
+| SC-005 | **Met.** Every feature is anchored at an entry module or seed, with and without the model. On the sample the model-named lending and catalog features start at `lending_service` and `catalog_service` (after the reach tie-break), and the CLI's feature at `cli`. Never `ids`, `errors`, `member` or `animations.ts`. |
+| SC-006 | **Nextgen met: 7 of 9**, including wallets, authentication and security, chatbot and the frontend. **Sample not met: 3 of 8** with the model. The model merged vertical slices, the sample's key lists layers, and the CLI is a minority in "Developer Tools". Without a model the sample maps to 6 of 8, with the CLI borderline. Recorded as not met; the criterion was not amended after the fact (owner decision). |
+| SC-007 | **Half met.** Both reviewers now name the key subsystems from the table and prose (at least 5 and 6), where 038's named them from module names. Both still flag more than one subsystem, so it is not met. After T037a: sample 5 flagged (was 7), nextgen 8 (was 5); both "PARTLY". |
+| SC-008 | **Met.** Every module is in exactly one feature. There is one planner call per grouping and none on an unchanged rerun (cache hit verified). Every published address resolves: pre-039 12 of 12 and 7 of 7, round-1 17 of 17 and 15 of 15, after T036a. A body-only edit stays incremental (test). The worst-case planner call is 6,385 of 8,000 tokens. |
+
+### What the remaining SC-007 flags come from
+
+- **038's relation sentences** (sample 2, nextgen 1). Each subsystem paragraph
+  claims whom it "calls", "stores results for" or "integrates"; the spec left
+  038's prompt unchanged.
+- **Names the model chose** (sample 2, nextgen 2): "Time Management Core",
+  "Developer Tools", "Application Core", and "Ledger Persistence" for a single
+  repository.
+- **Cross-stack features start at one layer** (nextgen 6). The model merged
+  each backend slice with its frontend slice, and the anchor is the seed with
+  the most entry points, often an Angular component. Spring controllers are
+  ordinary seeds, not routes, because Java annotations are out of scope
+  (Assumptions).
+- **An anchor among equals** (sample 1): `routes_loans` among three route files.
+
+### Owner decisions taken during implementation
+
+- **T015:** when no group can stand alone, nothing folds (033's rule).
+- **T015:** the fallback clustering's ancestor rule never climbs into the root.
+- **Before T021:** a feature no model named is titled after its anchor.
+- **After T030:** a test file never anchors (FR-010 step 3), and test files are
+  described to the planner last (FR-012).
+- **After T036:** ties on entry points go to the widest reach (FR-010).
+- **T036a:** every recorded alias is followed to its live page and its stub
+  rewritten after each run. A full `index` had been losing earlier redirect
+  stubs, a pre-039 defect.
+- **T037a:** the Overview table's "Start with" is the anchor, so it matches
+  the paragraph.
+- **Mine, recorded at T020:** steps 1 to 3 run per group, as in the prototype.
+
+### Existing tests changed
+
+- `tests/unit/test_overview_evidence.py`: the parametrised test-path cases
+  moved to `test_feature_evidence.py`, leaving thin copies and a re-export check
+  (Decision 3).
+- `tests/unit/test_feature_planner.py`:
+  - `test_the_cache_key_ignores_summaries` passes the candidates, because the
+    key's signature changed (FR-018);
+  - `test_the_budget_arithmetic_is_the_documented_one` counts
+    `MAX_MEMBER_LABEL_CHARS` (FR-015).
+- `tests/integration/test_feature_page_identity.py::test_a_real_anchor_move_across_two_runs_leaves_a_redirect`:
+  the anchor now moves through entry points, not imports (FR-010).
+- `tests/integration/test_overview_subsystems.py::test_start_with_module_belongs_to_its_subsystem_and_prefers_the_most_entry_points`:
+  a comment only; the expectation is unchanged.
+- No test's expectation changed because of FR-006, FR-006a or FR-007.
+
+### Model use
+
+Four owner-approved rounds, each hash-checked and restored byte for byte:
+
+| Round | Model calls |
+| --- | --- |
+| 1 | the planner and the Overview, per repository |
+| 2 | the Overview, per repository |
+| 3 (T036a repair) | none |
+| 4 (T037a regeneration) | none |
+
+Summaries and embeddings were reused every time.
+
+### Test suite
+
+- **Baseline** (T001, before any 039 code): 1,419 tests, all passing, 1
+  skipped.
+- **Final run:** 1,503 tests, 1 skipped, 1 failed. The failure is the known
+  `test_cli.py::test_config_before_any_provider_reachable_still_reports_without_failing`,
+  which fails whenever Groq answers; it was re-run and confirmed.
+
+### Follow-ups, not done here
+
+- **038's narrative:** the relation sentences, and its greeting-only README lead
+  on nextgen.
+- **Java annotations:** recognising Spring controllers as routes, which would
+  anchor cross-stack features at a controller.
+- **SC-006 on the sample:** it scores layers, while the grouping forms slices.
+- **The wiki shell's narrow layout:** the table is clipped at 700 px.
+- **The model's `tooling` kind for the CLI:** no Overview paragraph.
+- **038 T053**, and its analyze findings (038 HANDOFF §3).
 
 ---
 

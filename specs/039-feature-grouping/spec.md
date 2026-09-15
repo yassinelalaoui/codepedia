@@ -341,11 +341,20 @@ repository description is the README's opening paragraph.
 #### Anchors (User Story 3)
 
 - **FR-010**: A feature's anchor MUST be chosen in this order, with ties
-  resolved identically on every run:
+  resolved identically on every run. A tie on entry points goes to the module
+  whose entry points reach the most modules, then to the module name (owner
+  decision, 2026-09-15):
   1. its entry module (FR-006a) with the most entry points;
   2. if it holds no entry module, its seed with the most non-test entry
      points;
-  3. if it holds no seed, 033's rule: its most internally connected member.
+  3. if it holds no seed, 033's rule: its most internally connected member,
+     among its non-test members when it has any, so a test file never becomes
+     a page address (owner decision, 2026-09-15).
+
+  A feature no model named is titled after its anchor, the way 033 titled it
+  after its seed: the anchor's directory and name. The title without a model
+  then names the module the feature starts at. Groups formed by directory keep
+  their directory title (owner decision, 2026-09-15).
 - **FR-011**: Every feature page address published before this feature MUST
   keep resolving after it, through 033's alias mechanism (033 FR-020 and
   FR-021). No new mechanism is added for this.
@@ -355,7 +364,8 @@ repository description is the README's opening paragraph.
 - **FR-012**: Each group's members described to the model MUST be chosen and
   ordered by relevance: its seed first, then members by number of non-test
   entry points, then by coupling within the group, with a deterministic
-  tie-break. They MUST NOT be chosen alphabetically.
+  tie-break, and test files after every other member (owner decision,
+  2026-09-15). They MUST NOT be chosen alphabetically.
 - **FR-013**: Members described to the model MUST carry labels that tell
   same-named modules apart.
 - **FR-014**: The repository description given to the model MUST be the

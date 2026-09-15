@@ -1,6 +1,6 @@
 # Major Function: Full Repository Indexing
 
-**Specs**: 001, 002/003, 004, 005, 009/010, 006/007, 012, 019, 038
+**Specs**: 001, 002/003, 004, 005, 009/010, 006/007, 012, 019, 033, 038, 039
 
 The from-scratch flow: `codepedia index <path>` (019) points the tool at a
 repository once, and it becomes a fully analyzed, summarized, embedded, and
@@ -40,6 +40,11 @@ sequenceDiagram
     cli->>DependencyGraph: build_from_inventories(inventories).save(...)
 
     cli->>DocGenerator: generateRepositoryDocumentation(incremental=False, narrateOverview=False)\n(structure pass, no summaries yet, no Overview narrative)
+    DocGenerator->>DocGenerator: group modules into features (033, 039): seeds, import coupling\n(Python, Java, JS/TS), folding by directory, tests placed last, no model
+    opt feature plan (033): no cached plan for this grouping
+        DocGenerator->>LocalLLMEngine: one generate(prompt) names and combines the groups
+        LocalLLMEngine-->>DocGenerator: JSON plan (cached, keyed on the grouping)
+    end
 
     cli->>CodeSummaryPipeline: summarizeRepository(root, incremental=False)
     CodeSummaryPipeline->>LocalLLMEngine: checkAvailability()
@@ -55,7 +60,7 @@ sequenceDiagram
         end
     end
 
-    cli->>DocGenerator: generateRepositoryDocumentation(incremental=False)\n(content pass, reflects the summaries just generated)
+    cli->>DocGenerator: generateRepositoryDocumentation(incremental=False)\n(content pass, reflects the summaries just generated,\nsame grouping, so the cached feature plan is reused)
     opt Overview narrative (038): no cached reply for this exact prompt
         DocGenerator->>LocalLLMEngine: one generate(prompt) through the summary chain
         LocalLLMEngine-->>DocGenerator: JSON reply (lead + subsystem paragraphs)

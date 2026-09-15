@@ -554,6 +554,28 @@ def test_entry_point_counts_add_up_to_the_non_test_total():
     assert _holding(candidates, "pkg/lonely.py").exposedEntryPointCount >= 5, "a_seed's 3 plus lonely's 2"
 
 
+def test_a_seeded_group_is_titled_by_its_anchor():
+    """FR-010's title sentence (owner decision, 2026-09-15).
+
+    `routes_members` folds into the seeding script's group, which keeps its
+    seed; titled by the seed it read "scripts - seed_data" on the sample. Its
+    anchor is `routes_members`, the entry module with the most entry points.
+    """
+    paths = ["scripts/seed_data.py", "scripts/helper.py", "api/routes_members.py"]
+    evidence = _hand(
+        paths, entries=("scripts/seed_data.py", "api/routes_members.py"), counts={"api/routes_members.py": 3}
+    )
+    adjacency = _adj(
+        paths, ("scripts/seed_data.py", "scripts/helper.py"), ("scripts/seed_data.py", "api/routes_members.py")
+    )
+
+    group = _holding(build_candidates(evidence, adjacency), "api/routes_members.py")
+
+    assert set(group.memberKeys) == set(paths)
+    assert group.seedModuleKey == "scripts/seed_data.py", "the seed stays the candidate's identity"
+    assert group.seedTitle == "api - routes_members"
+
+
 def test_when_no_group_can_stand_alone_nothing_is_folded():
     """033's rule, kept (owner decision, 2026-09-15).
 

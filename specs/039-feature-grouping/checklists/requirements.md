@@ -55,4 +55,14 @@
 - **FR-006 amended at T015** (owner decision, 2026-09-15): when no group can
   stand alone, nothing is folded, as in 033. It is one sentence, testable, and
   names no implementation. All 16 items still pass.
+- **FR-010 amended before T021** (owner decision, 2026-09-15): a feature no
+  model named is titled after its anchor. It is testable and names no
+  implementation. All 16 items still pass.
+- **FR-010 step 3 and FR-012 amended after T030** (owner decisions,
+  2026-09-15): a test file never anchors a feature, and test files are
+  described to the model last. Both are testable and name no implementation.
+  All 16 items still pass.
+- **FR-010 tie-break amended after T036** (owner decision, 2026-09-15): ties
+  on entry points go to the widest reach, then the name. It is testable and
+  names no implementation. All 16 items still pass.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.

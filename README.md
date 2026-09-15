@@ -27,7 +27,10 @@ picture and *why* it's built this way.
   against the code so every name it mentions is real and links to its page.
   Next come a table of the repository's subsystems, each with what it is for
   and where to start reading, and a module list whose rows are readable and
-  distinct. With no AI provider available, the page keeps the same structure
+  distinct. The subsystems, which are also the sidebar's entries, follow how
+  the code connects: modules are grouped by their imports in Python, Java and
+  JavaScript/TypeScript, each subsystem starts at the module where its work
+  enters, and tests sit beside the code they test. With no AI provider available, the page keeps the same structure
   and links, just without the prose. Beyond the Overview: one page per module, clickable
   dependency diagrams, a repository-wide class diagram of its structurally
   major classes, one bounded call-sequence diagram per identified entry

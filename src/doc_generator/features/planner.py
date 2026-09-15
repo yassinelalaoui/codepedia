@@ -47,13 +47,23 @@ MAX_PLAN_RESPONSE_TOKENS = 1200
 # constants rather than measurements of the live strings because the assertion
 # has to bound what the prompt *could* be, not what one example happens to be.
 CANDIDATE_HEADER_CHARS = 60
-MEMBER_LINE_OVERHEAD_CHARS = 40
+# The bullet, the separator before the summary and the newline, with slack.
+# Before 039 this also had to cover the module name, which nothing capped.
+MEMBER_LINE_OVERHEAD_CHARS = 10
 SYSTEM_PROMPT_CHARS = 1000
+
+# A member's label: `prose.disambiguated_labels`, so the sample's two
+# `__init__` members read `api/__init__` and `core/__init__` (039 FR-013), cut
+# to its trailing path segments. A full Java path is ~80 characters; the class
+# and its package are what name it.
+MAX_MEMBER_LABEL_CHARS = 40
 
 # Part of the plan cache key. Bump it whenever the grouping rules or the
 # planning prompt change: a plan made under the old ones must not be reused,
 # and a bump costs one planner call per repository (039 research Decision 9).
-GROUPING_VERSION = "2"
+# "2": the key started hashing the grouping. "3": the prompt shows members by
+# relevance and label, and the README's opening paragraph (User Story 4).
+GROUPING_VERSION = "3"
 
 SYSTEM_PROMPT = (
     "You organise a source repository into the features it offers its users. "
@@ -135,7 +145,7 @@ def worst_case_prompt_tokens() -> int:
     `test_feature_planner.py`. A test that restated the answer could not catch
     that.
     """
-    member_line = MEMBER_LINE_OVERHEAD_CHARS + MAX_MEMBER_SUMMARY_CHARS
+    member_line = MEMBER_LINE_OVERHEAD_CHARS + MAX_MEMBER_LABEL_CHARS + MAX_MEMBER_SUMMARY_CHARS
     per_candidate = CANDIDATE_HEADER_CHARS + MAX_MEMBERS_PER_CANDIDATE * member_line
     total_chars = (
         MAX_PROMPTED_CANDIDATES * per_candidate + MAX_README_PROMPT_CHARS + SYSTEM_PROMPT_CHARS
@@ -175,15 +185,21 @@ def build_feature_plan_prompt(
             f"{candidate.handle}: {candidate.seedTitle} "
             f"({len(candidate.memberKeys)} modules)"[:CANDIDATE_HEADER_CHARS]
         )
+        # Members arrive most telling first (`candidates._by_relevance`).
         for module_key in candidate.memberKeys[:MAX_MEMBERS_PER_CANDIDATE]:
             item = evidence_by_key.get(module_key)
             if item is None:
                 continue
             summary = _first_sentence(item.docstring or item.generatedSummary)
             suffix = f" - {summary}" if summary else ""
-            lines.append(f"  - {item.moduleName}{suffix}")
+            label = _member_label(evidence.moduleLabels.get(module_key) or item.moduleName)
+            lines.append(f"  - {label}{suffix}")
 
-    readme = "\n".join(f"- {bullet}" for bullet in evidence.readmeBullets)
+    # The README's opening paragraph, in its own words (039 FR-014). Not its
+    # headings and list items: measured on the sample repository they are
+    # headings and directory names (038's `overview.evidence` docstring), and a
+    # model copies directory names back.
+    readme = evidence.readmeLead[:MAX_README_PROMPT_CHARS]
     readme_block = f"\nWhat the repository says about itself:\n{readme}\n" if readme else ""
 
     prompt_text = (
@@ -214,6 +230,19 @@ def build_feature_plan_prompt(
             "reasoning_effort": "low",
         },
     )
+
+
+def _member_label(label: str) -> str:
+    """The label's trailing path segments that fit `MAX_MEMBER_LABEL_CHARS`."""
+    if len(label) <= MAX_MEMBER_LABEL_CHARS:
+        return label
+    segments = label.split("/")
+    kept = segments[-1][:MAX_MEMBER_LABEL_CHARS]
+    for segment in reversed(segments[:-1]):
+        if len(segment) + 1 + len(kept) > MAX_MEMBER_LABEL_CHARS:
+            break
+        kept = f"{segment}/{kept}"
+    return kept
 
 
 def parse_feature_plan(text: str) -> FeaturePlan | None:

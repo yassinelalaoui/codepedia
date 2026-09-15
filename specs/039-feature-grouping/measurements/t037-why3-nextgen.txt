@@ -1,0 +1,23 @@
+﻿majors: ['Application Core', 'Wallet Management', 'Authentication and Authorization', 'Client Management', 'Chatbot Assistant', 'Dashboard Overview', 'User Profile', 'Ledger Persistence']
+---- raw reply ----
+{
+  "lead": [
+    "The nextgen-wealth-ledger repository implements a digital banking platform that manages accounts, transactions, authentication, and user interfaces. Work enters through the main function `DigitalBankingApplication.main` in `backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java`.",
+    "`DigitalBankingApplication.main` in `backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java` is the startup routine and its calls reach [[f0]].",
+    "Results can be stored by [[f7]] via `backend/src/main/java/ma/yassine/digitalbanking/repositories/LedgerEntryRepository.java`, returned by [[f1]] via `backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl.java`, and provided by [[f2]] via `frontend/src/app/core/services/auth.service.ts`."
+  ],
+  "subsystems": {
+    "f0": "Application Core bootstraps the digital banking application and supplies global configuration. Its start file is `backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java`. It interacts with [[f1]], [[f2]], [[f3]], [[f4]], [[f5]], [[f6]] and [[f7]].",
+    "f1": "Wallet Management offers APIs and a UI for creating, viewing, and transacting with user wallets. Its start file is `backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl.java`. It calls into [[f2]] and [[f7]].",
+    "f2": "Authentication and Authorization handles user login, token validation, and access control throughout the app. Its start file is `frontend/src/app/core/services/auth.service.ts`. It collaborates with [[f0]] and [[f1]].",
+    "f3": "Client Management enables creation, editing, and viewing of client records and related details. Its start file is `frontend/src/app/features/clients/clients.component.ts`. It works with [[f0]] and [[f5]].",
+    "f4": "Chatbot Assistant provides an interactive chatbot for user support and transaction guidance. Its start file is `frontend/src/app/features/chatbot/chatbot.component.ts`. It interacts with [[f0]] and [[f5]].",
+    "f5": "Dashboard Overview displays summary statistics and recent activity for a user's financial portfolio. Its start file is `frontend/src/app/features/dashboard/dashboard.component.ts`. It pulls data from [[f1]] and [[f7]].",
+    "f6": "User Profile allows users to view and edit personal profile information. Its start file is `frontend/src/app/features/profile/profile.component.ts`. It references [[f0]] and [[f2]].",
+    "f7": "Ledger Persistence stores and retrieves immutable ledger entries for all financial operations. Its start file is `backend/src/main/java/ma/yassine/digitalbanking/repositories/LedgerEntryRepository.java`. It is accessed by [[f1]] and [[f5]]."
+  }
+}
+---- verdicts ----
+kept lead paragraphs: 3; withheld: False
+kept 11 of 11 offered; unasked (ignored): 0
+subsystem paragraphs kept: ['Application Core', 'Wallet Management', 'Authentication and Authorization', 'Client Management', 'Chatbot Assistant', 'Dashboard Overview', 'User Profile', 'Ledger Persistence']

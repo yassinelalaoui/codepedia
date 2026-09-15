@@ -1,0 +1,24 @@
+﻿== [overview] Documentation & Guides (anchor README.md; 3 production, 0 tests)
+   dirs: docs 2, . 1
+   README.md, architecture.md, getting-started.md
+== [capability] Public API Endpoints (anchor api/routes_loans.py; 14 production, 4 tests)
+   dirs: domain 5, services 4, api 3, storage 1, scripts 1
+   __init__.py, catalog.py, fine_calculator.py, loan.py, member.py, member_service.py, notifications.py, policies.py, repository.py, routes_books.py, routes_loans.py, routes_members.py, search.py, seed_data.py
+== [capability] Lending Management Service (anchor services/lending_service.py; 4 production, 0 tests)
+   dirs: integrations 2, utils 1, services 1
+   __init__.py, email_gateway.py, ids.py, lending_service.py
+== [capability] Catalog Management Service (anchor services/catalog_service.py; 5 production, 1 tests)
+   dirs: utils 2, domain 1, services 1, core 1
+   __init__.py, book.py, catalog_service.py, errors.py, text.py
+== [subsystem] Storage Implementations (anchor storage/memory_store.py; 4 production, 0 tests)
+   dirs: storage 4
+   __init__.py, memory_store.py, migrations.py, sqlite_store.py
+== [subsystem] Time Management Core (anchor core/clock.py; 5 production, 0 tests)
+   dirs: core 2, services 1, api 1, domain 1
+   __init__.py, clock.py, config.py, dependencies.py, fine.py
+== [subsystem] Application Bootstrap (anchor api/app.py; 5 production, 0 tests)
+   dirs: api 2, core 1, integrations 1, utils 1
+   __init__.py, __init__.py, app.py, isbn_client.py, validation.py
+== [tooling] Developer Tools (anchor cli.py; 6 production, 0 tests)
+   dirs: web/static 4, . 2
+   __init__.py, api-client.js, app.js, cli.py, search.js, types.ts
