@@ -50,6 +50,11 @@ CANDIDATE_HEADER_CHARS = 60
 MEMBER_LINE_OVERHEAD_CHARS = 40
 SYSTEM_PROMPT_CHARS = 1000
 
+# Part of the plan cache key. Bump it whenever the grouping rules or the
+# planning prompt change: a plan made under the old ones must not be reused,
+# and a bump costs one planner call per repository (039 research Decision 9).
+GROUPING_VERSION = "2"
+
 SYSTEM_PROMPT = (
     "You organise a source repository into the features it offers its users. "
     "You are given groups of modules, each with a short handle like c0 or c3. "
@@ -69,7 +74,7 @@ _JSON_BLOCK = re.compile(r"\[.*\]", re.DOTALL)
 
 
 class FeaturePlanCache(Protocol):
-    """Persistence for a whole plan, keyed by the structure that produced it.
+    """Persistence for a whole plan, keyed by the structure and grouping that produced it.
 
     `doc_generator` regenerates documentation more than once per index - once for
     structure, once after summaries land - and again on every incremental run.
@@ -87,15 +92,24 @@ def target_feature_count(module_count: int) -> int:
     return max(8, min(20, module_count // 8))
 
 
-def plan_cache_key(evidence: RepositoryEvidence) -> str:
-    """Identifies the repository's *structure*, deliberately not its content.
+def plan_cache_key(evidence: RepositoryEvidence, candidates: Sequence[Candidate]) -> str:
+    """Identifies the repository's *structure and grouping*, deliberately not its content.
 
-    Module keys plus entry-point keys - never summaries or docstrings. Summaries
-    land between the two regenerations of a single indexing run, so a
-    content-keyed cache would miss on the second pass and spend a second call
-    every time (constitution 2.5).
+    Module keys, entry-point keys and each candidate's members in handle order -
+    never summaries or docstrings. Summaries land between the two regenerations
+    of a single indexing run, so a content-keyed cache would miss on the second
+    pass and spend a second call every time (constitution 2.5). Grouping reads
+    only imports and entry points, so both passes still share one key.
+
+    The grouping is in the key because a plan names candidates by position
+    (`c0`, `c1`, …). Keyed on structure alone, an edit that regrouped the
+    modules reapplied the old titles to whichever groups now held those
+    positions (039 FR-018). Members are sorted: their order carries relevance
+    for the prompt, not identity.
     """
     digest = hashlib.sha1()
+    digest.update(GROUPING_VERSION.encode("utf-8"))
+    digest.update(b"\1")
     for module_key in sorted(item.moduleKey for item in evidence.modules):
         digest.update(module_key.encode("utf-8"))
         digest.update(b"\0")
@@ -105,6 +119,11 @@ def plan_cache_key(evidence: RepositoryEvidence) -> str:
     ):
         digest.update(entry_key.encode("utf-8"))
         digest.update(b"\0")
+    for candidate in candidates:
+        digest.update(b"\1")
+        for member_key in sorted(candidate.memberKeys):
+            digest.update(member_key.encode("utf-8"))
+            digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -269,7 +288,7 @@ class FeaturePlanner:
         if not candidates:
             return None
 
-        plan_key = plan_cache_key(evidence)
+        plan_key = plan_cache_key(evidence, candidates)
         cached = self._load_cached(plan_key)
         if cached is not None:
             return cached

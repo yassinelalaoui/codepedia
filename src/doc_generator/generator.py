@@ -1204,7 +1204,9 @@ class DocGenerator:
                 bundle, self.dependencyGraph, repository_root=self.repositoryRoot
             )
             self._repository_evidence = evidence
-            adjacency = build_import_adjacency(bundle, self.dependencyGraph)
+            adjacency = build_import_adjacency(
+                bundle, self.dependencyGraph, repository_root=self.repositoryRoot
+            )
             candidates = build_candidates(evidence, adjacency)
 
             plan = None

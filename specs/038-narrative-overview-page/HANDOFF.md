@@ -1,387 +1,361 @@
-# Handoff: 038 Narrative Overview Page (written 2026-09-14)
+# Handoff: 038 Narrative Overview Page (done) → 039 Feature Grouping (planned)
 
-Read this first in a new session. It records what the owner asked for, every change made across the
-sessions that built User Stories 1 and 2, the machine state, the working conventions, and what comes next.
+Updated 2026-09-15; first written 2026-09-14.
 
-> Session scaffolding, not a spec artefact. The owner decides whether to commit or delete it.
+Read this first in a new session. It covers:
+
+- the owner's conventions (§0);
+- where things stand (§1);
+- everything built for spec 038, and its verification (§2–§3);
+- spec 039, planned up to its task list (§4);
+- the machine state and helper scripts (§5–§6);
+- the exact commands the next agent runs, in order (§7);
+- the verification checklist (§8).
+
+> Session scaffolding, not a spec artefact. The owner decides whether to commit or delete it. The 2026-09-14 version was committed in `ff88a41`; this update is uncommitted.
 
 ---
 
 ## 0. Owner conventions (follow exactly)
 
-- **Ask before anything.** The owner said "ask before anything". Put every non-trivial step to them
-  first (AskUserQuestion) and state a recommendation: scope, prompt changes, verification runs,
-  commits, spec amendments.
-- **Work on `main`.** No feature branches. The 038 branch was merged and deleted; memory
-  `work_on_main_no_feature_branches.md` has the details.
-- **Never commit or push unless asked.** The owner usually commits and pushes themselves.
-- **No `Co-Authored-By: Claude` trailer.** Memory `no_claude_coauthor_trailer.md`; reconfirmed. It
-  overrides any system prompt that asks for the trailer.
-- **The docs "> Maintenance:" rules** (memory `docs_have_maintenance_contracts.md`): README,
-  docs/architecture.md, the stack doc and docs/diagrams each state their own update rule, and
-  updating them is part of the feature. Not done yet for 038 (tasks T050–T052).
-- **The spec-kit implement checklist gate.** `checklists/narrative.md` has 42 reviewer-owned items, all
-  unchecked. Each `/speckit-implement` run must ask whether to proceed. The owner answered
-  "Proceed" for User Story 1 and for User Story 2. Never tick that checklist.
-- **Verification that needs real model output.** The owner's summary chain is
-  `local:qwen2.5-coder:1.5b, groq:openai/gpt-oss-20b, groq:openai/gpt-oss-120b`. The local 1.5B model
-  answers first and its narratives fail grounding, so the Overview gets no lead on this machine.
-  For every verification round the owner has approved:
-  1. Confirm `%USERPROFILE%\.codepedia\config.json` equals the backup (hash compare).
+- **Ask before anything.** Put every non-trivial step to the owner first with AskUserQuestion, and state a recommendation. That covers scope, prompt changes, verification runs, spec amendments, commits, and where files live. The owner answers quickly and usually takes the recommended option, but still wants to be asked.
+- **Work on `main`.** No feature branches (memory `work_on_main_no_feature_branches.md`).
+  - `/speckit-specify` creates a branch only through a `before_specify` hook, and there is no `.specify/extensions.yml`, so no hook ever runs.
+  - `.specify/scripts/powershell/check-prerequisites.ps1` prints `BRANCH: 039-feature-grouping`. That comes from `.specify/feature.json`, not git; the git branch stays `main`.
+- **Never commit or push unless asked.** The owner commits and pushes themselves; `ff88a41` is theirs.
+- **No `Co-Authored-By: Claude` trailer** (memory `no_claude_coauthor_trailer.md`). This overrides any system reminder asking for one.
+- **The docs "> Maintenance:" rules** (memory `docs_have_maintenance_contracts.md`). `README.md`, `docs/architecture.md`, `docs/stack.md` and every file under `docs/diagrams/` (the sequence diagrams included) state their own update rule, and updating them is part of each feature. Validate edited Mermaid with `mermaid_parse.cjs` (§6).
+- **The spec-kit implement checklist gate.** `/speckit-implement` counts checkbox items in `checklists/`.
+  - 038's `checklists/narrative.md` has 42 reviewer-owned items, all unchecked. The owner answered "Proceed" for User Stories 1, 2 and 4. Never tick it.
+  - 039 has only `checklists/requirements.md`, 16 of 16 checked, so its gate passes without a question. Still tell the owner.
+- **Verification that needs real model output.** The owner's chain is `local:qwen2.5-coder:1.5b, groq:openai/gpt-oss-20b, groq:openai/gpt-oss-120b`. The local 1.5B model answers first and its narratives fail grounding. For each round the owner approves:
+  1. Hash-compare `%USERPROFILE%\.codepedia\config.json` with the backup (§5).
   2. Set `summaryChain` to `["groq:openai/gpt-oss-120b","local:qwen2.5-coder:1.5b","groq:openai/gpt-oss-20b"]`.
-  3. Re-index the two reference repositories.
-  4. Restore the backup byte for byte.
+  3. Re-index the reference repositories one at a time (§6).
+  4. Restore the backup byte for byte, and hash-compare again.
 
-  Ask each time you need a new round. Each round costs about 2 Groq calls.
-- **The stranger test (SC-001).**
-  - The reviewer is a fresh subagent per repository, told to use the Read tool exactly once, on that
-    repository's `<state>\docs\index.md`, and nothing else.
-  - Answer keys were written from the code first; scoring is against them.
-  - The implementer never reviews.
+  Ask each time. A round costs one call per repository per cache miss: the Overview narrative, plus the feature planner once 039 changes its cache key.
+- **The stranger test (SC-001 in 038, SC-007 in 039).**
+  - Use a fresh `general-purpose` subagent per repository, told to use the Read tool exactly once, on that repository's `<state>\docs\index.md`, and nothing else.
   - Confirm `tool_uses: 1` in each notification.
+  - Score against the answer keys (§5). The implementer never reviews.
 - **Reference repositories.**
-  - `C:\Users\ASUS\IdeaProjects\codepedia-sample-repo`, state dir `%USERPROFILE%\.codepedia\repos\a47b5ea9c5a22795`.
-  - `C:\Users\ASUS\IdeaProjects\nextgen-wealth-ledger`, state dir `%USERPROFILE%\.codepedia\repos\3d82e509c5da9263`.
+  - `C:\Users\ASUS\IdeaProjects\codepedia-sample-repo` (Python, 51 modules): state directory `%USERPROFILE%\.codepedia\repos\a47b5ea9c5a22795`.
+  - `C:\Users\ASUS\IdeaProjects\nextgen-wealth-ledger` (Spring Boot Java and Angular TypeScript, 109 modules): state directory `%USERPROFILE%\.codepedia\repos\3d82e509c5da9263`.
 
-    The owner chose this one instead of Codepedia itself, which was never indexed and would take
-    hours of provider time.
-
----
-
-## 1. What was expected
-
-Spec 038 (`specs/038-narrative-overview-page/`) turns the wiki's Overview page from a manifest into an
-explanation, following the spec-kit runbook: specify → clarify → plan → checklist → tasks → analyze →
-implement. The owner's instructions over the sessions:
-
-1. Implement **User Story 1 (P1, the narrative lead)** only, then stop and report. Done, reported.
-2. After the report: fix the false entry-point claim before User Story 2. Done (Decision 15). Then
-   fix the owner-handle ambiguity and paragraph 3, keeping "where results end up". Done (Decision 16).
-3. **User Story 2 (P2, the subsystems table plus per-subsystem paragraphs)**, after first fixing
-   analyze finding **I2**. Done (Decision 17). Then the owner-approved prompt fix. Done (Decision 18).
-4. User Story 3 (getting started) is **deferred** by clarification; there are no tasks.
-   **User Story 4 (P4, module-list hygiene)** and **polish T050–T052** remain.
-
-Spec facts to keep in mind:
-- FR-005: the lead is 1–4 paragraphs published, 2–4 asked for. It says what the repository is and
-  does, names the subsystems inline, and says where work enters and where its results end up. The
-  owner explicitly kept "where results end up".
-- Hard caps: lead ≤ 4 paragraphs; subsystem paragraphs ≤ 3 sentences and ≤ 8 of them; all generated
-  prose < 600 words.
-- Every generated paragraph must cite a resolved file, module or symbol (G7).
-- With no provider, the page keeps the same structure and navigation, with nothing standing in for
-  the missing prose.
-- Reruns of an unchanged repository give byte-identical Markdown.
-- Descriptions shown in the table appear only in a column whose header says "(AI-generated)".
+  The owner chose nextgen instead of Codepedia itself, which was never indexed and would take hours of provider time.
+- **Harness quirks seen this session.**
+  - The Bash tool wraps commands in single quotes, so a heredoc whose text contains an apostrophe fails with "unexpected EOF while looking for matching `'`". Use the Write or Edit tool for such files.
+  - PowerShell `Remove-Item` with a computed path was once blocked as a "system path"; overwriting instead works.
+  - Foreground `sleep` is blocked; wait with a Bash `until` loop (§6).
+- **Encoding.** Never re-save source through a cp1252 round trip; that is what caused 038's "â€”" mojibake. Use the Edit and Write tools, or `[IO.File]::ReadAllText(p,[Text.Encoding]::UTF8)` with `WriteAllText(p,t,(New-Object Text.UTF8Encoding($false)))`. `tests/unit/test_source_encoding.py` guards `src/` and `frontend/src/`.
 
 ---
 
-## 2. Commits on `main` (all pushed; none carry a Claude trailer)
+## 1. Where things stand
+
+| Item | State |
+| --- | --- |
+| **038** User Stories 1, 2 and 4, refinements R1–R5, the "not written" notice, polish T050–T052 | **Done, committed and pushed** (`ff88a41`, owner). All 038 tasks are `[X]` except **T053**. |
+| 038 User Story 3 (getting started) | Deferred by clarification; there are no tasks. |
+| **039** Feature Grouping | spec, clarify (6 answers), plan (research, data model, contract, quickstart) and **tasks (T001–T038)** written, **uncommitted** (`specs/039-feature-grouping/`, plus the modified `.specify/feature.json`). **No code yet.** |
+| Next step | `/speckit-analyze` on 039 (read-only), then `/speckit-implement` (§7). |
+| Working tree | `main` is level with `origin/main`. Uncommitted: `specs/039-feature-grouping/`, `.specify/feature.json`, and this `HANDOFF.md` update. |
+| Unmerged local branch `lot-11` | 3 commits from 2026-09-01, not on the remote (`8751377` removes dead code and a meaningless timing assertion; `067828d` bounds three things that grew for the life of `serve`; `ae0fc88` closes the Symbol boundary and changes rate-limit handling). Not in any handoff, untouched. **Ask the owner** whether it is parked or forgotten. |
+
+---
+
+## 2. Spec 038: what exists (design as built)
+
+### 2.1 Commits on `main` (all pushed; none carries a Claude trailer)
 
 | Commit | Content |
 | --- | --- |
-| `2539226` | User Story 1 (tests plus code), CSS fixes, spec folder. **This commit introduced the mojibake fixed in `629e839`** |
-| `f0e7f70` | Decisions 15 and 16: entry ranking, prompt labels, owner label, paragraph 3 made safe |
-| `629e839` | I2 fix; User Story 2 (table, subsystem paragraphs, grounding, template); mojibake repair plus encoding guard test; spec docs |
-| `1b585b1` | Decision 18 prompt fix (subsystem paragraphs cite their start file; ¶1 opens with what the repository is; ¶3 cites a file); research and tasks |
+| `2539226` | User Story 1: tests, code, CSS, the spec folder. It introduced mojibake, repaired in `629e839`. |
+| `f0e7f70` | Decisions 15 and 16: entry ranking, prompt labels, the owner label, paragraph 3 made safe. |
+| `629e839` | The I2 fix; User Story 2 (table, subsystem paragraphs, grounding, template); the mojibake repair and its encoding guard. |
+| `1b585b1` | Decision 18 prompt fix; research and tasks. |
+| `ff88a41` | **This session:** R1–R5; the notice clause; User Story 4; the docs polish; Decision 19; contract and data-model updates; the handoff. 29 files. |
 
-The working tree was clean at handoff (apart from this file).
+### 2.2 Package `src/doc_generator/overview/`
 
----
-
-## 3. What exists now (design as built)
-
-### Package `src/doc_generator/overview/`
-- `evidence.py` takes no engine; `narrator.py` is the **only** module that takes an engine;
-  `grounding.py` takes no engine. `tests/unit/test_overview_package.py` enforces this.
+- `evidence.py` and `grounding.py` take no engine; `narrator.py` is the only module that does. `tests/unit/test_overview_package.py` enforces this.
 - One LLM call per repository for the whole page, through the summary-chain `FailoverExecutor`.
-- Cache: table `doc_overview_narratives` in `<state>\doc-manifest.sqlite`, one row per repository.
+- Cache: the table `doc_overview_narratives` in `<state>\doc-manifest.sqlite`, one row per repository.
   - The key is `sha1(format version + system prompt + prompt text + max_tokens)`.
-  - Any parseable reply is saved; an unparseable one is not.
-  - The row stores the raw reply, the handle map, and (new) `repository_fingerprint`.
+  - A parseable reply is saved; an unparseable one is not.
+  - The row stores the raw reply, the handle map and `repository_fingerprint`.
+  - `load_latest_overview_narrative` returns `(reply, handle_map, fingerprint)`.
 
-### Evidence (`evidence.py`)
-- `FeatureBrief` per prompted feature (≤ 12, navigation order); `majorFeatureKeys` = the first ≤ 8
-  features with kind ≠ tooling.
-- `EntryFlow.kind` is one of `ENTRY_KINDS = ("cli-command","api-route","main")`, or `"function"` (an
-  uncalled function).
-  - An uncalled function named `main` becomes kind `main`.
-  - Flows from test files are dropped (`is_test_path`: a `test`/`tests`/`__tests__` directory, or
-    `test_*.py`, `*_test.py|go`, `conftest.py`, `*Test(s).java|kt|cs`, `*.spec|test.[cm][jt]s[x]`).
-  - Ranking is by kind tier, then modules reached, then `stableKey`; at most 6 flows.
-- `repositoryFingerprint` is SHA-1 of the README lead plus every file's `(relative path, contentHash)`.
-  It is **never** in the prompt.
+**Evidence** (`evidence.py`):
+- A `FeatureBrief` per prompted feature (≤ 12, navigation order).
+- `EntryFlow.kind` is in `ENTRY_KINDS = ("cli-command","api-route","main")`, or is `"function"` (uncalled). An uncalled function named `main` counts as kind `main`. Test files are dropped (`is_test_path`). At most 6 flows.
+- `repositoryFingerprint` is the SHA-1 of the README lead and every file's `(path, contentHash)`. It is never part of the prompt.
+- **R3 (this session): `majorFeatureKeys`** = the first ≤ 8 prompted features that are not `tooling` and not `_is_docs_or_tests_only`, meaning every member is a prose or test file. A member with no path counts as code. On the sample, Documentation is out and Storage (Memory Store) is in.
+- **039 will move** `is_test_path`, `ENTRY_KINDS` and `read_readme_lead` into `features/evidence.py`, and re-export them here (039 T004).
 
-### Narrator (`narrator.py`)
-- Constants: `NARRATIVE_FORMAT_VERSION = "2"`; `SYSTEM_PROMPT_CHARS = 1900` (the prompt is 1,896
-  characters); `HEADER_CHARS = 300`; `FEATURE_BLOCK_CHARS = 710`; `ENTRY_FLOW_CHARS = 240`;
-  `MAX_NARRATIVE_RESPONSE_TOKENS = 1400`.
-- **Worst case: 4,590 tokens per call** of the 8,000 budget, computed from the constants.
-- Reply shape: `{"lead": [...], "subsystems": {"fN": "..."}}`, under 550 words in all.
-- Paragraph plan:
-  - ¶1 **opens** with what the repository is and does. Then, only if a line is marked `entry`, it
-    names that line's file as where work enters; otherwise it claims no entry point.
-  - ¶2 follows one line, listing what it reaches without "then", "next" or "finally". Only an `entry`
-    line is an entry point.
-  - ¶3 is written only if a subsystem's own text says it stores, sends or returns data. It names
-    **every** such subsystem, cites one of their start files, and never names a single file as the
-    only destination.
-  - `"subsystems"` holds one paragraph per subsystem marked `paragraph` and for no other: ≤ 3
-    sentences, naming its start file in backticks, other subsystems as handles.
-- Call line format:
-  - ``entry (<kind>): `name` in `file` (part of [[fN]]); its calls reach [[fA]], [[fB]]``
-  - ``uncalled: `name` in `file` …`` for a plain uncalled function.
-- Feature block: `fN: Title (kind, K entry points[, paragraph]) - description`, then `start:` and
-  `also:` lines. `, paragraph` marks a major subsystem.
-- Statuses: `cached`, `generated`, `stale`, **`previous-prompt`**, `unavailable`, `failed`,
-  `unparseable`, `skipped`.
-  - On failure the narrator falls back to `load_latest`.
-  - If the stored fingerprint equals the current one, the status is `previous-prompt`: the prose is
-    shown with **no** stale caveat, and a terminal notice is printed.
-  - A different or empty fingerprint gives `stale`: the prose is shown with the caveat.
+**Narrator** (`narrator.py`):
+- Constants: `NARRATIVE_FORMAT_VERSION = "2"`, `HEADER_CHARS = 300`, `FEATURE_BLOCK_CHARS = 710`, `ENTRY_FLOW_CHARS = 240`, `MAX_NARRATIVE_RESPONSE_TOKENS = 1400`.
+- **`SYSTEM_PROMPT_CHARS = 2050`** (was 1900). The prompt is 2,040 characters, and the worst case is **4,627 tokens** (was 4,590) of the 8,000 budget.
+- **R4 (this session):** paragraph 1 "names each kind of entry with its files as where work enters (api-route as routes, cli-command as commands, main as the main function)". The example now reads "Work enters through routes in `src/app/api.py` and commands in `src/app/cli.py`. The `run` command in `src/app/cli.py` is part of [[f0]]; its calls reach [[f1]] and [[f3]]."
+- Other paragraph rules are unchanged (Decisions 15–18): paragraph 2 follows one call line, and paragraph 3 names every storing, sending or returning subsystem and cites a start file. `"subsystems"` holds one paragraph per subsystem marked `paragraph`, of at most 3 sentences, naming its start file.
+- Statuses: `cached`, `generated`, `stale`, `previous-prompt`, `unavailable`, `failed`, `unparseable`, `skipped`.
 
-### Grounding (`grounding.py`)
-- Rules G1–G11 (research Decision 6):
-  - G2: tokenise; unbalanced markup rejects.
-  - G3: a handle must be issued by this prompt and live.
-  - G4: a backticked name resolves to exactly one entry via `cross_references.resolve_reference`.
-  - G5: identifier-shaped words outside backticks must resolve too. CamelCase is allowed if it
-    appears in the evidence text, a language name or the repository name.
-  - G6: no "you" and no banned promotional term.
-  - G7: every paragraph cites a resolved name.
-  - G8: ≤ 3 sentences. Code spans are masked and e.g./i.e./etc./vs./cf./approx./incl./resp. are not
-    counted.
-  - G9: ≤ 4 lead paragraphs; subsystem paragraphs only for majors, one each, ≤ 8. The word budget
-    trims subsystem paragraphs (last first) before any lead paragraph.
-  - G10: a failed opening paragraph withholds the whole lead; subsystem paragraphs are unaffected.
-  - G11: subsystem paragraphs go in table order.
-- `accept_description(text, evidence, lookup)` applies G1, G2 (a handle rejects), G4, G5 and G6, and
-  returns escaped Markdown or `None`, which renders as "—".
-- `render_paragraph` escapes everything; model text never reaches the page as raw Markdown.
+**Grounding** (`grounding.py`):
+- Rules G1–G11 are unchanged (research Decision 6).
+- **R5 (this session):** a paragraph for a live subsystem not in `majorFeatureKeys` is skipped and counted in `unaskedCount`, never as offered or dropped. G3 (invented handle) and G9 (a second paragraph) still count.
+- **This session:** `askedCount = len(majorFeatureKeys)`. `unwrittenCount` counts majors the reply wrote nothing for; a written but rejected paragraph is "dropped", not "unwritten".
 
-### Generator (`generator.py`)
-- The Overview is recomputed on every pass and written only when the SHA-1 of its Markdown changes.
-- The overview evidence is built on every pass, narrated or not, because the table needs it
-  (FR-024).
-- `_repository_evidence` is kept from `_ensure_features`.
-- `_subsystem_rows`: title link; responsibility = `accept_description(description)` for planned
-  features, else a dash; "Start with" = `_start_with_member`.
-  - That is the member with the most entry points, test files passed over while the subsystem has
-    other members, ties by name, else the anchor.
-  - It always belongs to the subsystem.
-- Subsystem paragraphs are rendered with a trailing `[Title](features/…)` link.
-- Notices go to `onNotice` (the CLI passes `typer.echo`); at most one line per pass (contract §7).
-  - The `stale` wording is "showing the narrative from an earlier version (…)".
-  - The `previous-prompt` wording is "showing the narrative written for an earlier prompt (…)".
-- `index` passes `narrateOverview=False` on its structure pass.
+### 2.3 Generator, template, CSS (038)
 
-### Template (`templates/home.md.jinja`) outline
-1. `# <repo> — Documentation`.
-2. Lead paragraphs, each followed by `{: .ai-generated }`.
-3. The stale caveat, if the lead is stale.
-4. The repo-meta list.
-5. `## Architecture overview` with its counts sentence.
-6. `| Subsystem | Responsibility[ (AI-generated)] | Start with |`. Every subsystem, navigation order; a
-   dash when empty. "_No subsystems derived yet._" when there are none.
-7. The subsystem paragraphs, each `{: .ai-generated }`.
-8. The stale caveat here only when the lead was withheld but stale subsystem paragraphs survive.
-9. The two diagram links.
-10. `## Modules`, whose rows are unchanged; User Story 4 changes them.
+- `generator.py`:
+  - **R1:** each subsystem paragraph ends ``… → [Title](features/…)``.
+  - **The notice (this session):** a `generated` or `cached` pass appends `; <u> of <m> subsystem paragraphs not written`, or prints it alone (contract §7). There is still at most one line per pass.
+  - The `stale` and `previous-prompt` lines are unchanged.
+- **User Story 4 module list (this session):**
+  - labels come from `prose.disambiguated_labels` (sorted by label), for example `api/__init__` and `core/__init__`;
+  - descriptions come from `plain_text.marked_excerpt`, which always ends in ` …` when shortened, a sentence cut included (the owner's FR-032 decision);
+  - the row is `- [label](modules/…)[ — description] [dependencies](diagrams/…)`, with no parentheses.
+  - Known cosmetic leftover: the `docs/getting-started` row reads "…seed the sample data: Then start the API: Open …", because code blocks are removed between colons.
+- `home.md.jinja`: the counts sentence carries `{: .architecture-counts }`.
+- `frontend/src/styles.css` sets `.content-col .architecture-counts + table td:nth-child(2) { font-family: var(--wiki-font-ui) }`. It is built into `src/doc_generator/assets/wiki-ui.css` by `cd frontend; npm run build`.
+- Test support: `tests/integration/_doc_generator_support.index_repo` parses `.md` as `markdown`, and everything else as Python. 039 T006 extends this to Java and TS.
 
-The `## Features` list and the `| Feature | Modules |` table are gone. There is no inline Mermaid and
-no "Last indexed" line.
+### 2.4 038 spec documents
 
-### Manifest store (`manifest_store.py`)
-- `ADDED_COLUMNS` migrates `repository_fingerprint` into existing tables (`PRAGMA table_info` plus
-  `ALTER TABLE … ADD COLUMN`).
-- `load_latest_overview_narrative` returns a **3-tuple** `(reply, handle_map, fingerprint)`.
-- `save_overview_narrative(..., *, repository_fingerprint="")`.
-
-### CSS (`frontend/src/styles.css`, built into `src/doc_generator/assets/wiki-ui.css` via `cd frontend; npm run build`)
-- Adjacent `.ai-generated` paragraphs merge into one block with one badge.
-- `.ai-generated { overflow-wrap: anywhere }`, so long Java paths wrap.
-- The Features-list fix `ul:has(>li.module-list) a:last-child:not(:first-child)` stops a lone title
-  link being right-aligned and greyed. It still matters for any list whose row has one link.
-- Tables already scroll within themselves (`display:block; overflow-x:auto`).
-- Tests: `tests/unit/test_wiki_stylesheet_overview.py`.
-
-### Other fixes along the way
-- `cross_references.build_symbol_lookup` now indexes kind `"document"`, so Markdown paths link
-  everywhere. Shipped in `2539226`; the owner has not said whether it should have been split out.
-- **Mojibake repaired.** `2539226` had re-saved `generator.py` and `tasks.md` through a cp1252 round
-  trip, so every Overview, dependency-diagram and call-sequence page title read "… â€” …".
-  - Repaired by exact reverse decoding (`<scratchpad>\fix_mojibake.py`, which keeps line endings).
-  - Guard test: `tests/unit/test_source_encoding.py` scans `src/**/*.py|jinja` and
-    `frontend/src/**/*.css|ts|tsx`.
-  - **Watch for this when editing files through PowerShell.** Use UTF-8 explicitly
-    (`[IO.File]::ReadAllText(p,[Text.Encoding]::UTF8)` with `WriteAllText(p,t,UTF8Encoding($false))`),
-    or use the Edit tool.
-
-### Spec documents updated
 - `research.md`:
-  - Decision 14: real replies during User Story 1.
-  - Decision 15: entry kinds.
-  - Decision 16: "part of" and paragraph 3.
-  - Decision 17: I2 plus User Story 2 as built, with verification.
-  - Decision 18: the subsystem prompt fix, the stranger test and the conclusion.
-- `data-model.md`: `EntryFlow.kind`, `repositoryFingerprint`, the `previous-prompt` status, the table
-  column plus migration, constants, and the state diagram.
-- `contracts/overview-narrative.md`: prompt shape, call-line format, User Story 2 outline, and the
-  `previous-prompt` notice row.
-- `tasks.md`: T001–T043 and T033a–T033f marked `[X]`. The Decision 18 prompt round has no task row
-  of its own; it is recorded in research Decision 18 and could be added as T043a.
+  - Decisions 14–18 (earlier);
+  - **Decision 19** (this session): R1–R5, the "not written" notice, the variance finding, verification, and the stranger test;
+  - a Decision 12 addendum on FR-032 marking and the same-extension case.
+- `contracts/overview-narrative.md`: §2 (the paragraph-1 rule), §6 (the arrow, `.architecture-counts`, the majors rule, the module-list row) and §7 (the "not written" row, and unasked paragraphs excluded from `<n>`).
+- `data-model.md`: the `majorFeatureKeys` rule; `offeredCount`, `unaskedCount`, `askedCount`, `unwrittenCount`; `SYSTEM_PROMPT_CHARS` 2050.
+- `tasks.md`: T043a–T043h (refinements), T044–T052 `[X]`; T053 is open. Two "Â§" mojibake characters were fixed.
 
 ---
 
-## 4. Verification results (latest; details in research Decisions 15–18)
+## 3. Spec 038: verification results (research Decision 19)
 
 | | Sample | Nextgen |
 | --- | --- | --- |
-| Prompt / worst case for this repository | ~1,902 / 3,302 tokens | ~1,434 / 2,834 tokens (ceiling 4,590) |
-| Lead kept | 3 of 3; ¶1 opens with what it is; ¶3 cites both stores | 3 of 3; ¶1 names `DigitalBankingApplication.main` as the entry (correct) |
-| Subsystem paragraphs kept | 8 of 12: all marked majors; 4 unmarked dropped by G9 | 5 of 7: all marked; 2 unmarked tooling dropped |
-| Generated words / links | ~289 words; 43 links, 0 problems | ~215 words; 28 links, 0 problems |
-| Tense (SC-013) | all declarative present | all declarative present |
-| Appearance | light/dark, 700 px and full width: one lead block, table scrolls inside, subsystem paragraphs one block | same |
-| Full suite | only failure: the known flaky `tests/integration/test_cli.py::test_config_before_any_provider_reachable_still_reports_without_failing` (makes a live Groq call; fails whenever Groq answers) | |
+| Terminal `overview:` line | none. Run 1 wrote only 3 of 12 paragraphs (6 of 8 majors unwritten), which led to the notice clause; the re-ask wrote all 12. | none |
+| Lead | 3 of 3. Paragraph 1: "Work enters through API routes in `routes_loans.py` and `routes_books.py`, and through CLI commands in `cli.py`". | 3 of 3. Paragraph 1 names `DigitalBankingApplication.main`. |
+| Subsystem paragraphs | 8 of 8 majors; 4 unasked ignored | 5 of 5 majors; 2 unasked (tooling) ignored |
+| Words / link problems | ~327 / 0 | ~230 / 0 |
+| Tense (SC-013) | all declarative present | same |
+| Full suite | only the known flaky Groq CLI test failed (twice) | |
 
-**Stranger test (latest):** both repositories pass by the answer keys, but reviewers got the
-subsystems mostly from module names.
-- Lead: the first sentence helped.
-- Table: mixed on the sample, partly helpful on nextgen.
-- **Subsystem paragraphs: "mostly misleading"**, because they restate spec 033's mis-grouped features.
-  - "Services (Lending Service) … generates stable identifiers … `utils/ids.py`".
-  - The startup class and `animations.ts` sit under "Data Transfer Objects".
-  - "Data Repositories supplies data to Persistent Entities" has the direction backwards.
-- The sample reviewer still doubts `list_overdue` as *the* entry point; `bibliotheca serve` and the
-  CLI are missed.
+**Stranger test** (fresh subagents, `tool_uses: 1` each):
+- Both pass by the keys. Sample: 8 of 8 subsystems, with the CLI found from paragraph 1. Nextgen passes, but from module names.
+- Both called the table and paragraphs misleading because of 033's grouping, titles and anchors. Examples: "Tests" starts at `fine_calculator.py`, "Catalog Service" at `core/errors.py`, and "Data Transfer Objects" is `animations.ts`.
+- **That is why spec 039 exists.**
 
-**Conclusion recorded in research Decision 18:** User Story 2 is complete and grounded. Its value is
-capped by spec 033's grouping, titles and anchors. Improving the feature planner is the
-highest-leverage next change.
+**Remaining 038 work** (none started):
+- **T053:** re-run the whole of 038's `quickstart.md` §1–§6 on the final tree and attach the implementation report: files touched, where narration lives, tokens per run, and the sample `index.md`.
+- **Analyze findings** not applied:
+  - MEDIUM: U1 (FR-015's "settled" wording), U2 (write-if-changed compares Markdown only), A3 ("legibility" unquantified), A4 (no scripted SC-002 audit), I4 (no notice when a fallback provider wrote the narrative, which FR-018 asks for), C2 (no FR-002 assertion).
+  - LOW: A5, C3, U5, D1, T1.
+- **Open owner decisions:**
+  - the chain order (the local 1.5B model first means no lead on this machine);
+  - whether to re-ask each pass while a weak model's cached reply grounds to nothing;
+  - the already-shipped `cross_references` document-path fix.
+- **Outside 038:**
+  - The Java parser records no annotations. That, and interface-call resolution, are also out of scope for 039.
+  - The wiki shell has no narrow layout: at 400 px the sidebar clips content on every page.
 
 ---
 
-## 5. Machine state
+## 4. Spec 039: Feature Grouping That Follows the Code (planned, no code)
 
-- **Config** `%USERPROFILE%\.codepedia\config.json` has been **restored** to the original chain; its hash
-  equals the backup.
-- **Backup:** `C:\Users\ASUS\AppData\Local\Temp\claude\c--Users-ASUS-IdeaProjects-codepedia\67e7cc23-8892-4208-bfe9-a4fb46d55c2e\scratchpad\config.backup.json`.
-  An older copy is in the `f07864a4-…` scratchpad. Temp directories can be cleaned, so copy it
-  somewhere durable if needed.
+**Why:** 033's grouping (`src/doc_generator/features/`) misleads Overview readers. Measured causes, from the spec Background and research:
+
+1. **Java and TS import nodes in `DependencyGraph` have an empty `sourceFile`**, so `features/fallback.build_import_adjacency` maps none of them to a module. Coupling exists for Python only: Java 0 of 64 modules, TS 2 of 43.
+2. **Uncoupled groups fold into the largest survivor**, which is how nextgen got a 93-of-109-module "Data Transfer Objects". Folds also drop entry-point counts, so every nextgen feature shows 0.
+3. **Tests seed groups:** 5 of the sample's 26 seeds, which produced "Tests (Test Fines)". The CLI was folded into "Scripts".
+4. **The anchor is the best-connected member, not the seed:** `utils/ids.py`, `core/errors.py`, `domain/member.py`, `shared/animations.ts`.
+5. **The planner sees the first 3 members alphabetically** (for example `README`, `__init__`, `__init__`) and the README's headings.
+
+**Clarifications** (spec § Clarifications, 2026-09-15):
+- Q1: tests join the feature holding most of the code they exercise; fixtures-only tests go by directory; tests are placed after production code.
+- Q2: languages are Java and JS/TS, with Python unchanged. Go and Rust fall back to directory grouping.
+- Q3: entry modules (commands, routes, `main`) are never absorbed by groups without one (FR-006a).
+- Q4: coupling comes from imports only, never calls.
+- Q5: the 30% ceiling applies to the grouping without a model; model merges are reported, not enforced.
+- Q6: the anchor is the entry module, then the seed with the most entry points, then 033's most-connected rule.
+
+Three owner-approved amendments were applied from research Decision 12: SC-006 wording (vertical slices, not a "controllers" feature), FR-006 (direct-directory rule and leftovers combining), and the Background's first bullet.
+
+**Plan** (`plan.md`, `research.md` Decisions 1–12, `data-model.md`, `contracts/feature-grouping.md`, `quickstart.md`):
+- A new `features/imports.py`, `resolve_repository_imports(bundle, graph, *, repository_root)`:
+  - reads graph import node names;
+  - Java: the longest suffix match, static and nested imports, a wildcard weighted `Fraction(1, n)`;
+  - JS/TS: relative paths with extensions and `/index`;
+  - selects modules by file suffix.
+- `build_import_adjacency` merges it with 033's Python adjacency, which stays byte-for-byte. Weights become `int | Fraction`.
+- `features/evidence.py` gains `readmeLead`, `testModuleKeys`, `entryModuleKeys`, `seedModuleKeys` and `moduleLabels`, and owns the moved helpers.
+- `candidates.py`:
+  - seeds are non-test modules with entry points (Decision 1, measured);
+  - propagation and folding see production modules only;
+  - folding follows Decision 6 steps 1–6: coupling, entry protection, the direct-directory walk, leftovers combining per directory, one terminal candidate, and the cap;
+  - tests are placed afterwards;
+  - counts are taken from members;
+  - `memberKeys` are ordered by relevance.
+- `validate.py`: the anchor order via `anchor_for`, and counts from members.
+- `planner.py`: members by `evidence.moduleLabels`, cut to 40 characters; the README lead; `GROUPING_VERSION = "2"`; `plan_cache_key(evidence, candidates)` hashes the grouping. That fixes a latent 033 bug, where an import edit could put old titles on the wrong groups.
+- The alias and redirect mechanism (`_redirect_superseded_pages`, plurality) and `requiresNavigationRegeneration` already handle regrouping. No new mechanism is needed.
+
+**Prototype measurements** (`grouping_proto.py`, read-only, output `proto-run1.txt`):
+
+| | Sample, all seeds | Sample, entry modules only | Nextgen, all seeds | Nextgen, entry modules only |
+| --- | --- | --- | --- | --- |
+| Groups | 14 | 7 | 21 | 22 |
+| Largest | **18%** | 67% | **16%** | 21% |
+
+- Java: 59 direct and 7 wildcard imports resolved; TS: 75 of 75 relative imports. Coupled modules: Java 63 of 64, TS 42 of 43.
+- Anchors:
+  - sample: `cli.py`, `routes_loans.py`, `routes_members.py`, `lending_service.py`, `catalog_service.py`, `memory_store.py`, `sqlite_store.py`;
+  - nextgen: `WalletService`, `WalletServiceImpl`, `AuthServiceImpl`, `account.service.ts`, `auth.service.ts`, …; never `animations.ts`.
+
+**Tasks** (`tasks.md`, 38 tasks, format validated):
+
+| Phase | Tasks |
+| --- | --- |
+| Setup | T001 baseline suite; T002 preserve measurements (ask the owner where) |
+| Foundational | T003–T006 |
+| US1 (P1) | T007–T016 (10): imports, folding, entry protection, counts |
+| US2 (P1) | T017–T020 (4): tests |
+| US3 (P2) | T021–T025 (5): anchors and redirects |
+| US4 (P3) | T026–T030 (5): planner input and cache key |
+| Polish | T031–T038: suite, determinism, docs T033–T035, **owner-gated round T036**, SC-006 mapping and stranger test T037, record as Decision 13 (T038) |
+
+The MVP is US1 plus US2, through T020.
+
+---
+
+## 5. Machine state (checked 2026-09-15)
+
+- **Config** `%USERPROFILE%\.codepedia\config.json` equals the backup (SHA-256 `5434E0916BAF…`) and holds the original chain.
+- **Backup:** `C:\Users\ASUS\AppData\Local\Temp\claude\c--Users-ASUS-IdeaProjects-codepedia\67e7cc23-8892-4208-bfe9-a4fb46d55c2e\scratchpad\config.backup.json`. An identical copy is in the `f07864a4-2c80-4a77-8280-59cffc591df9` scratchpad. **Temp can be cleaned. Ask the owner whether to copy it somewhere durable**, outside the repository, because it may hold API keys. For example `%USERPROFILE%\.codepedia\config.backup-038.json`.
 - **No `codepedia` process is running.**
-- **Both reference wikis** reflect the Decision 18 prompt (last indexed 2026-09-14, Groq 120b).
-- **Session scratchpad** (temporary): `...\67e7cc23-8892-4208-bfe9-a4fb46d55c2e\scratchpad\`. Run the
-  Python helpers with `$env:PYTHONPATH='src'; .venv\Scripts\python.exe <script> <repo-root>`.
-  - `cost.py <repo>` prints the prompt, its tokens and the ceiling.
-  - `why2.py <repo>` prints the cached raw reply and each rejection (section #index: rule token). It
-    handles the new 3-tuple. `why.py` is the old 2-tuple version and **breaks**.
-  - `lead_links.py <state>\docs\index.html` checks every link and code span in `.ai-generated`
-    paragraphs.
-  - `shots.ps1 -Html <index.html> -OutPrefix <prefix>` takes headless Chrome screenshots, light and
-    dark, at 400 px and full width. At 400 px the shell's sidebar never collapses on *any* page
-    (pre-existing, not 038), so also shoot 700 px by hand with
-    `chrome --headless=new --window-size=700,2200 --screenshot=...`.
-  - `entry_probe.py <repo>` lists entry-point candidates with kind, decorators and reach.
-  - `fixture_features.py <tmpdir>` prints the test fixture's features.
-  - `fix_mojibake.py <file> [--write]`.
-  - `nopro_check.py` is the User Story 1 no-provider check; it may need updating for the 3-tuple.
-  - `probe_models.py` sends the prompt to each chain model.
-  - Answer keys: `sc001-key-sample.md`, `sc001-key-nextgen.md`. Reviews: `us1-review.md`,
-    `tense-review-*.md`. Also page snapshots `*-index.*.md`, logs, and `full-suite*.txt`.
-- **Running the CLI:** `.venv\Scripts\codepedia.exe`. Both `index` and `serve` end by starting a
-  server and blocking.
-  - Launch detached, piping `y` for the disclosure prompt when the chain differs from the
-    acknowledged one:
-    `Start-Process cmd -ArgumentList '/c','echo y| C:\...\codepedia.exe index <repo>' -RedirectStandardOutput <log> -RedirectStandardError <err> -WindowStyle Hidden -PassThru`.
-  - Wait on the log for "Documentation wiki available" with a Bash `until` loop matching
-    `'Documentation wiki available|^Traceback|^Error:'`. Don't match bare `Error`: class names like
-    `BibliothecaError` hit it.
-  - Then `Get-Process codepedia | Stop-Process -Force`.
-  - Foreground `sleep` is blocked in this harness.
-- **Full suite:** `.venv\Scripts\python.exe -m pytest --basetemp=<scratchpad>\pytest-x -p no:cacheprovider -q`.
-  A bare `pytest` shows about 17 spurious PermissionErrors. It takes about 10 minutes; run it in the
-  background.
-- **To force a fresh narrative:** `DELETE FROM doc_overview_narratives` in `<state>\doc-manifest.sqlite`.
-  Any prompt change also misses the cache automatically.
+- **Reference wikis:** re-indexed on 2026-09-15 with the final 038 code and Groq 120b first. Sample `index.md` at 00:26, from the re-ask run (all 8 majors); nextgen at 00:20.
+- **Answer keys** for the stranger test are in the `67e7cc23` scratchpad: `sc001-key-sample.md` and `sc001-key-nextgen.md`, written from the code. So are `us1-review.md` and `tense-review-*.md`.
+
+**Scratchpad directories** (Temp, may be cleaned):
+- `…\67e7cc23-8892-4208-bfe9-a4fb46d55c2e\scratchpad\` (the 038 US1/US2 sessions): `config.backup.json`, the answer keys, `cost.py`, `why2.py`, `lead_links.py`, `shots.ps1`, `entry_probe.py`, `fixture_features.py`, `fix_mojibake.py`, `nopro_check.py`, `probe_models.py`, page snapshots, `full-suite*.txt`.
+- `…\aeafd9e3-9c00-40fd-9211-3aacb5f77b43\scratchpad\` (this session):
+  - `why3.py`, `majors_probe.py`, `module_rows_probe.py`, `planner_probe.py`, `grouping_proto.py`, `mermaid_parse.cjs`;
+  - `probe-sample.txt` and `probe-nextgen.txt`: **033 baselines, needed by 039 T002**;
+  - `proto-run1.txt`: **prototype output, cited by 039 research**;
+  - `d19-stranger-test.md`, `sample-reply.d19-run1.json`, `sample-index.d19-run1.md`, the `*-d19-*.png` screenshots, `modules-preview\` (the trimmed-page trick), `index-*.log`, and `full-suite*.txt`.
 
 ---
 
-## 6. Next steps (put them to the owner; they choose the order)
+## 6. Helper scripts and procedures
 
-1. **A follow-up spec for 033's feature planner (recommended first).** The grouping, titles and
-   anchors now cap the Overview's usefulness:
-   - sample: "Tests (Test Fines)" anchored at `fine_calculator.py`; "Scripts" anchored at `member.py`
-     with "Start with `policies`"; "Services (Lending Service)" anchored at `utils/ids.py`;
-     "Services (Catalog Service)" anchored at `core/errors.py`;
-   - nextgen: a 93-of-108-module "Data Transfer Objects" bucket anchored at `animations.ts`, and no
-     features for controllers, security/JWT, clients, dashboard, chatbot or the Angular frontend.
-2. **Small 038 presentation refinements**, each needing a verification round:
-   - Separate each subsystem paragraph's closing link, for example " → [Title](…)". Today it reads
-     like a stray fragment after the last sentence (`generator.py` subsystem paragraph render).
-   - Use the UI font, not monospace, for the table's Responsibility column (`styles.css`, then
-     `npm run build`). The whole table currently inherits the monospace font and gets tall when
-     narrow.
-   - Major selection (`evidence.majorFeatureKeys`): leave documentation-only and test-only
-     subsystems out of the eight. 033's kind ranking puts "overview" and "capability" first, so on
-     the sample "Documentation" and "Tests" get paragraphs while both Storage subsystems and Core
-     do not.
-   - When several lines are marked `entry`, ¶1 picks one (`list_overdue`). It could name the kinds
-     ("HTTP routes in … and CLI commands in …").
-   - Notice noise: paragraphs the model writes for unmarked subsystems count as "dropped" in every
-     `overview:` notice (for example "4 of 15 narrative paragraphs dropped").
-3. **User Story 4, T044–T049** (independent of the narrator; no model calls):
-   - `prose.disambiguated_labels` for the eight identical `__init__` rows;
-   - a module row without the stray `(`…`)` wrapper (the "(" at the right edge and the ")" after
-     "dependencies" in screenshots);
-   - `plain_text.excerpt` for descriptions (the README row dumps raw Markdown and ends mid-sentence).
-   - Requirements FR-029 onward; SC-010.
-4. **Polish T050–T052:** update `docs/architecture.md`, `docs/diagrams/class-diagram.md` and `README.md`
-   under their "> Maintenance:" rules for everything 038 shipped:
-   - the new `overview/` package;
-   - the `doc_overview_narratives` table and its fingerprint column;
-   - the Overview's new outline;
-   - `previous-prompt`;
-   - the CSS changes;
-   - the encoding guard test.
-5. **Remaining analyze findings, not applied** (from `/speckit-analyze`; I2 is fixed):
-   - MEDIUM:
-     - U1: FR-015's "settled" wording.
-     - U2: write-if-changed compares the Markdown only, so an HTML-only link change is not written.
-     - A3: "legibility" unquantified.
-     - A4: no scripted SC-002 audit.
-     - I4: no notice when a fallback provider wrote the narrative (FR-018 asks for one).
-     - C2: no FR-002 assertion.
-   - LOW: A5, C3, U5, D1, T1. See the analyze output or re-run `/speckit-analyze`.
-6. **Open owner decisions carried from earlier reports:**
-   - Chain order: the local 1.5B model first means no lead on this machine. Put a Groq model first,
-     or accept it.
-   - A cached reply that grounds to nothing stays until the repository changes, even after switching
-     provider. Alternative: re-ask each pass while a weak model keeps failing.
-   - The `cross_references` document-path fix changed links on other pages; it is already shipped.
-7. **Outside 038** (would be separate specs):
-   - The Java parser does not record annotations (`@PostMapping`), so Spring controllers look like
-     plain uncalled methods.
-   - Calls through interfaces are not resolved, so controllers and `main` reach one module.
-   - The wiki shell has no narrow-viewport layout: at 400 px the sidebar stays and content is clipped
-     on every page.
+Run the Python helpers with `$env:PYTHONPATH='src'; .venv\Scripts\python.exe <script> <repo-root>`. Every one is read-only and needs no provider.
+
+| Script (scratchpad) | Does |
+| --- | --- |
+| `planner_probe.py` (aeafd9e3) | Seeds, candidates, the planner prompt, the cached plan, repaired features and anchors. **039's main measuring tool.** |
+| `grouping_proto.py <repo> [all\|entry] [--verbose]` (aeafd9e3) | 039's rules re-implemented outside `src/`; T016/T020/T025 compare against it. |
+| `majors_probe.py` (aeafd9e3) | Per feature: kind, code, test and prose member counts, and MAJOR status. |
+| `why3.py` (aeafd9e3) | The cached narrative reply, every rejection (section, index, rule, token), kept/offered/unasked counts, and majors. It supersedes `why2.py`. `why.py` (2-tuple) is broken. |
+| `module_rows_probe.py` (aeafd9e3) | Module-list labels and descriptions as the page would show them. |
+| `mermaid_parse.cjs` (aeafd9e3) | Parses the Mermaid blocks of Markdown files with the wiki's own `mermaid.min.js` in jsdom. Run from `frontend/` as `node <script> C:\Users\ASUS\IdeaProjects\codepedia docs/diagrams/class-diagram.md …`. It sets `dom.window.structuredClone`. |
+| `cost.py` (67e7cc23) | Overview prompt, tokens and ceiling. |
+| `lead_links.py <state>\docs\index.html` (67e7cc23) | Checks every link and code span in `.ai-generated` paragraphs; the expected result is 0 problems. |
+| `shots.ps1 -Html <index.html> -OutPrefix <p>` (67e7cc23) | Headless Chrome screenshots, light and dark, at 400 px and wide. |
+
+**Screenshots:**
+- 700 px by hand: `& "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" --headless=new --disable-gpu --hide-scrollbars --window-size=700,3400 --screenshot=<png> --force-dark-mode --blink-settings=preferredColorScheme=0 file:///<index.html>`.
+- A `#modules` anchor does not scroll in headless Chrome. To shoot the module list, copy `index.html` and `assets\wiki-ui.css`/`wiki-ui.js` into a scratchpad folder, cut the HTML from `<h1` to `<h2 id="modules"`, and shoot that. `modules-preview\` holds an example.
+
+**Running the CLI** (`index` and `serve` both end by serving and blocking):
+
+```powershell
+$exe='C:\Users\ASUS\IdeaProjects\codepedia\.venv\Scripts\codepedia.exe'
+Start-Process cmd -ArgumentList '/c',"echo y| $exe index <repo-root>" -RedirectStandardOutput <log> -RedirectStandardError <err> -WindowStyle Hidden -PassThru
+```
+
+Wait on the log with Bash:
+
+```bash
+n=0; until grep -qE 'Documentation wiki available|^Traceback|^Error:' "$LOG" "$ERR" 2>/dev/null || [ $n -ge 170 ]; do sleep 3; n=$((n+1)); done
+```
+
+Do not match a bare `Error`: class names such as `BibliothecaError` contain it. Then run `Get-Process codepedia | Stop-Process -Force`. Redact the `token=` in any log you quote.
+
+**Config swap and restore:**
+- **Swap**, after the hash-compare (Python):
+
+  ```python
+  import json
+  d = json.load(open(p, encoding="utf-8"))
+  d["summaryChain"] = ["groq:openai/gpt-oss-120b", "local:qwen2.5-coder:1.5b", "groq:openai/gpt-oss-20b"]
+  json.dump(d, open(p, "w", encoding="utf-8"), indent=2)
+  ```
+
+- **Restore:** `[IO.File]::WriteAllBytes($cfg,[IO.File]::ReadAllBytes($bak))`, then hash-compare again.
+
+**Forcing a fresh narrative:** `DELETE FROM doc_overview_narratives` in `<state>\doc-manifest.sqlite`. Save the reply first if you want to compare. Any prompt change also misses the cache. After 039, a grouping change misses the plan cache (`doc_feature_plans`) too.
+
+**Full suite:** `.venv\Scripts\python.exe -m pytest --basetemp=<scratchpad>\pytest-x -p no:cacheprovider -q -rfE > <scratchpad>\full-suite.txt 2>&1`, in the background, about 10 minutes.
+- The only accepted failure is `tests/integration/test_cli.py::test_config_before_any_provider_reachable_still_reports_without_failing`, which makes a live Groq call and fails whenever Groq answers.
+- With `-q`, the "N passed" line may not print. Judge by the exit code and the `FAILED`/`ERROR` lines.
 
 ---
 
-## 7. How to verify after any narrative change (checklist)
+## 7. Next commands for the next agent (in order; ask before each non-trivial step)
 
-1. Unit and integration tests:
-   `tests/unit/test_overview_{narrator,grounding,evidence,package}.py`,
-   `tests/unit/test_manifest_overview_narratives.py`,
-   `tests/integration/test_overview_{page,subsystems}.py`,
-   `tests/integration/test_cli_overview_wiring.py`, `tests/unit/test_doc_generator_home_overview.py`,
-   `tests/unit/test_source_encoding.py`, `tests/unit/test_wiki_stylesheet_overview.py`.
-   Then the full suite.
-2. Ask the owner. Then reorder the chain, re-index both repositories, read the terminal `overview:`
-   line, restore the config, and hash-compare it with the backup.
-3. `why2.py` on both repositories, to see what was dropped and why.
-4. `lead_links.py` on both `index.html` files: 0 problems.
-5. Screenshots at 700 px dark and full-width light; read them.
-6. Tense review of every generated sentence.
-7. Stranger test with fresh subagents (one Read each), scored against `sc001-key-*.md`.
-8. Record the results in `research.md` (a new Decision) and `tasks.md`. Report to the owner. Don't commit.
+**Step 0: orient.**
+1. Read this file, `specs/039-feature-grouping/spec.md`, `plan.md`, `research.md` and `tasks.md`.
+2. Run:
+   - `git status --short`, `git log --oneline -3` and `git branch --show-current`. Expected: `main`; uncommitted only `.specify/feature.json`, `specs/039-feature-grouping/` and this file, unless the owner has committed since.
+   - Check that `.specify/feature.json` is `{"feature_directory":"specs\\039-feature-grouping"}`.
+   - Hash-compare the config with the backup (§5).
+   - `Get-Process codepedia`: expect none.
+   - Check that both scratchpads in §5 still exist.
+3. Tell the owner anything that differs. Ask about `lot-11` and about copying the config backup somewhere durable, if not yet answered.
+
+**Step 1: `/speckit-analyze` for 039** (read-only; it changes no files).
+- Invoke the Skill `speckit-analyze` with args `specs/039-feature-grouping`.
+- Report the findings by severity, then ask with AskUserQuestion which to fix, recommending the CRITICAL and HIGH ones. For 038, analyze found I2, which mattered.
+
+**Step 2: apply the approved analyze fixes** to the 039 `spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/` and `tasks.md`. Re-validate `checklists/requirements.md` if the spec changes. Do not commit.
+
+**Step 3: `/speckit-implement` for 039.**
+- Invoke the Skill `speckit-implement` with args like `specs/039-feature-grouping; start with Phase 1 and stop after T020 (MVP: US1 + US2) to report`. **Ask the owner first** whether to stop at T020 or continue through T030.
+- Checklist gate: `requirements.md` is 16 of 16, so it passes. Say so.
+- Follow `tasks.md` in order, writing each story's tests first and confirming they fail. Mark tasks `[X]` as they complete.
+- T002: **ask** where the measurements live (the scratchpad or `specs/039-feature-grouping/measurements/`).
+- T015: list every existing test whose expectation changed, with the requirement each change follows.
+- T016, T020, T025, T030: run `planner_probe.py` (no provider) and compare with `proto-run1.txt` and research Decisions 1, 5 and 7.
+- The suites to run after each story: `tests/unit/test_feature_*.py`, `tests/integration/test_feature_*.py`, `tests/unit/test_overview_*.py`, `tests/integration/test_overview_*.py`, `tests/unit/test_prose_labels.py`, `tests/unit/test_plain_text.py`, `tests/unit/test_source_encoding.py`. Then the full suite at T031.
+
+**Step 4: owner-gated verification round, 039 T036.** **Ask first.**
+1. Hash-compare, swap to the Groq-first chain, re-index both repositories one at a time (§6), restore, and hash-compare again.
+2. Expect one planner call and one Overview narrative per repository on the first run. Read the terminal for `overview:` lines.
+3. Open two old `features/*.html` addresses per repository; they must be redirect stubs to live pages.
+4. Record the largest feature's share with the model.
+
+**Step 5: 039 T037.**
+- Map features against the answer keys (SC-006): sample ≥ 6 of 8 including the CLI; nextgen ≥ 6 of 9 including wallets, auth and security, chatbot and frontend.
+- Stranger test (SC-007): fresh subagents, one Read each, `tool_uses: 1`.
+- Screenshots at 700 px dark and full width light. Also run `why3.py` and `lead_links.py` on both repositories, since the Overview is re-narrated.
+
+**Step 6: 039 T038.** Record research Decision 13 (the implementation against the prototype, SC-001 to SC-008, the stranger test, the changed tests). Tick the tasks, update this handoff, and report. **Do not commit.**
+
+**Optional, only if the owner asks:** 038 T053; the remaining 038 analyze findings (§3); the open decisions in §3.
+
+---
+
+## 8. Verification checklist after any grouping or narrative change
+
+1. Unit and integration tests (Step 3's list), then the full suite. The known flaky test is the only accepted failure.
+2. The no-model probes: `planner_probe.py`, `majors_probe.py`, `module_rows_probe.py`, and `grouping_proto.py` for comparison.
+3. Ask the owner, then run the verification round (§0 and §6).
+4. `why3.py` on both repositories, to see what was dropped, unasked or unwritten.
+5. `lead_links.py` on both `index.html` files: 0 problems.
+6. Screenshots at 700 px dark and full width light; read them. Check the module list through the trimmed-page trick.
+7. A tense review of every generated sentence.
+8. The stranger test (fresh subagents, one Read), scored against `sc001-key-*.md`.
+9. Record the results as a research Decision, tick the tasks, update this handoff, and report. Don't commit.

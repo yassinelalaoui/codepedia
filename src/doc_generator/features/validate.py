@@ -16,7 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Literal, Mapping, Sequence
 
-from .candidates import Candidate, anchor_module_key
+from .candidates import TERMINAL_FEATURE_TITLE, Candidate, anchor_module_key
+from .fallback import Weight
 from .evidence import RepositoryEvidence
 
 FeatureKind = Literal["overview", "capability", "subsystem", "tooling"]
@@ -41,10 +42,9 @@ MAX_TITLE_CHARACTERS = 60
 MIN_PLANNED_FEATURES = 2
 
 # Where candidates land when no feature claimed them and none could be built
-# from them alone. Constructed explicitly rather than left to emerge from the
-# "uncovered candidate" rule: two rules that could both produce the last-resort
-# bucket is how one of them silently stops running.
-TERMINAL_FEATURE_TITLE = "Support & Utilities"
+# from them alone. `TERMINAL_FEATURE_TITLE` is imported from `candidates`, which
+# builds the same bucket for modules grouping left alone (039 research
+# Decision 6 step 5); there is still exactly one bucket, and it is tooling.
 TERMINAL_FEATURE_KIND: FeatureKind = "tooling"
 
 
@@ -111,7 +111,7 @@ def repair(
     candidates: Sequence[Candidate],
     *,
     evidence: RepositoryEvidence,
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
 ) -> tuple[Feature, ...]:
     """Turn a plan - or no plan at all - into a usable feature set.
 
@@ -128,7 +128,7 @@ def repair(
         # A "plan" that collapses the repository into one entry is not
         # navigation. Discard the whole answer rather than publish it.
         grouped = [
-            (candidate.seedTitle, "", DEFAULT_FEATURE_KIND, [candidate], False)
+            (candidate.seedTitle, "", _unplanned_kind(candidate.seedTitle), [candidate], False)
             for candidate in candidates
         ]
 
@@ -183,7 +183,40 @@ def _grouped_candidates(
     unplaced = [c for c in candidates if c.seedModuleKey not in claimed]
     if unplaced:
         grouped.extend(_place_remainder(unplaced, used_titles, has_plan=bool(grouped)))
-    return grouped
+    return _one_terminal_feature(grouped)
+
+
+def _one_terminal_feature(
+    grouped: list[tuple[str, str, str, list[Candidate], bool]],
+) -> list[tuple[str, str, str, list[Candidate], bool]]:
+    """At most one feature carries `TERMINAL_FEATURE_TITLE` (039 FR-006, analyze I2).
+
+    Since 039, grouping builds a terminal candidate of its own, so repair's
+    bucket can meet a feature already titled like it - the terminal candidate
+    placed under its own title, or a planned feature the model named so. The
+    bucket joins that feature rather than publishing a second one with the
+    same name.
+    """
+    first: int | None = None
+    kept: list[tuple[str, str, str, list[Candidate], bool]] = []
+    for entry in grouped:
+        if entry[0].casefold() != TERMINAL_FEATURE_TITLE.casefold():
+            kept.append(entry)
+            continue
+        if first is None:
+            first = len(kept)
+            kept.append(entry)
+            continue
+        title, description, kind, members, planned = kept[first]
+        kept[first] = (title, description, kind, [*members, *entry[3]], planned)
+    return kept
+
+
+def _unplanned_kind(title: str) -> str:
+    """A feature no model named is a subsystem, unless it is the terminal bucket."""
+    if title.casefold() == TERMINAL_FEATURE_TITLE.casefold():
+        return TERMINAL_FEATURE_KIND
+    return DEFAULT_FEATURE_KIND
 
 
 def _place_remainder(
@@ -205,7 +238,7 @@ def _place_remainder(
             terminal.append(candidate)
             continue
         used_titles.add(title.casefold())
-        placed.append((title, "", DEFAULT_FEATURE_KIND, [candidate], False))
+        placed.append((title, "", _unplanned_kind(title), [candidate], False))
 
     if terminal:
         placed.append((TERMINAL_FEATURE_TITLE, "", TERMINAL_FEATURE_KIND, terminal, False))
@@ -216,7 +249,7 @@ def _build_features(
     grouped: Sequence[tuple[str, str, str, list[Candidate], bool]],
     *,
     evidence: RepositoryEvidence,
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
 ) -> tuple[Feature, ...]:
     evidence_by_key = evidence.by_module_key()
     name_by_key = {key: item.moduleName for key, item in evidence_by_key.items()}
@@ -249,7 +282,13 @@ def _build_features(
                     _member(evidence_by_key.get(key), key) for key in member_keys
                 ),
                 internalEdges=tuple(internal_edges),
-                exposedEntryPointCount=sum(c.exposedEntryPointCount for c in members),
+                # From the members, not the candidates' own counts, so a model's
+                # merge can drop none of them, and tests never count (039 FR-007).
+                exposedEntryPointCount=sum(
+                    len(evidence.entryPointKeysByModuleKey.get(key, ()))
+                    for key in member_keys
+                    if key not in evidence.testModuleKeys
+                ),
                 isPlanned=planned,
             )
         )
@@ -284,7 +323,7 @@ def _resolve_anchor_collisions(
 
 
 def _with_neighbors(
-    features: tuple[Feature, ...], adjacency: Mapping[str, Mapping[str, int]]
+    features: tuple[Feature, ...], adjacency: Mapping[str, Mapping[str, Weight]]
 ) -> tuple[Feature, ...]:
     feature_key_by_module = {
         member.moduleKey: feature.key for feature in features for member in feature.members

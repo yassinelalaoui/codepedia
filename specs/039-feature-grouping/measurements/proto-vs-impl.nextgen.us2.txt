@@ -1,0 +1,5 @@
+﻿== nextgen-wealth-ledger: prototype 21 groups, implementation 20
+   identical groups: 19
+   prototype only (1): ['README.md']
+   prototype only (1): ['refactor.py']
+   implementation only (2): ['README.md', 'refactor.py']

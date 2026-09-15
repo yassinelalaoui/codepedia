@@ -263,6 +263,55 @@ def test_unplaced_candidates_with_unusable_titles_land_in_the_terminal_feature(t
     assert _all_module_keys(features) == {"key::a", "key::b", "key::c"}
 
 
+def _terminal_candidate(*members: str) -> Candidate:
+    """What `build_candidates` builds for modules left alone (039 research Decision 6 step 5)."""
+    return Candidate(
+        seedModuleKey="features::terminal",
+        seedTitle=TERMINAL_FEATURE_TITLE,
+        memberKeys=tuple(f"key::{member}" for member in members),
+    )
+
+
+def test_there_is_at_most_one_terminal_feature(tmp_path):
+    """Repair's bucket joins the terminal feature that already exists (039 FR-006, analyze I2).
+
+    Since 039, grouping itself may build a candidate titled like the bucket, so
+    each way repair could add a second one is checked.
+    """
+    names = ("a", "b", "c", "t")
+
+    def terminals(features):
+        return [feature for feature in features if feature.title.casefold() == TERMINAL_FEATURE_TITLE.casefold()]
+
+    # 1. No plan; two seed titles collide, so the second goes to the bucket.
+    colliding = [
+        Candidate(seedModuleKey="key::a", seedTitle="Area", memberKeys=("key::a",)),
+        Candidate(seedModuleKey="key::b", seedTitle="Area", memberKeys=("key::b",)),
+    ]
+    only = terminals(_repair(None, [*colliding, _terminal_candidate("t")], names))
+    assert len(only) == 1
+    assert set(only[0].moduleKeys) == {"key::b", "key::t"}
+    assert only[0].kind == "tooling"
+
+    # 2. The same collision without a terminal candidate: 033's single bucket.
+    assert len(terminals(_repair(None, colliding, names))) == 1
+
+    # 3. The model titles a feature like the bucket and leaves the terminal
+    #    candidate out, so its title is taken and it falls to the bucket.
+    plan = FeaturePlan(
+        features=(
+            PlannedFeature(title="Main", kind="capability", memberCandidateIds=("c0",)),
+            PlannedFeature(title=TERMINAL_FEATURE_TITLE, kind="tooling", memberCandidateIds=("c1",)),
+        )
+    )
+    candidates = [_candidate("a"), _candidate("b"), _terminal_candidate("t")]
+    features = _repair(plan, candidates, names)
+    only = terminals(features)
+    assert len(only) == 1
+    assert set(only[0].moduleKeys) == {"key::b", "key::t"}
+    assert _all_module_keys(features) == {"key::a", "key::b", "key::t"}
+
+
 def test_fewer_than_two_features_discards_the_whole_plan(tmp_path):
     """One feature holding everything is not navigation."""
     candidates = [_candidate("a"), _candidate("b"), _candidate("c")]

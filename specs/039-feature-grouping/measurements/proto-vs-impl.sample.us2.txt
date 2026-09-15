@@ -1,0 +1,2 @@
+﻿== codepedia-sample-repo: prototype 14 groups, implementation 14
+   identical groups: 14

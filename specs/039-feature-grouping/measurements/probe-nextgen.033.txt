@@ -1,0 +1,147 @@
+﻿== nextgen-wealth-ledger: 109 modules, 60 entry-point (seed) modules
+   seed backend/src/main/java/ma/yassine/digitalbanking/DigitalBankingApplication.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/config/DataInitializationConfig.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/config/SecurityConfig.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/entities/AppUser.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/entities/Client.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/entities/LedgerEntry.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/entities/Wallet.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/exceptions/BalanceNotSufficientException.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/exceptions/ClientNotFoundException.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/exceptions/GlobalExceptionHandler.java  (10 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/exceptions/InvalidOperationException.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/exceptions/ResourceNotFoundException.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/exceptions/UserAlreadyExistsException.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/repositories/AppRoleRepository.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/repositories/AppUserRepository.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/repositories/ClientRepository.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/repositories/LedgerEntryRepository.java  (5 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/repositories/WalletRepository.java  (4 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/security/CustomUserDetailsService.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/security/JwtAuthenticationFilter.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/security/JwtProvider.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/services/AuthService.java  (4 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/services/ChatbotService.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/services/WalletService.java  (21 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/services/impl/AuthServiceImpl.java  (3 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/services/impl/ChatbotServiceImpl.java  (2 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/services/impl/WalletServiceImpl.java  (21 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/web/controllers/AuthController.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ChatbotController.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/web/controllers/ClientController.java  (1 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/web/controllers/DashboardController.java  (4 entry points)
+   seed backend/src/main/java/ma/yassine/digitalbanking/web/controllers/WalletController.java  (6 entry points)
+   seed frontend/src/app/app.component.ts  (1 entry points)
+   seed frontend/src/app/core/guards/auth.guard.ts  (1 entry points)
+   seed frontend/src/app/core/interceptors/error.interceptor.ts  (1 entry points)
+   seed frontend/src/app/core/interceptors/jwt.interceptor.ts  (1 entry points)
+   seed frontend/src/app/core/services/account.service.ts  (7 entry points)
+   seed frontend/src/app/core/services/auth.service.ts  (6 entry points)
+   seed frontend/src/app/core/services/chatbot.service.ts  (2 entry points)
+   seed frontend/src/app/core/services/client.service.ts  (3 entry points)
+   seed frontend/src/app/core/services/dashboard.service.ts  (1 entry points)
+   seed frontend/src/app/core/services/toast.service.ts  (1 entry points)
+   seed frontend/src/app/features/auth/login/login.component.ts  (1 entry points)
+   seed frontend/src/app/features/auth/register/register.component.ts  (1 entry points)
+   seed frontend/src/app/features/chatbot/chatbot.component.ts  (4 entry points)
+   seed frontend/src/app/features/clients/client-detail.component.ts  (2 entry points)
+   seed frontend/src/app/features/clients/client-form-dialog.component.ts  (3 entry points)
+   seed frontend/src/app/features/clients/clients.component.ts  (7 entry points)
+   seed frontend/src/app/features/dashboard/dashboard.component.ts  (3 entry points)
+   seed frontend/src/app/features/profile/profile.component.ts  (3 entry points)
+   seed frontend/src/app/features/wallets/account-detail.component.ts  (9 entry points)
+   seed frontend/src/app/features/wallets/credit-dialog.component.ts  (2 entry points)
+   seed frontend/src/app/features/wallets/current-account-dialog.component.ts  (3 entry points)
+   seed frontend/src/app/features/wallets/debit-dialog.component.ts  (2 entry points)
+   seed frontend/src/app/features/wallets/saving-account-dialog.component.ts  (3 entry points)
+   seed frontend/src/app/features/wallets/transfer-dialog.component.ts  (2 entry points)
+   seed frontend/src/app/features/wallets/wallets.component.ts  (6 entry points)
+   seed frontend/src/app/layout/navbar/navbar.component.ts  (2 entry points)
+   seed frontend/src/app/shared/dialogs/confirm-dialog.component.ts  (1 entry points)
+   seed refactor.py  (1 entry points)
+
+-- 7 candidates
+   c0: 'dtos' seed=backend/src/main/java/ma/yassine/digitalbanking/dtos/AccountHistoryDTO.java n=93 eps=0
+       backend/src/main/java/ma/yassine/digitalbanking/dtos/AccountHistoryDTO.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/AccountStatusStatsDTO.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/AccountTypeStatsDTO.java, backend/src/main/java/ma/yassine/digitalbanking/dtos/ActiveWalletDTO.java, backend/src/main/java/ma/yassine/digitalbanking/repositories/AppRoleRepository.java, backend/src/main/java/ma/yassine/digitalbanking/entities/AppUser.java, ... (+87)
+   c1: 'models' seed=frontend/src/app/core/models/chat.model.ts n=5 eps=0
+       frontend/src/app/core/models/chat.model.ts, frontend/src/app/core/models/client.model.ts, frontend/src/app/core/models/dashboard.model.ts, frontend/src/app/core/models/ledger-entry.model.ts, frontend/src/app/core/models/wallet.model.ts
+   c2: 'entities' seed=backend/src/main/java/ma/yassine/digitalbanking/entities/ActiveWallet.java n=3 eps=0
+       backend/src/main/java/ma/yassine/digitalbanking/entities/ActiveWallet.java, backend/src/main/java/ma/yassine/digitalbanking/entities/AppRole.java, backend/src/main/java/ma/yassine/digitalbanking/entities/StashWallet.java
+   c3: 'enums' seed=backend/src/main/java/ma/yassine/digitalbanking/enums/AccountStatus.java n=2 eps=0
+       backend/src/main/java/ma/yassine/digitalbanking/enums/AccountStatus.java, backend/src/main/java/ma/yassine/digitalbanking/enums/LedgerAction.java
+   c4: 'exceptions' seed=backend/src/main/java/ma/yassine/digitalbanking/exceptions/ApiError.java n=2 eps=0
+       backend/src/main/java/ma/yassine/digitalbanking/exceptions/ApiError.java, backend/src/main/java/ma/yassine/digitalbanking/exceptions/WalletNotFoundException.java
+   c5: 'repositories' seed=backend/src/main/java/ma/yassine/digitalbanking/repositories/ActiveWalletRepository.java n=2 eps=0
+       backend/src/main/java/ma/yassine/digitalbanking/repositories/ActiveWalletRepository.java, backend/src/main/java/ma/yassine/digitalbanking/repositories/StashWalletRepository.java
+   c6: 'environments' seed=frontend/src/environments/environment.ts n=2 eps=0
+       frontend/src/environments/environment.ts, frontend/src/environments/environment.prod.ts
+
+-- planner prompt (what the model saw)
+Organise these 7 module groups into about 13 features.
+
+What the repository says about itself:
+- NexGen Wealth Ledger
+- 🌟 Vision & Architecture
+- Technology Stack
+- Backend Infrastructure**: Java 21 powered by Spring Boot 3.2, ensuring extreme scalability, type safety, and rapid transaction processing.
+- Security & Identity**: Stateless authentication powered by JWT (JSON Web Tokens) seamlessly integrated with Spring Security.
+- Frontend Experience**: Angular 18 providing a fully responsive Single Page Application (SPA), styled with a bespoke "Emerald Dark Mode" utilizing the elegant *Outfit* typography.
+- AI Integration**: Features a sophisticated RAG (Retrieval-Augmented Generation) Chatbot utilizing OpenAI, allowing client relationship managers to instantly query ledger histories and portfolio statuses in natural language.
+- 🚀 Key Features
+- Client Portfolio Management
+- Onboard, verify, and manage institutional or individual clients.
+- Aggregate view of a client's entire financial footprint across multiple asset classes.
+- Dynamic Wallets
+- Active Wallets**: Designed for high-frequency liquidity operations.
+- Stash Wallets**: High-yield secure vaults designed for long-term asset retention.
+- Immutable Ledger Operations
+- Execute secure `LedgerActions` (Credits, Debits, and Transfers).
+- Traceable, time-stamped ledger entries to guarantee audit compliance.
+- Emerald Dark Mode Dashboard
+- A stunning, low-fatigue visual interface.
+- Real-time data visualization of wallet distributions and ledger velocity using customized Chart.js integrations.
+- AI Assistant
+
+Groups:
+c0: dtos (93 modules)
+  - AccountHistoryDTO - The `AccountHistoryDTO` class is a data transfer object (DTO) used to encapsulate the data returned by a call to the `Ac
+  - AccountStatusStatsDTO - The `AccountStatusStatsDTO` class is a data transfer object (DTO) used to encapsulate statistics about account statuses 
+  - AccountTypeStatsDTO - The `AccountTypeStatsDTO` class is a Java class located in the `backend/src/main/java/ma/yassine/digitalbanking/dtos` pa
+c1: models (5 modules)
+  - chat.model - The `chat.model` module in the repository defines the interfaces for chat messages in the application.
+  - client.model - The `client.model` module defines the data contracts used throughout the application for client‑related operations: - `C
+  - dashboard.model - The `dashboard.model` module in the `frontend/src/app/core/models` directory provides DTO (Data Transfer Object) interfa
+c2: entities (3 modules)
+  - ActiveWallet - The `ActiveWallet` class in the `nextgen-wealth-ledger` project is a Java entity used to represent active bank accounts.
+  - AppRole - The `AppRole` class represents an entity in the `nextgen-wealth-ledger` application, specifically in the `backend` modul
+  - StashWallet - This class `StashWallet` extends the `Wallet` class and represents a stash of money in a digital banking application.
+c3: enums (2 modules)
+  - AccountStatus - The `AccountStatus` enum in the `AccountStatus.java` file in the `backend/src/main/java/ma/yassine/digitalbanking/enums`
+  - LedgerAction - The `LedgerAction` class in the `ma.yassine.digitalbanking.enums` package defines two constants: `DEBIT` and `CREDIT`.
+c4: exceptions (2 modules)
+  - ApiError - The `ApiError` class in the `backend/src/main/java/ma/yassine/digitalbanking/exceptions/` directory is a custom exceptio
+  - WalletNotFoundException - The `WalletNotFoundException` is a custom exception class within the `ma.yassine.digitalbanking.exceptions` package.
+c5: repositories (2 modules)
+  - ActiveWalletRepository - The `ActiveWalletRepository` class in the `backend/src/main/java/ma/yassine/digitalbanking/repositories` package is an i
+  - StashWalletRepository - The `StashWalletRepository` is a repository interface that extends `JpaRepository` and is used to perform CRUD operation
+c6: environments (2 modules)
+  - environment - The `environment` module exports a single constant object that holds application‑wide configuration values.
+  - environment.prod - `environment.prod` defines the production configuration for the frontend application.
+
+-- cached plan: 7 features
+   [subsystem] Data Transfer Objects <- ['c0'] :: Defines structured data formats for API communication and internal processing.
+   [capability] Domain Models <- ['c1'] :: Represents core business entities such as clients, chats, and dashboards.
+   [subsystem] Persistent Entities <- ['c2'] :: Maps wallet and role objects to the database schema for ledger storage.
+   [tooling] Enumerations <- ['c3'] :: Provides typed constants for account status and ledger actions.
+   [tooling] Error Handling <- ['c4'] :: Standardizes API error responses and specific wallet exception scenarios.
+   [subsystem] Data Repositories <- ['c5'] :: Offers CRUD access to active and stash wallets through Spring Data interfaces.
+   [overview] Environment Configurations <- ['c6'] :: Manages development and production settings for the application runtime.
+
+-- repaired features (sidebar order), anchor = most internally connected member
+   [overview] Environment Configurations  anchor=frontend/src/environments/environment.ts n=2 eps=0 planned=True
+   [capability] Domain Models  anchor=frontend/src/app/core/models/chat.model.ts n=5 eps=0 planned=True
+   [subsystem] Data Repositories  anchor=backend/src/main/java/ma/yassine/digitalbanking/repositories/ActiveWalletRepository.java n=2 eps=0 planned=True
+   [subsystem] Data Transfer Objects  anchor=frontend/src/app/shared/animations.ts n=93 eps=0 planned=True
+   [subsystem] Persistent Entities  anchor=backend/src/main/java/ma/yassine/digitalbanking/entities/ActiveWallet.java n=3 eps=0 planned=True
+   [tooling] Enumerations  anchor=backend/src/main/java/ma/yassine/digitalbanking/enums/AccountStatus.java n=2 eps=0 planned=True
+   [tooling] Error Handling  anchor=backend/src/main/java/ma/yassine/digitalbanking/exceptions/ApiError.java n=2 eps=0 planned=True

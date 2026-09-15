@@ -1,0 +1,139 @@
+﻿== codepedia-sample-repo: 51 modules, 26 entry-point (seed) modules
+   seed scripts/seed_data.py  (1 entry points)
+   seed src/bibliotheca/api/app.py  (1 entry points)
+   seed src/bibliotheca/api/routes_books.py  (4 entry points)
+   seed src/bibliotheca/api/routes_loans.py  (5 entry points)
+   seed src/bibliotheca/api/routes_members.py  (3 entry points)
+   seed src/bibliotheca/cli.py  (7 entry points)
+   seed src/bibliotheca/core/clock.py  (2 entry points)
+   seed src/bibliotheca/domain/book.py  (1 entry points)
+   seed src/bibliotheca/domain/catalog.py  (3 entry points)
+   seed src/bibliotheca/domain/loan.py  (2 entry points)
+   seed src/bibliotheca/domain/policies.py  (10 entry points)
+   seed src/bibliotheca/integrations/email_gateway.py  (2 entry points)
+   seed src/bibliotheca/services/catalog_service.py  (1 entry points)
+   seed src/bibliotheca/services/lending_service.py  (2 entry points)
+   seed src/bibliotheca/services/member_service.py  (2 entry points)
+   seed src/bibliotheca/storage/memory_store.py  (8 entry points)
+   seed src/bibliotheca/storage/repository.py  (9 entry points)
+   seed src/bibliotheca/storage/sqlite_store.py  (8 entry points)
+   seed tests/conftest.py  (6 entry points)
+   seed tests/test_api_books.py  (2 entry points)
+   seed tests/test_catalog.py  (5 entry points)
+   seed tests/test_fines.py  (5 entry points)
+   seed tests/test_lending.py  (5 entry points)
+   seed web/static/api-client.js  (3 entry points)
+   seed web/static/app.js  (1 entry points)
+   seed web/static/types.ts  (1 entry points)
+
+-- 12 candidates
+   c0: 'api - app' seed=src/bibliotheca/api/app.py n=12 eps=1
+       README.md, src/bibliotheca/__init__.py, src/bibliotheca/api/__init__.py, src/bibliotheca/core/__init__.py, web/static/api-client.js, src/bibliotheca/api/app.py, ... (+6)
+   c1: 'scripts - seed_data' seed=scripts/seed_data.py n=9 eps=1
+       src/bibliotheca/domain/__init__.py, src/bibliotheca/domain/catalog.py, src/bibliotheca/cli.py, src/bibliotheca/domain/loan.py, src/bibliotheca/domain/member.py, src/bibliotheca/services/member_service.py, ... (+3)
+   c2: 'core - clock' seed=src/bibliotheca/core/clock.py n=6 eps=2
+       src/bibliotheca/services/__init__.py, src/bibliotheca/core/clock.py, src/bibliotheca/core/config.py, tests/conftest.py, src/bibliotheca/api/dependencies.py, src/bibliotheca/domain/fine.py
+   c3: 'api - routes_books' seed=src/bibliotheca/api/routes_books.py n=5 eps=4
+       src/bibliotheca/services/notifications.py, src/bibliotheca/api/routes_books.py, src/bibliotheca/services/search.py, tests/test_api_books.py, tests/test_catalog.py
+   c4: 'services - catalog_service' seed=src/bibliotheca/services/catalog_service.py n=4 eps=1
+       src/bibliotheca/utils/__init__.py, src/bibliotheca/services/catalog_service.py, src/bibliotheca/core/errors.py, tests/test_lending.py
+   c5: 'storage - memory_store' seed=src/bibliotheca/storage/memory_store.py n=3 eps=8
+       src/bibliotheca/storage/__init__.py, src/bibliotheca/storage/memory_store.py, src/bibliotheca/storage/repository.py
+   c6: 'docs' seed=docs/architecture.md n=2 eps=0
+       docs/architecture.md, docs/getting-started.md
+   c7: 'domain - book' seed=src/bibliotheca/domain/book.py n=2 eps=1
+       src/bibliotheca/domain/book.py, src/bibliotheca/utils/text.py
+   c8: 'integrations - email_gateway' seed=src/bibliotheca/integrations/email_gateway.py n=2 eps=2
+       src/bibliotheca/integrations/__init__.py, src/bibliotheca/integrations/email_gateway.py
+   c9: 'services - lending_service' seed=src/bibliotheca/services/lending_service.py n=2 eps=2
+       src/bibliotheca/utils/ids.py, src/bibliotheca/services/lending_service.py
+   c10: 'storage - sqlite_store' seed=src/bibliotheca/storage/sqlite_store.py n=2 eps=8
+       src/bibliotheca/storage/migrations.py, src/bibliotheca/storage/sqlite_store.py
+   c11: 'tests - test_fines' seed=tests/test_fines.py n=2 eps=5
+       src/bibliotheca/services/fine_calculator.py, tests/test_fines.py
+
+-- planner prompt (what the model saw)
+Organise these 12 module groups into about 8 features.
+
+What the repository says about itself:
+- Bibliotheca
+- Layout
+- src/bibliotheca/domain` — plain value objects and entities (no I/O).
+- src/bibliotheca/services` — use cases that orchestrate the domain.
+- src/bibliotheca/storage` — repository interface plus in-memory and SQLite stores.
+- src/bibliotheca/api` — HTTP routes over the services.
+- src/bibliotheca/cli` — command line entry points.
+- web/static` — the browser client that talks to the API.
+- Running
+
+Groups:
+c0: api - app (12 modules)
+  - README - # Bibliotheca A small library lending service used as a fixture repository.
+  - __init__ - Bibliotheca — a small library lending service.
+  - __init__ - The `__init__.py` file in the `src/bibliotheca/api` directory of the `codepedia-sample-repo` repository is a Python modu
+c1: scripts - seed_data (9 modules)
+  - __init__ - The `__init__` module in the `src/bibliotheca/domain` directory of the `codepedia-sample-repo` repository serves as the 
+  - catalog - The `Catalog` class is an in-memory view of every book the library holds, providing methods to add, find, add copies, an
+  - cli - The `cli` module in the `codepedia-sample-repo` repository is a command-line interface (CLI) for interacting with the li
+c2: core - clock (6 modules)
+  - __init__ - This module serves as the entry point for all services in the bibliotheca, initializing various sub-services within the 
+  - clock - The `clock` module in the `codepedia-sample-repo` repository contains classes for managing time in the system.
+  - config - This Python module named `config` is used to hold the configuration settings for the bibliotheca application.
+c3: api - routes_books (5 modules)
+  - notifications - The `notifications` module in the repository is responsible for sending notifications and charging fines for overdue lib
+  - routes_books - The `routes_books` module in the repository defines a FastAPI API router for managing books.
+  - search - The `search` module is a naive index for book titles and authors within a library.
+c4: services - catalog_service (4 modules)
+  - __init__ - This module, identified by the symbolId `module_0d7eade892b38caf` and located in the `utils` package of the `bibliotheca
+  - catalog_service - This module, `catalog_service`, is a high-level service that handles the catalog operations of a library.
+  - errors - This Python module named `errors` is a core part of a bibliotheca package designed to handle errors in a library.
+c5: storage - memory_store (3 modules)
+  - __init__ - The `__init__` module in the `bibliotheca/storage` directory of the `codepedia-sample-repo` repository contains the init
+  - memory_store - This `MemoryStore` class provides a dictionary-backed storage mechanism for books, loans, and members.
+  - repository - This symbol represents the core data storage and management system for the `bibliotheca` module in the `codepedia-sample
+c6: docs (2 modules)
+  - architecture - # Architecture Bibliotheca is layered, and the dependencies only ever point inwards.
+  - getting-started - # Getting started Install the package in editable mode and seed the sample data: ```bash pip install -e .
+c7: domain - book (2 modules)
+  - book - The `book` module in the `codepedia-sample-repo` repository defines a class `Book` that represents a physical book.
+  - text - The `text` module in the `codepedia-sample-repo` repository contains functions and utilities for text processing, includ
+c8: integrations - email_gateway (2 modules)
+  - __init__ - The `__init__` module serves as the entry point for the `bibliotheca/integrations` package in the `codepedia-sample-repo
+  - email_gateway - ### Module Summary The `email_gateway` module is a class designed to facilitate sending emails over SMTP.
+c9: services - lending_service (2 modules)
+  - ids - The `ids` module contains functions that generate stable unique identifiers for members and loans in the system.
+  - lending_service - The `LendingService` module in the `bibliotheca/services` directory of the `codepedia-sample-repo` repository provides a
+c10: storage - sqlite_store (2 modules)
+  - migrations - The `migrations` module contains functions for managing database migrations using SQLite.
+  - sqlite_store - This module is responsible for providing a SQLite-based storage solution for managing books, members, and loans in a lib
+c11: tests - test_fines (2 modules)
+  - fine_calculator - The `FineCalculator` class in the `fine_calculator.py` file is responsible for calculating fines for overdue loans.
+  - test_fines - This module contains test functions for various aspects of fine management in a library system.
+
+-- cached plan: 12 features
+   [overview] API <- ['c0'] :: The application layer of the library service, responsible for handling HTTP requests and responses.
+   [subsystem] Scripts <- ['c1'] :: The scripts directory contains scripts used to seed the database and manage the sample data.
+   [subsystem] Core <- ['c2'] :: The core components of the library service, including the clock and configuration.
+   [capability] API (Routes Books) <- ['c3'] :: The API route for managing books, including notifications and search functionality.
+   [capability] Services (Catalog Service) <- ['c4'] :: The service that interacts with the domain and provides catalog-related functionality.
+   [subsystem] Storage (Memory Store) <- ['c5'] :: The in-memory store for the library service, used for testing and development purposes.
+   [overview] Documentation <- ['c6'] :: The documentation for the library service, covering architecture and getting started instructions.
+   [capability] Domain (Book) <- ['c7'] :: The domain objects and entities for the library service, including the book itself and the text content.
+   [capability] Integrations (Email Gateway) <- ['c8'] :: The integration with the email gateway, used for sending notifications and alerts.
+   [capability] Services (Lending Service) <- ['c9'] :: The service that handles lending operations and provides lending-related functionality.
+   [subsystem] Storage (SQLite Store) <- ['c10'] :: The SQLite store for the library service, used for production deployment.
+   [capability] Tests (Test Fines) <- ['c11'] :: The test suite for the fine calculator functionality.
+
+-- repaired features (sidebar order), anchor = most internally connected member
+   [overview] API  anchor=src/bibliotheca/api/app.py n=12 eps=1 planned=True
+   [overview] Documentation  anchor=docs/architecture.md n=2 eps=0 planned=True
+   [capability] Tests (Test Fines)  anchor=src/bibliotheca/services/fine_calculator.py n=2 eps=5 planned=True
+   [capability] API (Routes Books)  anchor=src/bibliotheca/api/routes_books.py n=5 eps=4 planned=True
+   [capability] Integrations (Email Gateway)  anchor=src/bibliotheca/integrations/__init__.py n=2 eps=2 planned=True
+   [capability] Services (Lending Service)  anchor=src/bibliotheca/utils/ids.py n=2 eps=2 planned=True
+   [capability] Domain (Book)  anchor=src/bibliotheca/domain/book.py n=2 eps=1 planned=True
+   [capability] Services (Catalog Service)  anchor=src/bibliotheca/core/errors.py n=4 eps=1 planned=True
+   [subsystem] Storage (Memory Store)  anchor=src/bibliotheca/storage/__init__.py n=3 eps=8 planned=True
+   [subsystem] Storage (SQLite Store)  anchor=src/bibliotheca/storage/migrations.py n=2 eps=8 planned=True
+   [subsystem] Core  anchor=src/bibliotheca/core/clock.py n=6 eps=2 planned=True
+   [subsystem] Scripts  anchor=src/bibliotheca/domain/member.py n=9 eps=1 planned=True

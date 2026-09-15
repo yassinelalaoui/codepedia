@@ -16,13 +16,22 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from fractions import Fraction
+from pathlib import Path, PurePosixPath
 from typing import Mapping, Sequence
 
 from dependency_graph import DependencyGraph
 from repository_metadata.models import RepositoryBundle
 
 from .evidence import FeatureEvidence, normalize_path
+from .imports import resolve_repository_imports
+
+# An import's coupling weight. `int` everywhere except where a Java wildcard
+# import splits one import across a package (039 research Decision 4): exact
+# fractions, never floats, so sums and comparisons are identical on every run.
+# Every consumer below only adds and compares, which `int` and `Fraction` do
+# together.
+Weight = int | Fraction
 
 # A directory holding fewer modules than this is not a group on its own: it is
 # absorbed into whichever group it is most coupled to. A one-module "area" is
@@ -53,8 +62,31 @@ class FallbackGroup:
 
 
 def build_import_adjacency(
+    bundle: RepositoryBundle,
+    graph: DependencyGraph,
+    *,
+    repository_root: str | Path | None = None,
+) -> dict[str, dict[str, Weight]]:
+    """Undirected module-to-module import weights: 033's, plus Java and JS/TS.
+
+    033's adjacency (`_python_import_adjacency`) is kept exactly, so a
+    Python-only repository couples value for value as before (039 FR-005).
+    `features.imports` adds the Java and JS/TS imports the graph records by
+    name but never resolves to a file (039 FR-001). `repository_root` defaults
+    to the bundle's own root.
+    """
+    adjacency = _python_import_adjacency(bundle, graph)
+    root = repository_root if repository_root is not None else bundle.repository.rootPath
+    for source, row in resolve_repository_imports(bundle, graph, repository_root=root).items():
+        merged = adjacency.setdefault(source, {})
+        for target, weight in row.items():
+            merged[target] = merged.get(target, 0) + weight
+    return adjacency
+
+
+def _python_import_adjacency(
     bundle: RepositoryBundle, graph: DependencyGraph
-) -> dict[str, dict[str, int]]:
+) -> dict[str, dict[str, Weight]]:
     """Undirected module-to-module import weights, keyed by stable module key.
 
     Coupling is what decides a grouping, and coupling has no direction: a module
@@ -113,7 +145,7 @@ def build_import_adjacency(
 
 def build_fallback_groups(
     evidence: Sequence[FeatureEvidence],
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
 ) -> tuple[FallbackGroup, ...]:
     """Cluster the modules handed over - not the whole repository.
 
@@ -148,7 +180,7 @@ def build_fallback_groups(
 
 def _absorb_small_directories(
     members_by_directory: Mapping[str, tuple[str, ...]],
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
     directory_by_key: Mapping[str, str],
 ) -> dict[str, tuple[str, ...]]:
     """Fold directories below `MIN_FALLBACK_MODULES` into a real group.
@@ -195,7 +227,7 @@ def _absorb_small_directories(
 def _coupling_target(
     directory: str,
     member_keys: tuple[str, ...],
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
     *,
     directory_by_key: Mapping[str, str],
     candidates: set[str],
@@ -217,6 +249,14 @@ def _coupling_target(
 
 
 def _ancestor_target(directory: str, *, candidates: set[str]) -> str | None:
+    """The nearest ancestor directory that is a group, never the repository root.
+
+    033 fell back to the root. A lone document under `frontend/` then joined a
+    group of root-level files, which is how the two halves of a repository that
+    share no imports would meet in one feature (039 FR-006, edge case
+    "Unconnected halves"). Measured on both reference repositories, the limit
+    changes no grouping.
+    """
     if directory == ".":
         return None
     parts = PurePosixPath(directory).parts
@@ -224,7 +264,7 @@ def _ancestor_target(directory: str, *, candidates: set[str]) -> str | None:
         ancestor = "/".join(parts[:depth])
         if ancestor in candidates:
             return ancestor
-    return "." if "." in candidates else None
+    return None
 
 
 def _resolve_absorption_target(directory: str, target_by_directory: Mapping[str, str]) -> str | None:
@@ -245,7 +285,7 @@ def _resolve_absorption_target(directory: str, target_by_directory: Mapping[str,
 def _split_group(
     directory: str,
     member_keys: tuple[str, ...],
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
     name_by_key: Mapping[str, str],
 ) -> list[FallbackGroup]:
     if len(member_keys) <= SPLIT_THRESHOLD_MODULES:
@@ -290,7 +330,7 @@ def _split_group(
 
 
 def _label_propagation(
-    member_keys: set[str], adjacency: Mapping[str, Mapping[str, int]]
+    member_keys: set[str], adjacency: Mapping[str, Mapping[str, Weight]]
 ) -> dict[str, str]:
     """Community labels over one directory's internal import edges.
 
@@ -324,7 +364,7 @@ def _label_propagation(
 
 def lead_module_key(
     member_keys: Sequence[str],
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
     name_by_key: Mapping[str, str],
 ) -> str:
     """The member that best names a group: the most internally connected one.
@@ -335,7 +375,7 @@ def lead_module_key(
     """
     keys = set(member_keys)
 
-    def internal_degree(key: str) -> int:
+    def internal_degree(key: str) -> Weight:
         return sum(weight for neighbor, weight in adjacency.get(key, {}).items() if neighbor in keys)
 
     return min(keys, key=lambda key: (-internal_degree(key), name_by_key.get(key, key), key))

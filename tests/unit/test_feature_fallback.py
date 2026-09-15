@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "integration"))
 
-from _doc_generator_support import index_repo  # noqa: E402
+from _doc_generator_support import build_indexed_repo, index_repo  # noqa: E402
 from dependency_graph import DependencyGraph  # noqa: E402
 from parser_engine import SourceFile, extract_symbols  # noqa: E402
 
@@ -195,3 +195,97 @@ def test_documents_are_grouped_by_the_fallback_because_nothing_calls_them(tmp_pa
     assert claimed == {fb.module.sourceFileId for fb in bundle.files}, (
         "documents must still be claimed by a candidate, or they vanish from the wiki"
     )
+
+
+# --- Spec 039: the root limit, and Java and JS/TS edges -----------------------
+
+
+def test_a_lone_subdirectory_never_joins_a_root_group_by_ancestry():
+    """039 FR-006: `frontend/x/` shares no imports with the root-level files.
+
+    033 absorbed a directory too small to stand alone into the root group when
+    no nearer ancestor was one. Now it stays apart, for folding to place.
+    """
+    from doc_generator.features.evidence import FeatureEvidence
+
+    evidence = [
+        FeatureEvidence(moduleKey=key, moduleName=Path(key).stem, filePath=f"/r/{key}", directoryPath=directory)
+        for key, directory in (("a.py", "."), ("b.py", "."), ("frontend/x/lone.py", "frontend/x"))
+    ]
+
+    groups = build_fallback_groups(evidence, {item.moduleKey: {} for item in evidence})
+
+    lone = next(group for group in groups if "frontend/x/lone.py" in group.memberKeys)
+    assert lone.memberKeys == ("frontend/x/lone.py",)
+
+
+def _by_path(bundle, root: Path, adjacency) -> dict[str, dict[str, object]]:
+    path = {
+        fb.module.sourceFileId: Path(fb.module.filePath).resolve().relative_to(root.resolve()).as_posix()
+        for fb in bundle.files
+    }
+    return {path[a]: {path[b]: weight for b, weight in row.items()} for a, row in adjacency.items()}
+
+
+def test_python_adjacency_is_unchanged(tmp_path):
+    """FR-005, pinned to values taken from 033's code before 039 changed this module.
+
+    Each Python import weighs 2: 033 counts an edge from both of its ends. The
+    second fixture has two `models.py`, a relative import, a package-relative
+    `from . import`, a dotted absolute import and stdlib imports that must add
+    nothing.
+    """
+    root, store, graph = build_indexed_repo(tmp_path)
+    bundle = store.load_repository(root)
+    assert _by_path(bundle, root, build_import_adjacency(bundle, graph)) == {
+        "alpha.py": {"beta.py": 2},
+        "beta.py": {"alpha.py": 2, "gamma.py": 2},
+        "gamma.py": {"beta.py": 2},
+    }
+
+    pkgs = tmp_path / "pkgs"
+    sources = {
+        "app/__init__.py": "",
+        "app/models.py": "class Item:\n    pass\n",
+        "app/service.py": "from .models import Item\nimport os\nfrom __future__ import annotations\n\n\ndef make():\n    return Item()\n",
+        "app/cli.py": "from .service import make\nfrom . import models\n\n\ndef run():\n    return make()\n",
+        "lib/models.py": "import json\n\n\nclass Other:\n    pass\n",
+        "lib/util.py": "from lib.models import Other\nimport os\n\n\ndef helper():\n    return Other()\n",
+    }
+    files = [_write(pkgs / name, text) for name, text in sources.items()]
+    store, graph = index_repo(tmp_path, pkgs, files, "pkgs.sqlite")
+    bundle = store.load_repository(pkgs)
+    adjacency = build_import_adjacency(bundle, graph)
+
+    assert _by_path(bundle, pkgs, adjacency) == {
+        "app/__init__.py": {"app/cli.py": 2},
+        "app/cli.py": {"app/__init__.py": 2, "app/service.py": 2},
+        "app/models.py": {"app/service.py": 2},
+        "app/service.py": {"app/cli.py": 2, "app/models.py": 2},
+        "lib/models.py": {"lib/util.py": 2},
+        "lib/util.py": {"lib/models.py": 2},
+    }
+    assert all(type(weight) is int for row in adjacency.values() for weight in row.values()), (
+        "Python weights stay `int`, value for value"
+    )
+
+
+def test_java_and_ts_edges_are_merged_into_the_adjacency(tmp_path):
+    root = tmp_path / "mixed"
+    files = [
+        _write(root / "api" / "Controller.java", "package api;\n\nimport svc.Service;\n\npublic class Controller {}\n"),
+        _write(root / "svc" / "Service.java", "package svc;\n\npublic class Service {}\n"),
+        _write(root / "web" / "page.ts", "import { load } from './data';\n\nexport const page = load;\n"),
+        _write(root / "web" / "data.ts", "export const load = 1;\n"),
+        _write(root / "tools" / "alpha.py", _importing_module("alpha", "beta")),
+        _write(root / "tools" / "beta.py", _module("beta")),
+    ]
+    store, graph = index_repo(tmp_path, root, files, "mixed.sqlite")
+    bundle = store.load_repository(root)
+
+    adjacency = _by_path(bundle, root, build_import_adjacency(bundle, graph))
+
+    assert len(adjacency) == len(bundle.files), "every module keeps a row"
+    assert adjacency["api/Controller.java"] == {"svc/Service.java": 1}
+    assert adjacency["web/page.ts"] == {"web/data.ts": 1}
+    assert adjacency["tools/alpha.py"] == {"tools/beta.py": 2}, "Python keeps 033's weight"

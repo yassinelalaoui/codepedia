@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from typing import Mapping, Sequence
 
 from .evidence import FeatureEvidence, RepositoryEvidence
-from .fallback import build_fallback_groups, default_group_title, lead_module_key
+from .fallback import Weight, build_fallback_groups, default_group_title, lead_module_key
 
 # How far a seed's claim is allowed to travel, in undirected import hops - one
 # propagation sweep per hop.
@@ -28,6 +29,19 @@ MIN_CANDIDATE_MODULES = 2
 # Raising this raises the prompt, which is why `test_feature_planner.py`
 # computes the ceiling from this constant rather than restating the answer.
 MAX_PROMPTED_CANDIDATES = 32
+
+# Where modules land when nothing else can hold them: 033 FR-014's bucket.
+# Constructed explicitly rather than left to emerge from any other rule, because
+# two rules that could both produce the last-resort bucket is how one of them
+# silently stops running. Grouping builds it for modules left alone (039
+# research Decision 6 step 5); repair joins its own leftovers to it. Defined here
+# rather than in `validate`, which imports this module and re-exports the name.
+TERMINAL_FEATURE_TITLE = "Support & Utilities"
+
+# The terminal candidate's seed. Deliberately not a module key: the bucket has no
+# seed module, and a placeholder that could collide with a real key would give
+# two candidates one identity in repair.
+TERMINAL_SEED_KEY = "features::terminal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +69,7 @@ class Candidate:
 
 def build_candidates(
     evidence: RepositoryEvidence,
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
 ) -> tuple[Candidate, ...]:
     """Group every module into exactly one candidate, with no model call.
 
@@ -64,86 +78,106 @@ def build_candidates(
     intersect. Every downstream guarantee - the repair table, the "no orphaned
     module" property, the navigation's completeness - rests on it holding here.
 
-    Four steps, all deterministic:
+    Six steps, all deterministic:
 
-    1. seed one candidate per distinct entry-point module;
-    2. attach every reachable module to its nearest seed;
+    1. seed one candidate per non-test module holding an entry point;
+    2. attach every reachable production module to its nearest seed;
     3. group whatever no seed reached by structural clustering (`fallback`);
-    4. consolidate: fold the too-small, cap the survivors.
+    4. fold: by coupling, then by directory, never into the largest group, and
+       never an entry module into a group without one (`_Folding`);
+    5. place each test file with the production code it exercises;
+    6. count each candidate's entry points from its members (039 FR-007).
+
+    Steps 1 to 4 see production modules only (039 FR-008). A test imports what
+    it tests, so it is the best-connected module there is: seeding groups, it
+    decided where production code was shown - on the sample repository 5 of 26
+    seeds were tests, one titled "Tests (Test Fines)" holding the fine
+    calculator. Placed last, a test can never move a production module.
     """
     evidence_by_key = evidence.by_module_key()
     if not evidence_by_key:
         return ()
 
     name_by_key = {key: item.moduleName for key, item in evidence_by_key.items()}
-    seeds = tuple(key for key in evidence.entryPointModuleKeys if key in evidence_by_key)
+    directory_by_key = {key: item.directoryPath for key, item in evidence_by_key.items()}
+    test_keys = frozenset(key for key in evidence.testModuleKeys if key in evidence_by_key)
+    production = {key: item for key, item in evidence_by_key.items() if key not in test_keys}
+    production_adjacency = {
+        key: {neighbor: weight for neighbor, weight in adjacency.get(key, {}).items() if neighbor in production}
+        for key in production
+    }
+    seeds = tuple(key for key in evidence.seedModuleKeys if key in production)
 
-    owner_by_module = _assign_by_coupling(seeds, evidence_by_key, adjacency)
+    owner_by_module = _assign_by_coupling(seeds, production, production_adjacency)
 
     grouped: dict[str, list[str]] = {}
     for module_key, seed in owner_by_module.items():
         grouped.setdefault(seed, []).append(module_key)
 
-    candidates = [
-        _build_candidate(seed, member_keys, evidence, adjacency, name_by_key)
+    groups = [
+        _Group(seed=seed, title=_seed_title(seed, directory_by_key, name_by_key), members=set(member_keys))
         for seed, member_keys in grouped.items()
     ]
 
     # Everything no seed reached. Not a rare branch: `identify_entry_points`
     # skips prose files, so on a real run every README and every document in the
     # analysed repository arrives here.
-    unreached = [
-        evidence_by_key[key] for key in sorted(evidence_by_key) if key not in owner_by_module
-    ]
-    for group in build_fallback_groups(unreached, adjacency):
-        lead_name = name_by_key.get(group.leadModuleKey, group.leadModuleKey)
-        candidates.append(
-            Candidate(
-                seedModuleKey=group.leadModuleKey,
-                seedTitle=default_group_title(group.directoryPath, lead_name, split=False),
-                memberKeys=group.memberKeys,
-                exposedEntryPointCount=0,
+    unreached = [production[key] for key in sorted(production) if key not in owner_by_module]
+    for fallback_group in build_fallback_groups(unreached, production_adjacency):
+        lead_name = name_by_key.get(fallback_group.leadModuleKey, fallback_group.leadModuleKey)
+        groups.append(
+            _Group(
+                seed=fallback_group.leadModuleKey,
+                title=default_group_title(fallback_group.directoryPath, lead_name, split=False),
+                members=set(fallback_group.memberKeys),
             )
         )
 
-    return _consolidate(candidates, adjacency, name_by_key)
+    folding = _Folding(
+        groups,
+        entry_keys=frozenset(evidence.entryModuleKeys),
+        directory_by_key=directory_by_key,
+        name_by_key=name_by_key,
+        adjacency=production_adjacency,
+    )
+    folding.run()
+    folding.place_tests(sorted(test_keys), adjacency)
+    folded = folding.result()
+
+    candidates = [
+        Candidate(
+            seedModuleKey=group.seed,
+            seedTitle=group.title,
+            memberKeys=tuple(sorted(group.members, key=lambda key: (name_by_key.get(key, key), key))),
+            # From the members, excluding tests, however they arrived: 033 summed
+            # only the surviving candidates' own counts, so every fold dropped the
+            # absorbed ones' and every `nextgen-wealth-ledger` feature showed 0.
+            exposedEntryPointCount=sum(
+                len(evidence.entryPointKeysByModuleKey.get(key, ()))
+                for key in group.members
+                if key not in test_keys
+            ),
+        )
+        for group in folded
+    ]
+    return tuple(sorted(candidates, key=lambda candidate: (-len(candidate.memberKeys), candidate.seedModuleKey)))
 
 
-def _build_candidate(
-    seed: str,
-    member_keys: Sequence[str],
-    evidence: RepositoryEvidence,
-    adjacency: Mapping[str, Mapping[str, int]],
-    name_by_key: Mapping[str, str],
-) -> Candidate:
-    ordered = tuple(sorted(member_keys, key=lambda key: (name_by_key.get(key, key), key)))
-    exposed = sum(
-        len(evidence.entryPointKeysByModuleKey.get(member_key, ())) for member_key in ordered
-    )
-    seed_evidence = evidence.by_module_key().get(seed)
-    return Candidate(
-        seedModuleKey=seed,
-        # Qualified by the seed's package, never the bare module name. This
-        # repository has eleven modules called `models` and eighteen called
-        # `__init__`, so bare names would give four candidates the title
-        # "models" - and `validate.py` rejects duplicate titles, so with no model
-        # reachable three of those four features would be thrown away and
-        # reassigned. The title a candidate carries when nothing named it has to
-        # be usable on its own.
-        seedTitle=default_group_title(
-            seed_evidence.directoryPath if seed_evidence else ".",
-            name_by_key.get(seed, seed),
-            split=True,
-        ),
-        memberKeys=ordered,
-        exposedEntryPointCount=exposed,
-    )
+def _seed_title(seed: str, directory_by_key: Mapping[str, str], name_by_key: Mapping[str, str]) -> str:
+    # Qualified by the seed's package, never the bare module name. This
+    # repository has eleven modules called `models` and eighteen called
+    # `__init__`, so bare names would give four candidates the title
+    # "models" - and `validate.py` rejects duplicate titles, so with no model
+    # reachable three of those four features would be thrown away and
+    # reassigned. The title a candidate carries when nothing named it has to
+    # be usable on its own.
+    return default_group_title(directory_by_key.get(seed, "."), name_by_key.get(seed, seed), split=True)
 
 
 def _assign_by_coupling(
     seeds: Sequence[str],
     evidence_by_key: Mapping[str, FeatureEvidence],
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
 ) -> dict[str, str]:
     """Assign each module to the seed its imports are most coupled to.
 
@@ -205,91 +239,321 @@ def _assign_by_coupling(
     return {key: label for key, label in labels.items() if key in evidence_by_key}
 
 
-def _consolidate(
-    candidates: Sequence[Candidate],
-    adjacency: Mapping[str, Mapping[str, int]],
-    name_by_key: Mapping[str, str],
-) -> tuple[Candidate, ...]:
-    """Fold the too-small, then cap the survivors, folding the remainder too.
+@dataclass(slots=True)
+class _Group:
+    """A candidate while folding is still deciding its members."""
 
-    Both passes fold rather than drop, which is what keeps the partition total:
-    a candidate that disappears here must have handed its members to another
-    one, never released them.
+    seed: str
+    title: str
+    members: set[str] = field(default_factory=set)
+
+
+class _Folding:
+    """Fold groups too small to stand alone, then enforce the cap (039 research Decision 6).
+
+    033 folded a group coupled to nothing into the *largest* survivor. With no
+    Java or TypeScript coupling that put 93 of `nextgen-wealth-ledger`'s 109
+    modules into one feature. Here nothing is ever chosen for its size:
+
+    1. a small group folds into the survivor it is most coupled to;
+    2. an **entry group** - one holding a command, a route or `main` - survives at
+       any size and folds only into another entry group, by coupling or by
+       directory (039 FR-006a), so a CLI is never absorbed into a script group;
+    3. a small group coupled to nothing joins the survivor holding the most
+       modules *directly* in its directory, then its parent's, stopping at the
+       top-level directory: never climbing into the root from below, which is
+       how an unconnected frontend and backend would meet (039 FR-006);
+    4. small groups still unplaced combine per directory;
+    5. what is still alone goes to the one terminal candidate;
+    6. past `MAX_PROMPTED_CANDIDATES`, the smallest groups fold by the same
+       rules, entry groups last and only into entry groups; one with no coupled
+       target and none found by directory joins the group sharing the longest
+       leading directory path with it.
+
+    Every tie breaks on the seed key, and groups are visited smallest first, so
+    the outcome is identical on every run. Folding moves members and never drops
+    them, which is what keeps the partition total.
+
+    When no group can stand alone - none reaches `MIN_CANDIDATE_MODULES` and
+    none holds an entry module - steps 1 to 5 are skipped and the groups stay
+    as they are, as in 033: there is nothing to fold into, and combining them
+    all by directory would publish one feature holding the whole repository,
+    which `validate` itself rejects as "not navigation" (owner decision,
+    2026-09-15).
     """
-    if not candidates:
-        return ()
 
-    ranked = sorted(candidates, key=lambda c: (-len(c.memberKeys), c.seedModuleKey))
-    survivors = [c for c in ranked if len(c.memberKeys) >= MIN_CANDIDATE_MODULES]
-    if not survivors:
-        # Nothing meets the minimum - a repository of entry points that share no
-        # helpers. The largest candidates still have to be the targets, because
-        # *something* must absorb the rest: an empty survivor list here used to
-        # fall through to a plain truncation, which silently dropped every module
-        # past the cap and broke the partition at the one step meant to tidy it.
-        survivors = ranked[:MAX_PROMPTED_CANDIDATES]
+    def __init__(
+        self,
+        groups: Sequence[_Group],
+        *,
+        entry_keys: frozenset[str],
+        directory_by_key: Mapping[str, str],
+        name_by_key: Mapping[str, str],
+        adjacency: Mapping[str, Mapping[str, Weight]],
+    ) -> None:
+        self.groups = {group.seed: group for group in groups}
+        self.entry_keys = entry_keys
+        self.directory_by_key = directory_by_key
+        self.name_by_key = name_by_key
+        self.adjacency = adjacency
+        # Placed test files; never counted when a directory is weighed.
+        self.test_keys: frozenset[str] = frozenset()
 
-    if len(survivors) > MAX_PROMPTED_CANDIDATES:
-        survivors = survivors[:MAX_PROMPTED_CANDIDATES]
+    def run(self) -> None:
+        if any(not self._is_small(group) or self._is_entry(group) for group in self.groups.values()):
+            self._fold_small()
+            self._combine_leftovers()
+        self._enforce_cap()
 
-    surviving_seeds = {candidate.seedModuleKey for candidate in survivors}
-    absorbed = [c for c in ranked if c.seedModuleKey not in surviving_seeds]
+    def result(self) -> list[_Group]:
+        return sorted(self.groups.values(), key=lambda group: group.seed)
 
-    members_by_seed = {c.seedModuleKey: list(c.memberKeys) for c in survivors}
-    for candidate in absorbed:
-        target = _best_absorption_target(candidate, survivors, adjacency)
-        members_by_seed[target].extend(candidate.memberKeys)
+    # -- tests, once production grouping is final (039 FR-009) -------------
 
-    return tuple(
-        sorted(
-            (
-                replace(
-                    candidate,
-                    memberKeys=tuple(
-                        sorted(
-                            set(members_by_seed[candidate.seedModuleKey]),
-                            key=lambda key: (name_by_key.get(key, key), key),
-                        )
-                    ),
+    def place_tests(self, test_keys: Sequence[str], adjacency: Mapping[str, Mapping[str, Weight]]) -> None:
+        """Each test joins the group holding most of the production code it imports.
+
+        Measured by summed import weight to production members, ties to the
+        smaller seed key. A test importing no production code - fixtures - is
+        placed by the directory walk, counting production modules only. Tests
+        still unplaced combine per directory, while the cap allows a new group;
+        a test left alone goes to the terminal candidate (research Decision 5).
+        """
+        self.test_keys = frozenset(test_keys)
+        unplaced: list[str] = []
+        for test in test_keys:
+            scored = []
+            for group in self.groups.values():
+                weight = sum(
+                    weight
+                    for neighbor, weight in adjacency.get(test, {}).items()
+                    if neighbor in group.members and neighbor not in self.test_keys
                 )
-                for candidate in survivors
-            ),
-            key=lambda candidate: (-len(candidate.memberKeys), candidate.seedModuleKey),
+                if weight > 0:
+                    scored.append((-weight, group.seed))
+            if scored:
+                self.groups[min(scored)[1]].members.add(test)
+            else:
+                unplaced.append(test)
+
+        leftovers: dict[str, list[str]] = {}
+        for test in unplaced:
+            probe = _Group(seed=test, title="", members={test})
+            targets = [group for group in self.groups.values() if group.seed != TERMINAL_SEED_KEY]
+            target = self._directory_target(probe, targets)
+            if target is not None:
+                self.groups[target].members.add(test)
+            else:
+                leftovers.setdefault(self.directory_by_key.get(test, "."), []).append(test)
+
+        alone: set[str] = set()
+        for directory, sharing in sorted(leftovers.items()):
+            if len(sharing) < 2 or len(self.groups) >= MAX_PROMPTED_CANDIDATES:
+                alone.update(sharing)
+                continue
+            lead = lead_module_key(tuple(sharing), adjacency, self.name_by_key)
+            self.groups[lead] = _Group(
+                seed=lead,
+                title=default_group_title(directory, self.name_by_key.get(lead, lead), split=False),
+                members=set(sharing),
+            )
+        if alone:
+            self._add_to_terminal(alone)
+
+    # -- steps 1 to 3 -------------------------------------------------------
+
+    def _fold_small(self) -> None:
+        """One small group at a time, smallest first: coupling, then directory.
+
+        After every fold the order is taken again, because a fold changes which
+        groups are coupled to what. Measured on the sample repository (039 T020),
+        running every coupling fold before any directory placement instead let
+        the data-seeding script - an entry module importing nearly everything -
+        absorb the CLI and two route modules one small group at a time, the
+        "Scripts" group this spec set out to remove. Placed group by group, the
+        package `__init__` reaches the CLI through its directory first, and the
+        grouping is the one research Decisions 1, 6 and 7 measured.
+        """
+        moved = True
+        while moved:
+            moved = False
+            for group in self._smallest_first():
+                if not self._is_small(group):
+                    continue
+                targets = self._survivors(excluding=group, entry_only=self._is_entry(group))
+                target = self._coupled_target(group, targets) or self._directory_target(group, targets)
+                if target is not None:
+                    self._merge(group, into=target)
+                    moved = True
+                    break
+
+    # -- steps 4 and 5 ------------------------------------------------------
+
+    def _combine_leftovers(self) -> None:
+        leftovers = [
+            group
+            for group in self._smallest_first()
+            if self._is_small(group) and not self._is_entry(group)
+        ]
+        by_directory: dict[str, list[_Group]] = {}
+        for group in leftovers:
+            by_directory.setdefault(self._directory_of(group), []).append(group)
+
+        alone: set[str] = set()
+        for directory, sharing in sorted(by_directory.items()):
+            members = {key for group in sharing for key in group.members}
+            for group in sharing:
+                del self.groups[group.seed]
+            if len(sharing) < 2:
+                alone |= members
+                continue
+            lead = lead_module_key(tuple(members), self.adjacency, self.name_by_key)
+            lead_name = self.name_by_key.get(lead, lead)
+            self.groups[lead] = _Group(
+                seed=lead, title=default_group_title(directory, lead_name, split=False), members=members
+            )
+
+        if alone:
+            self._add_to_terminal(alone)
+
+    def _add_to_terminal(self, keys: set[str]) -> None:
+        terminal = self.groups.setdefault(
+            TERMINAL_SEED_KEY, _Group(seed=TERMINAL_SEED_KEY, title=TERMINAL_FEATURE_TITLE)
         )
-    )
+        terminal.members |= keys
+
+    # -- step 6 -------------------------------------------------------------
+
+    def _enforce_cap(self) -> None:
+        while len(self.groups) > MAX_PROMPTED_CANDIDATES:
+            foldable = [group for group in self._smallest_first() if group.seed != TERMINAL_SEED_KEY]
+            ordinary = [group for group in foldable if not self._is_entry(group)]
+            group = (ordinary or foldable or [None])[0]
+            if group is None:
+                return
+            entry_only = self._is_entry(group)
+            targets = [
+                other
+                for other in self.groups.values()
+                if other is not group
+                and other.seed != TERMINAL_SEED_KEY
+                and (not entry_only or self._is_entry(other))
+            ]
+            if not targets:
+                return
+            target = (
+                self._coupled_target(group, targets)
+                or self._directory_target(group, targets)
+                or self._shared_path_target(group, targets)
+            )
+            self._merge(group, into=target)
+
+    # -- targets ------------------------------------------------------------
+
+    def _coupled_target(self, group: _Group, targets: Sequence[_Group]) -> str | None:
+        scored = []
+        for target in targets:
+            weight = sum(
+                weight
+                for key in group.members
+                for neighbor, weight in self.adjacency.get(key, {}).items()
+                if neighbor in target.members
+            )
+            if weight > 0:
+                scored.append((-weight, target.seed))
+        return min(scored)[1] if scored else None
+
+    def _directory_target(self, group: _Group, targets: Sequence[_Group]) -> str | None:
+        """The target holding the most modules directly in the group's directory, then its parent's.
+
+        A directory counts only its direct modules, never its subtree: counted
+        by subtree, every root-level file would go to the group with the most
+        modules anywhere below it, which is the largest group again.
+        """
+        for level in _directory_walk(self._directory_of(group)):
+            scored = []
+            for target in targets:
+                held = sum(
+                    1
+                    for key in target.members
+                    if key not in self.test_keys and self.directory_by_key.get(key) == level
+                )
+                if held:
+                    scored.append((-held, target.seed))
+            if scored:
+                return min(scored)[1]
+        return None
+
+    def _shared_path_target(self, group: _Group, targets: Sequence[_Group]) -> str:
+        own = _path_parts(self._directory_of(group))
+
+        def shared(target: _Group) -> int:
+            return max(
+                _common_prefix_length(own, _path_parts(self.directory_by_key.get(key, ".")))
+                for key in target.members
+            )
+
+        return min(targets, key=lambda target: (-shared(target), target.seed)).seed
+
+    # -- helpers ------------------------------------------------------------
+
+    def _smallest_first(self) -> list[_Group]:
+        return sorted(self.groups.values(), key=lambda group: (len(group.members), group.seed))
+
+    def _survivors(self, *, excluding: _Group, entry_only: bool) -> list[_Group]:
+        return [
+            group
+            for group in self.groups.values()
+            if group is not excluding
+            and (not self._is_small(group) or self._is_entry(group))
+            and (not entry_only or self._is_entry(group))
+        ]
+
+    def _is_small(self, group: _Group) -> bool:
+        return len(group.members) < MIN_CANDIDATE_MODULES
+
+    def _is_entry(self, group: _Group) -> bool:
+        return not self.entry_keys.isdisjoint(group.members)
+
+    def _directory_of(self, group: _Group) -> str:
+        if group.seed in group.members:
+            return self.directory_by_key.get(group.seed, ".")
+        counts = Counter(self.directory_by_key.get(key, ".") for key in group.members)
+        return min(counts.items(), key=lambda item: (-item[1], item[0]))[0]
+
+    def _merge(self, group: _Group, *, into: str) -> None:
+        self.groups[into].members |= group.members
+        del self.groups[group.seed]
 
 
-def _best_absorption_target(
-    candidate: Candidate,
-    survivors: Sequence[Candidate],
-    adjacency: Mapping[str, Mapping[str, int]],
-) -> str:
-    """The surviving candidate most coupled to this one's members.
+def _directory_walk(directory: str) -> list[str]:
+    """`a/b/c`, `a/b`, `a`: the group's directory and its ancestors below the root.
 
-    Ties break on the target's seed key, and a candidate coupled to nothing goes
-    to the largest survivor - an arbitrary but *stated* answer, rather than
-    whichever one a dict happened to yield first.
+    A group whose own directory is the root is placed by the root's modules; a
+    group in a subdirectory never climbs into the root (039 FR-006).
     """
-    orphan_keys = set(candidate.memberKeys)
-    scored: list[tuple[int, str]] = []
-    for survivor in survivors:
-        survivor_keys = set(survivor.memberKeys)
-        weight = sum(
-            weight
-            for key in orphan_keys
-            for neighbor, weight in adjacency.get(key, {}).items()
-            if neighbor in survivor_keys
-        )
-        scored.append((weight, survivor.seedModuleKey))
-    best_weight, best_seed = min(scored, key=lambda item: (-item[0], item[1]))
-    if best_weight > 0:
-        return best_seed
-    return survivors[0].seedModuleKey
+    parts = _path_parts(directory)
+    if not parts:
+        return ["."]
+    return ["/".join(parts[:depth]) for depth in range(len(parts), 0, -1)]
+
+
+def _path_parts(directory: str) -> tuple[str, ...]:
+    return () if directory in ("", ".") else PurePosixPath(directory).parts
+
+
+def _common_prefix_length(left: Sequence[str], right: Sequence[str]) -> int:
+    length = 0
+    for a, b in zip(left, right):
+        if a != b:
+            break
+        length += 1
+    return length
 
 
 def anchor_module_key(
     member_keys: Sequence[str],
-    adjacency: Mapping[str, Mapping[str, int]],
+    adjacency: Mapping[str, Mapping[str, Weight]],
     name_by_key: Mapping[str, str],
 ) -> str:
     """A feature's anchor: its most internally connected member.

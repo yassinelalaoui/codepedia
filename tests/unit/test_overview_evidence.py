@@ -206,24 +206,27 @@ def test_commands_routes_and_main_lead_the_entry_flows_and_tests_are_left_out(tm
     assert "test_leaves" not in by_name
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "tests/test_api.py",
-        "src/test/java/com/acme/WalletTest.java",
-        "pkg/service_test.go",
-        "web/__tests__/app.js",
-        "web/src/app.spec.ts",
-        "conftest.py",
-    ],
-)
+# The full cases moved to `test_feature_evidence.py` with the helper (039
+# research Decision 3). These thin copies pin that the Overview still reads the
+# one definition through its own module.
+@pytest.mark.parametrize("path", ["tests/test_api.py", "web/src/app.spec.ts"])
 def test_test_files_are_recognised_by_directory_or_name(path):
     assert is_test_path(path)
 
 
-@pytest.mark.parametrize("path", ["src/latest.py", "src/contest.py", "backend/Wallet.java", "web/src/app.ts"])
+@pytest.mark.parametrize("path", ["src/contest.py", "backend/Wallet.java"])
 def test_ordinary_files_are_not_test_files(path):
     assert not is_test_path(path)
+
+
+def test_the_overview_re_exports_the_feature_helpers():
+    from doc_generator.features import evidence as feature_evidence
+    from doc_generator.overview import evidence as overview_evidence
+
+    assert overview_evidence.is_test_path is feature_evidence.is_test_path
+    assert overview_evidence.read_readme_lead is feature_evidence.read_readme_lead
+    assert overview_evidence.ENTRY_KINDS is feature_evidence.ENTRY_KINDS
+    assert overview_evidence.MAX_README_LEAD_CHARS == feature_evidence.MAX_README_LEAD_CHARS
 
 
 def test_reached_handles_are_ordered_by_first_contact_depth_and_cap_at_five(tmp_path):

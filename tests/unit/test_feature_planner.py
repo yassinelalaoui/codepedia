@@ -405,7 +405,59 @@ def test_the_cache_key_ignores_summaries(tmp_path: Path):
         entryPointKeysByModuleKey=before.entryPointKeysByModuleKey,
     )
 
-    assert plan_cache_key(before) == plan_cache_key(after)
+    candidates = _candidates(3)
+    assert plan_cache_key(before, candidates) == plan_cache_key(after, candidates)
+
+
+def _grouped(evidence: RepositoryEvidence, groups: list[list[int]]) -> list[Candidate]:
+    """Candidates over `evidence`'s modules, one per list of module indices."""
+    keys = [item.moduleKey for item in evidence.modules]
+    return [
+        Candidate(
+            seedModuleKey=keys[members[0]],
+            seedTitle=f"group {number}",
+            memberKeys=tuple(keys[index] for index in members),
+        )
+        for number, members in enumerate(groups)
+    ]
+
+
+def test_a_changed_grouping_changes_the_cache_key():
+    """Same modules and entry points, different groups (039 FR-018).
+
+    A plan names groups by position (`c0`, `c1`, …). 033's key hashed only the
+    modules and entry points, so an edit that regrouped them reapplied the old
+    titles to whichever groups now held those positions.
+    """
+    evidence = _evidence(4)
+    base = plan_cache_key(evidence, _grouped(evidence, [[0, 1], [2, 3]]))
+
+    assert plan_cache_key(evidence, _grouped(evidence, [[0, 2], [1, 3]])) != base
+    assert plan_cache_key(evidence, _grouped(evidence, [[2, 3], [0, 1]])) != base, (
+        "the same groups under other handles would misplace every title"
+    )
+
+
+def test_an_unchanged_grouping_keeps_the_cache_key():
+    """Member order carries relevance (039 FR-012) and handles are per call; neither is grouping."""
+    evidence = _evidence(4)
+    grouping = _grouped(evidence, [[0, 1], [2, 3]])
+
+    assert plan_cache_key(evidence, _grouped(evidence, [[1, 0], [3, 2]])) == plan_cache_key(evidence, grouping)
+    assert plan_cache_key(evidence, assign_handles(grouping)) == plan_cache_key(evidence, grouping)
+
+
+def test_a_grouping_version_bump_changes_the_cache_key(monkeypatch):
+    """Changed grouping rules or prompt must not reuse a plan made under the old ones."""
+    from doc_generator.features import planner
+
+    evidence = _evidence(4)
+    grouping = _grouped(evidence, [[0, 1], [2, 3]])
+    before = plan_cache_key(evidence, grouping)
+
+    monkeypatch.setattr(planner, "GROUPING_VERSION", f"{planner.GROUPING_VERSION}-next")
+
+    assert plan_cache_key(evidence, grouping) != before
 
 
 def test_a_failed_call_is_not_cached(tmp_path: Path):

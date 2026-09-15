@@ -18,7 +18,6 @@ the same cache key - on every run.
 from __future__ import annotations
 
 import hashlib
-import re
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,14 +27,17 @@ from dependency_graph import DependencyGraph
 from repository_metadata.models import RepositoryBundle
 
 from ..entry_point_diagram import identify_entry_points
-from ..features.evidence import MAX_EVIDENCE_CALL_DEPTH, find_readme
+from ..features.evidence import (  # noqa: F401 - re-exported; defined in `features` (039 research Decision 3)
+    ENTRY_KINDS,
+    MAX_EVIDENCE_CALL_DEPTH,
+    MAX_README_LEAD_CHARS,
+    entry_kind,
+    is_test_path,
+    read_readme_lead,
+)
 from ..features.validate import Feature, FeatureMember
 from ..plain_text import excerpt, first_sentence
 from ..prose import display_label, is_prose_file
-
-# ~150 tokens. The README's opening paragraph is where a repository says what
-# it is in its own words - the one thing the planner's bullet reader skips.
-MAX_README_LEAD_CHARS = 600
 
 # Twelve subsystems describe any repository's shape; past that the prompt grows
 # with the repository, which is exactly what FR-020 forbids. The subsystems
@@ -51,22 +53,9 @@ MAX_PROMPTED_ENTRY_FLOWS = 6
 # rather than in `grounding` because the evidence decides which ones are major.
 MAX_SUBSYSTEM_PARAGRAPHS = 8
 
-# The flow kinds that say where work enters. The fourth kind, "function", is only
-# a function nothing in the repository calls: an interface implementation whose
-# callers go through the interface, a framework callback, a test. Measured on a
-# Spring repository, service implementations outranked every controller and the
-# `main` method by reach, and the narrative named one as the program's entry
-# point. So these rank first, and the prompt labels the rest as merely uncalled.
-ENTRY_KINDS = ("cli-command", "api-route", "main")
-
-# A test calls the code it tests, so by reach it looks like the busiest entry
-# point in the repository - measured on the sample repository, a test ranked
-# fourth. Directory names and file-name conventions, not imports, because a
-# test's file is the only thing every language's test runner agrees on.
-_TEST_DIRECTORIES = frozenset({"test", "tests", "__tests__"})
-_TEST_FILE_NAME = re.compile(
-    r"^(test_.+\.py|.+_test\.(py|go)|conftest\.py|.+Tests?\.(java|kt|cs)|.+\.(spec|test)\.[cm]?[jt]sx?)$"
-)
+# `ENTRY_KINDS` (commands, routes and `main`, which rank first and which the
+# prompt labels as entries) and `is_test_path` are imported above from
+# `features.evidence`, which grouping reads too.
 
 MAX_DESCRIPTION_CHARS = 160
 MAX_ANCHOR_SUMMARY_CHARS = 120
@@ -180,54 +169,6 @@ def repository_fingerprint(bundle: RepositoryBundle, repository_root: str | Path
     return digest.hexdigest()
 
 
-def read_readme_lead(repository_root: str | Path, *, max_chars: int = MAX_README_LEAD_CHARS) -> str:
-    """The README's first prose paragraph after its title, as plain text.
-
-    Best-effort like `read_readme_bullets`: a missing, unreadable or empty
-    README - or one that is all headings, lists and badges - yields `""`.
-    """
-    path = find_readme(repository_root)
-    if path is None:
-        return ""
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-    paragraph = _first_prose_paragraph(text)
-    return excerpt(paragraph, max_chars=max_chars) if paragraph else ""
-
-
-def _first_prose_paragraph(text: str) -> str:
-    blocks: list[list[str]] = [[]]
-    in_fence = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(("```", "~~~")):
-            in_fence = not in_fence
-            blocks.append([])
-            continue
-        if in_fence:
-            continue
-        if not stripped:
-            blocks.append([])
-            continue
-        blocks[-1].append(stripped)
-
-    for block in blocks:
-        if not block:
-            continue
-        first = block[0]
-        if first.startswith(("#", "-", "*", "+", "|", ">", "<", "![", "[![", "===", "---")):
-            continue
-        if first[:1].isdigit() and first[1:3].startswith((".", ")")):
-            continue
-        # A setext title's underline makes the whole block a heading.
-        if len(block) > 1 and set(block[1]) <= {"=", "-"}:
-            continue
-        return " ".join(block)
-    return ""
-
-
 def _brief(handle: str, feature: Feature, repository_root: str | Path) -> FeatureBrief:
     anchor = next((member for member in feature.members if member.moduleKey == feature.key), None)
     if anchor is None and feature.members:
@@ -327,9 +268,7 @@ def _entry_flows(
             key=lambda key: (depth_by_feature[key], _handle_index(handle_by_key[key])),
         )[:MAX_REACHED_FEATURES]
 
-        # `main` is found by the uncalled-function rule like any other, but it
-        # is where a program starts, whatever little it reaches.
-        kind = "main" if entry_point.kind == "function" and entry_point.name == "main" else entry_point.kind
+        kind = entry_kind(entry_point)
         flow = EntryFlow(
             qualifiedName=f"{entry_point.className}.{entry_point.name}" if entry_point.className else entry_point.name,
             kind=kind,
@@ -342,12 +281,6 @@ def _entry_flows(
 
     ranked.sort(key=lambda item: item[:3])
     return tuple(item[3] for item in ranked[:MAX_PROMPTED_ENTRY_FLOWS])
-
-
-def is_test_path(relative_path: str) -> bool:
-    """Whether a repo-relative path is a test file, by directory or file-name convention."""
-    parts = relative_path.replace("\\", "/").split("/")
-    return bool(_TEST_DIRECTORIES.intersection(parts[:-1])) or bool(_TEST_FILE_NAME.match(parts[-1]))
 
 
 def _module_depths(
