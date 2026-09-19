@@ -1,11 +1,10 @@
 """How a summary's freshness reaches the page.
 
-Both markers are `attr_list` annotations on a Markdown paragraph, and
-`attr_list` only binds `{: .class }` to the block it terminates. Written without
-a blank line between them the summary and its staleness note formed a *single*
-paragraph, so the last annotation won and the `.ai-generated` badge was emitted
-as literal text on every summary in the wiki. These pin the rendered classes
-rather than the template's source.
+The staleness note is an `attr_list` annotation on its own Markdown paragraph,
+and `attr_list` only binds `{: .class }` to the block it terminates. Written
+without a blank line after the summary, the two would form a *single*
+paragraph and the summary itself would take the note's class. These pin the
+rendered HTML rather than the template's source.
 """
 
 from __future__ import annotations
@@ -47,18 +46,17 @@ def _render(module_summary: str, *, stale: bool) -> str:
     )
 
 
-def test_a_fresh_summary_carries_the_generated_badge_and_no_warning():
+def test_a_fresh_summary_is_a_plain_paragraph_with_no_warning():
     html = _render("Builds the index.", stale=False)
-    assert '<p class="ai-generated">Builds the index.</p>' in html
+    assert "<p>Builds the index.</p>" in html
     assert "summary-stale" not in html
-    # The annotation must never survive as visible text.
-    assert "{: .ai-generated }" not in html
+    assert "ai-generated" not in html
 
 
-def test_a_stale_summary_keeps_its_badge_and_adds_the_warning():
+def test_a_stale_summary_stays_plain_and_adds_the_warning():
     html = _render("Builds the index.", stale=True)
-    assert '<p class="ai-generated">Builds the index.</p>' in html
+    assert "<p>Builds the index.</p>" in html
     assert '<p class="summary-stale">' in html
     assert "describes an earlier version" in html
-    assert "{: .ai-generated }" not in html
+    # The annotation must never survive as visible text.
     assert "{: .summary-stale }" not in html

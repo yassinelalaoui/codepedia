@@ -217,7 +217,6 @@ class DocGenerator:
             lead_is_stale=narrative.isStale,
             subsystem_rows=subsystem_rows,
             subsystem_paragraphs=subsystem_paragraphs,
-            responsibility_is_generated=any(row["responsibility"] for row in subsystem_rows),
         )
         referenced_page_ids: set[str] = set()
         html = self._render_page(

@@ -249,7 +249,7 @@ def test_ground_none_equals_all_rejected():
         "| a | b | `alpha_entry` |",
         "<script>alert(1)</script> `alpha_entry`",
         "[click](http://evil) `alpha_entry`",
-        "`alpha_entry` {: .ai-generated }",
+        "`alpha_entry` {: .summary-stale }",
         "* item `alpha_entry`",
     ],
 )

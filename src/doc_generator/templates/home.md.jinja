@@ -6,7 +6,6 @@
    no narrative: no placeholder, no empty container (spec FR-014). #}
 {% for paragraph in lead_paragraphs %}
 {{ paragraph }}
-{: .ai-generated }
 
 {% endfor %}
 {% if lead_paragraphs and lead_is_stale %}
@@ -32,10 +31,9 @@ This repository has {{ architecture_summary.moduleCount }} documented module{{ '
 {# The subsystems table (038 User Story 2): what each part is for and where to
    start reading it, not how big it is. Built with no provider at all, so it is
    identical either way (spec FR-024). A responsibility is a planned description
-   that passed grounding; the column says so in its heading, because a table
-   cell cannot carry the generated marker (spec FR-012). #}
+   that passed grounding. #}
 {% if subsystem_rows %}
-| Subsystem | Responsibility{{ ' (AI-generated)' if responsibility_is_generated else '' }} | Start with |
+| Subsystem | Responsibility | Start with |
 | --- | --- | --- |
 {% for row in subsystem_rows %}
 | [{{ row.feature.title | mdesc }}]({{ row.featureLink.relativePath if row.featureLink else '#' }}) | {{ row.responsibility if row.responsibility else '—' }} | {% if row.startLink %}[{{ row.startLabel | mdesc }}]({{ row.startLink.relativePath }}){% else %}—{% endif %} |
@@ -50,7 +48,6 @@ _No subsystems derived yet._
    `overview.grounding.render_paragraph`. #}
 {% for paragraph in subsystem_paragraphs %}
 {{ paragraph }}
-{: .ai-generated }
 
 {% endfor %}
 {% if subsystem_paragraphs and lead_is_stale and not lead_paragraphs %}

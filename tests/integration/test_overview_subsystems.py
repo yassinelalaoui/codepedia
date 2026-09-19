@@ -114,9 +114,15 @@ def _rows(markdown: str) -> list[list[str]]:
 
 
 def _paragraphs(markdown: str) -> list[str]:
-    after_table = markdown.split("| Subsystem |", 1)[1].split("## Modules", 1)[0]
-    lines = after_table.splitlines()
-    return [lines[index - 1] for index, line in enumerate(lines) if line == "{: .ai-generated }"]
+    """The subsystem paragraphs: every block between the table and the module
+    list except the diagram links and the stale caveat."""
+    after_table = markdown.split("| Subsystem |", 1)[1].split("\n\n", 1)[1].split("## Modules", 1)[0]
+    blocks = [block.strip() for block in after_table.split("\n\n") if block.strip()]
+    return [block for block in blocks if not block.startswith("[View ") and not block.endswith("{: .summary-stale }")]
+
+
+def _has_lead(markdown: str) -> bool:
+    return any(line.startswith(OPENING.split("`", 1)[0]) for line in markdown.splitlines())
 
 
 def _reply(**subsystems: str) -> str:
@@ -207,10 +213,12 @@ def test_the_table_is_complete_without_a_provider(tmp_path):
     with_provider, _ = _home(tmp_path, name="with", repo=repo, reply=_reply(f0=CORE_TEXT, f1=STORE_TEXT))
     without, _ = _home(tmp_path, name="without", repo=repo, narrator=False)
 
-    assert with_provider.contentMarkdown.count("{: .ai-generated }") == 3, "the reference page must carry prose"
+    assert _has_lead(with_provider.contentMarkdown), "the reference page must carry prose"
+    assert len(_paragraphs(with_provider.contentMarkdown)) == 2, "the reference page must carry prose"
 
     assert _rows(without.contentMarkdown) == _rows(with_provider.contentMarkdown)
-    assert "ai-generated" not in without.contentMarkdown
+    assert not _has_lead(without.contentMarkdown)
+    assert _paragraphs(without.contentMarkdown) == []
 
 
 def test_each_paragraph_ends_with_its_subsystem_link(tmp_path):
@@ -306,14 +314,13 @@ def test_a_failing_description_renders_a_dash(tmp_path):
     assert rows["Core"][1] == "Runs the work through `run_a` and its helpers\\."
 
 
-def test_generated_column_header_is_labelled_only_when_a_planned_description_is_shown(tmp_path):
+def test_the_column_header_is_the_same_whether_or_not_a_planned_description_is_shown(tmp_path):
     planned, _ = _home(tmp_path, name="planned")
     unplanned, _ = _home(tmp_path, name="unplanned", planner=False)
     all_failing, _ = _home(tmp_path, name="failing", descriptions={"Core": "You run it.", "Storage": "You keep it."})
 
-    assert "| Subsystem | Responsibility (AI-generated) | Start with |" in planned.contentMarkdown
-    assert "| Subsystem | Responsibility | Start with |" in unplanned.contentMarkdown
-    assert "| Subsystem | Responsibility | Start with |" in all_failing.contentMarkdown
+    for home in (planned, unplanned, all_failing):
+        assert "| Subsystem | Responsibility | Start with |" in home.contentMarkdown
 
 
 def test_the_features_list_is_gone_and_every_subsystem_is_still_reachable(tmp_path):
@@ -345,7 +352,7 @@ def test_a_stale_page_with_a_withheld_lead_puts_the_caveat_under_the_last_subsys
 
     markdown = next(page for page in generator.generateRepositoryDocumentation(root, incremental=False).pages if page.kind == "home").contentMarkdown
     lines = [line for line in markdown.splitlines() if line.strip()]
-    last_paragraph = max(index for index, line in enumerate(lines) if line == "{: .ai-generated }")
+    last_paragraph = lines.index(_paragraphs(markdown)[-1])
 
     assert markdown.count("{: .summary-stale }") == 1
     assert lines[last_paragraph + 2] == "{: .summary-stale }"

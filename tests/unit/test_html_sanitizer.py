@@ -148,9 +148,9 @@ def test_a_style_smuggled_onto_a_table_cell_is_still_dropped():
 
 
 def test_symbol_anchors_and_template_classes_survive():
-    html = _render("# M\n\n## Klass {: #klass-id }\n\nSome prose.\n{: .ai-generated }\n")
+    html = _render("# M\n\n## Klass {: #klass-id }\n\nSome prose.\n{: .summary-stale }\n")
     assert 'id="klass-id"' in html
-    assert 'class="ai-generated"' in html
+    assert 'class="summary-stale"' in html
 
 
 def test_a_mermaid_fence_still_reaches_its_pre_class():

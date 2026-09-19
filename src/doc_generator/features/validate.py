@@ -77,9 +77,9 @@ class Feature:
     internalEdges: tuple[tuple[str, str], ...] = ()
     neighborKeys: tuple[str, ...] = ()
     exposedEntryPointCount: int = 0
-    #: Whether a model named this feature. Gates the `{: .ai-generated }` marker,
-    #: so a feature that fell back to its deterministic title is not labelled as
-    #: model-written (constitution 2.4).
+    #: Whether a model named this feature. Only a planned feature's description
+    #: can become the Overview's responsibility cell; a feature that fell back to
+    #: its deterministic title has no model-written description to show.
     isPlanned: bool = False
 
     @property

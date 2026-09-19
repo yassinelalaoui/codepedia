@@ -135,5 +135,5 @@ def test_the_module_list_is_identical_with_and_without_a_narrator(tmp_path):  # 
     with_narrator = _home(tmp_path, narrator=True, name="with")
     without = _home(tmp_path, narrator=False, name="without")
 
-    assert "ai-generated" in with_narrator.contentMarkdown, "the reference page must carry prose"
+    assert "The repository keeps its loader in" in with_narrator.contentMarkdown, "the reference page must carry prose"
     assert _rows(with_narrator.contentMarkdown) == _rows(without.contentMarkdown)

@@ -338,7 +338,7 @@ def accept_description(text: str, evidence: OverviewEvidence, lookup: SymbolLook
 
 
 def render_paragraph(paragraph: GroundedParagraph, feature_links: Mapping[str, PageLink]) -> str:
-    """One Markdown line. The template adds the `{: .ai-generated }` marker."""
+    """One Markdown line, emitted by the template as a paragraph of its own."""
     parts: list[str] = []
     for segment in paragraph.segments:
         if segment.kind == "text":

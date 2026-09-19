@@ -545,8 +545,9 @@ def test_ordering_is_stable_across_runs(tmp_path):
     assert [feature_sort_key(f) for f in first] == [feature_sort_key(f) for f in second]
 
 
-def test_a_planned_feature_is_marked_and_a_fallback_one_is_not(tmp_path):
-    """Gates the AI-generated marker - constitution 2.4."""
+def test_a_planned_feature_is_flagged_and_a_fallback_one_is_not(tmp_path):
+    """Gates the responsibility shown on the Overview: a feature that fell back
+    to its deterministic title has no model-written description to show."""
     candidates = [_candidate("a"), _candidate("b"), _candidate("c")]
     plan = FeaturePlan(
         features=(

@@ -44,9 +44,6 @@
   --accent-ink: #ffffff;
   --accent-soft-bg: #eef0fc;
   --accent-soft-border: #c9cff5;
-  --generated-ink: #7a5c1a;
-  --generated-bg: #fbf3e2;
-  --generated-border: #ecd9ac;
   --code-bg: #f4f5f9;
   --wiki-shadow-1: 0 1px 2px rgba(20, 24, 43, 0.05);
   --wiki-shadow-2: 0 4px 16px rgba(20, 24, 43, 0.08);
@@ -71,9 +68,6 @@
     --accent-ink: #14162a;
     --accent-soft-bg: #232a4a;
     --accent-soft-border: #38407a;
-    --generated-ink: #e0bd7a;
-    --generated-bg: #332a17;
-    --generated-border: #574522;
     --code-bg: #20222d;
     --wiki-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
     --wiki-shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -92,9 +86,6 @@
   --accent-ink: #14162a;
   --accent-soft-bg: #232a4a;
   --accent-soft-border: #38407a;
-  --generated-ink: #e0bd7a;
-  --generated-bg: #332a17;
-  --generated-border: #574522;
   --code-bg: #20222d;
   --wiki-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --wiki-shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -123,9 +114,6 @@
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft-bg);
   --color-accent-line: var(--accent-soft-border);
-  --color-generated-ink: var(--generated-ink);
-  --color-generated-bg: var(--generated-bg);
-  --color-generated-line: var(--generated-border);
   --color-code: var(--code-bg);
 
   --radius-sm: var(--wiki-radius-sm);
@@ -200,7 +188,10 @@ h1, h2, h3, h4 { text-wrap: balance; font-weight: 600; letter-spacing: -0.01em; 
 .content-col h3 { font-size: 15px; font-family: var(--wiki-font-mono); margin-top: 22px; }
 .content-col h4 { font-size: 13px; font-family: var(--wiki-font-mono); font-weight: 500; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .content-col > p:first-of-type { margin-top: 16px; }
-.content-col p { font-size: 14.5px; line-height: 1.72; margin: 10px 0 0; }
+/* overflow-wrap: summaries and the Overview's prose cite full file paths in
+   code spans (038 FR-007), and a Java path has no break opportunity: without
+   this it runs out of the column. */
+.content-col p { font-size: 14.5px; line-height: 1.72; margin: 10px 0 0; overflow-wrap: anywhere; }
 .content-col ul, .content-col ol { padding-left: 22px; margin: 8px 0 0; font-size: 13.5px; color: var(--ink-soft); }
 .content-col li { margin: 3px 0; }
 
@@ -261,65 +252,15 @@ ul:has(> li.module-list) a:first-child { font-family: var(--wiki-font-mono); fon
 ul:has(> li.module-list) a:last-child:not(:first-child) { flex: none; color: var(--ink-faint); font-size: 12.5px; margin-left: auto; }
 ul:has(> li.module-list) a:last-child:not(:first-child):hover { color: var(--accent); }
 
-/* AI-generated summary marker */
-.ai-generated {
-  position: relative;
-  margin-top: 12px;
-  padding: 13px 16px 13px 40px;
-  background: var(--generated-bg);
-  border: 1px solid var(--generated-border);
-  border-left: 3px solid var(--generated-ink);
-  border-radius: var(--wiki-radius-sm);
-  color: var(--ink);
-  /* Generated prose cites full file paths in code spans (038 FR-007), and a
-     Java path has no break opportunity: without this it runs out of the block. */
-  overflow-wrap: anywhere;
-}
-.ai-generated::before {
-  content: "AI-generated";
-  position: absolute;
-  top: -8px;
-  left: 13px;
-  background: var(--generated-bg);
-  padding: 0 5px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--generated-ink);
-}
-
-/* Consecutive generated paragraphs - the Overview's narrative lead - read as one
-   marked block with one badge, not as four separate notes (038 research
-   Decision 10). Only the Overview has adjacent .ai-generated paragraphs; every
-   other page separates them with a heading or a stale note. */
-.ai-generated:has(+ .ai-generated) {
-  border-bottom: none;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  padding-bottom: 4px;
-}
-.ai-generated + .ai-generated {
-  margin-top: 0;
-  border-top: none;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  padding-top: 4px;
-}
-.ai-generated + .ai-generated::before { content: none; }
-
 /* A summary carried forward from the freshness ledger: it describes an earlier
-   version of the symbol. Deliberately attached under the .ai-generated block it
-   qualifies, sharing its left edge, so it reads as a caveat on that summary
-   rather than as a separate note about the page. */
+   version of the symbol. Sits directly under the summary it qualifies, as a
+   small caveat rather than a separate note about the page. */
 .summary-stale {
-  margin-top: 0;
-  padding: 7px 16px 8px 40px;
+  margin-top: 6px;
+  padding: 7px 12px 8px;
   background: var(--surface-sunken);
-  border: 1px solid var(--generated-border);
-  border-top: none;
-  border-left: 3px solid var(--generated-ink);
-  border-radius: 0 0 var(--wiki-radius-sm) var(--wiki-radius-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--wiki-radius-sm);
   color: var(--ink-soft);
   font-size: 12.5px;
 }

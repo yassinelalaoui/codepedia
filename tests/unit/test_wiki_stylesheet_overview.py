@@ -1,7 +1,7 @@
-"""The built wiki stylesheet carries the Overview's two layout rules (spec 038).
+"""The built wiki stylesheet carries the Overview's layout rules (spec 038).
 
-Both are CSS-only behaviours no rendering test can see, and both regressed or
-were introduced by the Overview's new shape, so they are pinned against the
+Each is a CSS-only behaviour no rendering test can see, and each regressed or
+was introduced by the Overview's new shape, so they are pinned against the
 built asset that every generated wiki copies.
 """
 
@@ -21,16 +21,17 @@ def wiki_css() -> str:
     return WIKI_CSS.read_text(encoding="utf-8", errors="replace")
 
 
-def test_consecutive_generated_paragraphs_share_one_badge(wiki_css):
-    """The narrative lead is several `.ai-generated` paragraphs in a row; they
-    must read as one marked block with one badge (research Decision 10)."""
-    assert ".ai-generated+.ai-generated:before{content:none}" in wiki_css
+def test_generated_prose_is_styled_like_the_rest_of_the_page(wiki_css):
+    """Summaries and the Overview's prose are plain paragraphs: no highlight,
+    no border, no label set them apart from the text around them."""
+    assert "ai-generated" not in wiki_css
+    assert "--generated-" not in wiki_css
 
 
-def test_generated_prose_wraps_long_code_spans(wiki_css):
+def test_prose_wraps_long_code_spans(wiki_css):
     """The lead cites full file paths; a Java package path has no break
-    opportunity and ran out of the marked block at narrow widths."""
-    rule = wiki_css.split(".ai-generated{", 1)[1].split("}", 1)[0]
+    opportunity and ran out of the content column at narrow widths."""
+    rule = wiki_css.split(".content-col p{", 1)[1].split("}", 1)[0]
     assert "overflow-wrap:anywhere" in rule
 
 

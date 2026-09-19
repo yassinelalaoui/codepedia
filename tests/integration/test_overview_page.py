@@ -26,6 +26,13 @@ from ._doc_generator_support import build_indexed_repo, wrap_llm
 
 OPENING = "The sample repository is used through `alpha_entry` in `alpha.py`, which hands work to [[f0]]."
 FLOW = "Work then reaches `beta_helper` in `beta.py`, and values come from `shared_value` in `gamma.py`."
+#: How each scripted paragraph opens once rendered: the text before its first
+#: code span, which grounding leaves untouched. Nothing else on the page starts so.
+PROSE_STARTS = tuple(text.split("`", 1)[0] for text in (OPENING, FLOW))
+
+
+def _prose_lines(markdown: str) -> list[str]:
+    return [line for line in markdown.splitlines() if line.startswith(PROSE_STARTS)]
 
 
 class ScriptedEngine:
@@ -77,29 +84,26 @@ def _home(doc_set):
 
 
 class _Outline(HTMLParser):
-    """Headings, and every href outside a generated block."""
+    """Headings, and every href outside a prose paragraph.
+
+    A paragraph is prose when its text opens with one of `PROSE_STARTS`, which
+    is only known at its end tag, so its hrefs are held until then.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.headings: list[str] = []
         self.hrefs: set[str] = set()
-        self.generated_blocks = 0
-        self._stack: list[tuple[str, bool]] = []
+        self.prose_paragraphs = 0
         self._heading: list[str] | None = None
-
-    @property
-    def _inside_generated(self) -> bool:
-        return any(generated for _, generated in self._stack)
+        self._paragraph: tuple[list[str], set[str]] | None = None
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
-        generated = "ai-generated" in (attributes.get("class") or "").split()
-        if generated:
-            self.generated_blocks += 1
-        if tag not in {"br", "img", "meta", "link", "input", "hr"}:
-            self._stack.append((tag, generated))
-        if tag == "a" and "href" in attributes and not self._inside_generated:
-            self.hrefs.add(attributes["href"])
+        if tag == "p":
+            self._paragraph = ([], set())
+        if tag == "a" and "href" in attributes:
+            (self._paragraph[1] if self._paragraph is not None else self.hrefs).add(attributes["href"])
         if re.fullmatch(r"h[1-6]", tag):
             self._heading = []
 
@@ -107,14 +111,19 @@ class _Outline(HTMLParser):
         if self._heading is not None and re.fullmatch(r"h[1-6]", tag):
             self.headings.append("".join(self._heading).strip())
             self._heading = None
-        while self._stack:
-            open_tag, _ = self._stack.pop()
-            if open_tag == tag:
-                break
+        if tag == "p" and self._paragraph is not None:
+            text, hrefs = self._paragraph
+            self._paragraph = None
+            if "".join(text).lstrip().startswith(PROSE_STARTS):
+                self.prose_paragraphs += 1
+            else:
+                self.hrefs |= hrefs
 
     def handle_data(self, data):
         if self._heading is not None:
             self._heading.append(data)
+        if self._paragraph is not None:
+            self._paragraph[0].append(data)
 
 
 def _outline(html: str) -> _Outline:
@@ -184,11 +193,11 @@ def test_no_engine_page_has_the_same_outline(tmp_path, case):
     )
 
     reference, degraded = _outline(with_provider.renderedHtml), _outline(without.renderedHtml)
-    assert reference.generated_blocks == 2, "the reference page must actually carry prose"
+    assert reference.prose_paragraphs == 2, "the reference page must actually carry prose"
     assert degraded.headings == reference.headings
     assert degraded.hrefs == reference.hrefs
-    assert degraded.generated_blocks == 0
-    assert "ai-generated" not in without.contentMarkdown
+    assert degraded.prose_paragraphs == 0
+    assert not _prose_lines(without.contentMarkdown)
     assert "summary-stale" not in without.contentMarkdown
     # Nothing stands where the prose was: the title is followed by the facts.
     body = [line for line in without.contentMarkdown.splitlines() if line.strip()]
@@ -226,7 +235,7 @@ def test_unchanged_repository_regenerates_identical_markdown(tmp_path):
 
     assert second == first
     assert engine.calls == 1, "the second run must answer from the cache, not the model"
-    assert b"ai-generated" in first
+    assert _prose_lines(first.decode("utf-8")), "the page must actually carry prose"
 
 
 def test_incremental_pass_on_an_unchanged_repository_does_not_rewrite_home(tmp_path):
@@ -274,7 +283,7 @@ def test_changed_repository_without_provider_shows_the_earlier_narrative_marked_
     generator.overviewNarrator.llmEngine = wrap_llm(ScriptedEngine(available=False))
     home = _home(generator.generateRepositoryDocumentation(root, incremental=False))
 
-    assert home.contentMarkdown.count("{: .ai-generated }") == 2
+    assert len(_prose_lines(home.contentMarkdown)) == 2
     assert "{: .summary-stale }" in home.contentMarkdown
     assert notices[-1] == (
         "  overview: showing the narrative from an earlier version (no provider could answer); 2 of 2 paragraphs still apply"
@@ -315,7 +324,7 @@ def test_the_structure_pass_does_not_narrate(tmp_path):
     )
 
     assert engine.calls == 0
-    assert "ai-generated" not in home.contentMarkdown
+    assert not _prose_lines(home.contentMarkdown)
     assert notices == []
 
 
@@ -369,7 +378,7 @@ def test_no_subsystems_means_no_lead_and_a_skip_notice(tmp_path):
 
     home = _home(_generator(tmp_path, "g", root, store, graph, engine, notices=notices).generateRepositoryDocumentation(root, incremental=False))
 
-    assert "ai-generated" not in home.contentMarkdown
+    assert not _prose_lines(home.contentMarkdown)
     assert engine.calls == 0
     assert notices == ["  overview: narrative skipped (no subsystems to describe)"]
 
@@ -385,17 +394,18 @@ def test_the_lead_precedes_every_list_table_and_diagram(tmp_path):
     lines = [line for line in home.contentMarkdown.splitlines() if line.strip()]
 
     assert lines[0].startswith("# ")
-    assert lines[1].startswith("The sample repository is used through")
-    assert lines[2] == "{: .ai-generated }"
+    assert lines[1].startswith(PROSE_STARTS[0])
+    assert lines[2].startswith(PROSE_STARTS[1])
     first_structure = next(index for index, line in enumerate(lines) if line.startswith(("- ", "|", "```", "[View")))
-    last_lead = max(index for index, line in enumerate(lines) if line == "{: .ai-generated }")
+    last_lead = max(index for index, line in enumerate(lines) if line.startswith(PROSE_STARTS))
     assert last_lead < first_structure
 
 
 def test_every_backticked_name_in_the_lead_renders_as_a_link(tmp_path):
     root, store, graph = build_indexed_repo(tmp_path)
     home = _home(_generator(tmp_path, "g", root, store, graph, ScriptedEngine(_reply(OPENING, FLOW))).generateRepositoryDocumentation(root, incremental=False))
-    paragraphs = re.findall(r'<p class="ai-generated">(.*?)</p>', home.renderedHtml, re.DOTALL)
+    starts = "|".join(re.escape(start) for start in PROSE_STARTS)
+    paragraphs = re.findall(rf"<p>((?:{starts}).*?)</p>", home.renderedHtml, re.DOTALL)
 
     assert len(paragraphs) == 2
     for paragraph in paragraphs:

@@ -8,9 +8,6 @@
 
 {% if feature.description %}
 {{ feature.description }}
-{% if feature.isPlanned %}
-{: .ai-generated }
-{% endif %}
 {% else %}
 _This feature groups the {{ feature.members | length }} module{{ '' if feature.members | length == 1 else 's' }} below, derived from the repository's entry points and the imports between them. No description has been generated for it yet._
 {% endif %}
