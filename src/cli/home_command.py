@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import typer
 import uvicorn
-from chat_api.security import TOKEN_QUERY_PARAM, generate_token, is_loopback_host
+from chat_api.security import TOKEN_QUERY_PARAM, is_loopback_host
 from hub_server import create_hub_app
 from hub_server.run_log import RunLog
 
 from .errors import ServerBindError
+from .tokens import load_or_create_token, reuse_hint
 
 
 def startup_lines(host: str, port: int, token: str) -> tuple[str, ...]:
@@ -43,11 +44,14 @@ def run_home(host: str, port: int) -> None:
     # every future analysis (spec FR-026d).
     RunLog().sweep_interrupted()
 
-    token = generate_token()
+    # Kept between runs, so the printed URL is opened once per browser and the
+    # bare address works in every window afterwards (cli/tokens.py).
+    token = load_or_create_token("hub")
     app = create_hub_app(auth_token=token, host=host)
 
     for line in startup_lines(host, port, token):
         typer.echo(line)
+    typer.echo(reuse_hint(host, port))
 
     try:
         uvicorn.run(app, host=host, port=port)

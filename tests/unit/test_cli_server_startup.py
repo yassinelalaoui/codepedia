@@ -1,7 +1,7 @@
 """What `codepedia index` and `codepedia serve` hand the user at startup.
 
 `start_local_server` is the single place both commands go through, so it is
-where the token is minted, printed, and matched to the bind address. A token
+where the token is loaded, printed, and matched to the bind address. A token
 that never reaches the terminal locks the user out of their own chat panel;
 allowed hosts that omit the bind address lock out every request.
 """
@@ -10,8 +10,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import cli.paths as cli_paths
 import cli.server
+import pytest
 from chat_api.security import DEFAULT_ALLOWED_HOSTS, TOKEN_QUERY_PARAM
+
+
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path, monkeypatch):
+    """The stored token lives under `~/.codepedia`; never the real one."""
+    monkeypatch.setattr(cli_paths, "codepedia_home", lambda: tmp_path / ".codepedia")
 
 
 def _capture(monkeypatch, host: str):
@@ -59,8 +67,12 @@ def test_a_lan_bind_is_warned_about_and_still_allowed_as_a_host(monkeypatch):
     assert "192.168.1.20" in tuple(kwargs["allowed_hosts"])
 
 
-def test_each_run_mints_its_own_token(monkeypatch):
+def test_every_run_reuses_this_machines_stored_wiki_token(monkeypatch):
+    """What lets a window opened after a restart keep working: the browser
+    kept the token from the printed URL, and the server still expects it.
+    Minted per run until then (cli/tokens.py)."""
     _, first = _capture(monkeypatch, "127.0.0.1")
     _, second = _capture(monkeypatch, "127.0.0.1")
 
-    assert first["auth_token"] != second["auth_token"]
+    assert first["auth_token"] == second["auth_token"]
+    assert first["auth_token"]

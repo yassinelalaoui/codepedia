@@ -3,7 +3,7 @@
  *
  * Every state-changing call carries the token in a header. `apiToken.ts` is
  * reused unchanged from the wiki: it already reads `?token=` on first load,
- * moves it into `sessionStorage`, and strips it from the address bar - exactly
+ * moves it into `localStorage`, and strips it from the address bar - exactly
  * the handling the homepage needs, and for the same reason.
  */
 

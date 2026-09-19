@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { askQuestion, ChatApiError, createSession, getHistory } from "../src/lib/chatApiClient";
-import { captureApiTokenFromUrl, TOKEN_HEADER } from "../src/lib/apiToken";
+import { apiTokenHeaders, captureApiTokenFromUrl, TOKEN_HEADER } from "../src/lib/apiToken";
 
 /** A mock `fetch` Response body exposing just the `getReader()` shape our
  * SSE-parsing code needs — avoids depending on a real `ReadableStream`
@@ -135,7 +135,7 @@ describe("askQuestion", () => {
 describe("the API token", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    window.sessionStorage.clear();
+    window.localStorage.clear();
     window.history.replaceState(null, "", "/modules/m.html");
   });
 
@@ -148,7 +148,16 @@ describe("the API token", () => {
     withToken("sekret");
 
     expect(window.location.search).toBe("");
-    expect(window.sessionStorage.getItem("codepedia.apiToken")).toBe("sekret");
+    expect(window.localStorage.getItem("codepedia.apiToken")).toBe("sekret");
+  });
+
+  it("is shared by every window of the origin, so a second window is not asked to reopen the URL", () => {
+    // localStorage, not sessionStorage: the CLI keeps one token per role
+    // between runs, so a window opened later - or after a restart - still has it.
+    withToken("sekret");
+
+    expect(window.localStorage.getItem("codepedia.apiToken")).toBe("sekret");
+    expect(apiTokenHeaders()).toEqual({ "X-Codepedia-Token": "sekret" });
   });
 
   it("keeps the rest of the query string and the hash intact", () => {

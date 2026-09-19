@@ -4,13 +4,20 @@
  * The wiki is a static bundle generated before the server starts, so the token
  * cannot be baked into these pages: the server prints
  * `http://127.0.0.1:8000/?token=...` and the first page load moves the value
- * into `sessionStorage`, then strips it from the address bar with
+ * into `localStorage`, then strips it from the address bar with
  * `history.replaceState` - the same handling `?chatSession=` already gets in
  * ChatPanel, and for the same reason: a value that belongs to the session, not
  * to the page's identity.
  *
- * `sessionStorage`, not `localStorage`: the server mints a new token every run,
- * so a value that outlived the tab would only ever be a stale one.
+ * `localStorage`, not `sessionStorage`: every window of an origin shares it, so
+ * the reader opens the printed URL once and then reaches this server by typing
+ * its address in any window, with chat working in all of them. That only holds
+ * because the CLI keeps one token per role between runs (src/cli/tokens.py) - a
+ * per-run token remembered here would go stale the moment the server restarted.
+ *
+ * A stale value is still possible: a token file deleted by hand, or a server
+ * started outside the CLI, which still mints its own. The API answers 401, and
+ * the next load of the printed URL overwrites what is stored here.
  */
 
 export const TOKEN_HEADER = "X-Codepedia-Token";
@@ -19,7 +26,7 @@ const STORAGE_KEY = "codepedia.apiToken";
 
 function readStored(): string | null {
   try {
-    return window.sessionStorage.getItem(STORAGE_KEY);
+    return window.localStorage.getItem(STORAGE_KEY);
   } catch {
     return null;
   }
@@ -27,7 +34,7 @@ function readStored(): string | null {
 
 function writeStored(token: string): void {
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, token);
+    window.localStorage.setItem(STORAGE_KEY, token);
   } catch {
     // Storage refused (a locked-down browser profile). Nothing else to try:
     // every wiki link is a full page load, so an in-memory copy would not
