@@ -16,6 +16,7 @@ import pytest
 import doc_generator.overview.narrator as narrator_module
 from doc_generator.manifest_store import open_doc_manifest_store
 from doc_generator.overview import CHARS_PER_TOKEN, PROVIDER_TOKEN_BUDGET
+from doc_generator.overview.grounding import MAX_NARRATIVE_WORDS
 from doc_generator.overview.evidence import (
     MAX_PROMPTED_ENTRY_FLOWS,
     MAX_PROMPTED_FEATURES,
@@ -209,6 +210,24 @@ def test_paragraph_one_names_every_kind_of_entry_with_its_files():
     assert "names each kind of entry with its files" in SYSTEM_PROMPT
     assert "api-route as routes, cli-command as commands" in SYSTEM_PROMPT
     assert "Work enters through routes in `src/app/api.py` and commands in `src/app/cli.py`." in SYSTEM_PROMPT
+
+
+def test_paragraph_four_covers_subsystems_the_earlier_paragraphs_missed():
+    """The lead used to stop at one call path, so a repository was explained by
+    its entry points alone. Paragraph 4 carries the rest of how it works."""
+    assert "Paragraph 4 says how the repository does its work beyond that one path" in SYSTEM_PROMPT
+    assert "subsystems the paragraphs above have not covered" in SYSTEM_PROMPT
+    # Same two rules the other paragraphs are held to, so grounding accepts it:
+    # a subsystem is a handle (G3) and a paragraph cites a real file (G7).
+    assert "each written as its handle" in SYSTEM_PROMPT
+    assert "citing one of its files in backticks" in SYSTEM_PROMPT
+
+
+def test_the_word_ceiling_leaves_room_for_the_page_budget():
+    """What the model is asked for stays under what grounding will publish, so
+    a reply that obeys the prompt is not then trimmed by G9."""
+    assert "under 660 words in all" in SYSTEM_PROMPT
+    assert 660 < MAX_NARRATIVE_WORDS
 
 
 def test_prompt_asks_for_subsystem_paragraphs_keyed_by_handle():

@@ -47,24 +47,26 @@ NARRATIVE_FORMAT_VERSION = "2"
 # Every part is hard-truncated to its constant when the prompt is built.
 # 1400 until the entry/uncalled distinction was spelled out (038 research
 # Decisions 15 and 16), 1600 until User Story 2 asked for subsystem paragraphs,
-# 1900 until paragraph 1 was asked to name every kind of entry (Decision 19);
+# 1900 until paragraph 1 was asked to name every kind of entry (Decision 19),
+# 2050 until paragraph 4 was asked how the work is done beyond one call path;
 # each step is under 100 tokens on the worst case.
-SYSTEM_PROMPT_CHARS = 2050
+SYSTEM_PROMPT_CHARS = 2350
 # Repository name, languages, the subsystem count, and the one line that says
 # how to read the entry lines below.
 HEADER_CHARS = 300
 FEATURE_BLOCK_CHARS = 710
 ENTRY_FLOW_CHARS = 240
 
-# The lead's 600-word ceiling is ~800 tokens of English; JSON keys, quotes,
-# `[[fN]]` handles and backticked names add ~150. The rest is margin, so a
+# The lead's 720-word ceiling is ~960 tokens of English; JSON keys, quotes,
+# `[[fN]]` handles and backticked names add ~180. The rest is margin, so a
 # `finish_reason: length` truncation - which parses as nothing - stays unlikely.
-MAX_NARRATIVE_RESPONSE_TOKENS = 1400
+# 1400 until the budget rose to 720 words for paragraph 4.
+MAX_NARRATIVE_RESPONSE_TOKENS = 1700
 
 SYSTEM_PROMPT = (
     "You write the opening of a repository's documentation page, using only the evidence given. "
     'Reply with only a JSON object {"lead": ["...", "..."], "subsystems": {"fN": "..."}}, '
-    "under 550 words in all. The lead holds two to four paragraphs.\n"
+    "under 660 words in all. The lead holds two to four paragraphs.\n"
     "Paragraph 1 opens by saying what the repository is and does. Then, if lines are marked entry, it "
     "names each kind of entry with its files as where work enters (api-route as routes, cli-command as commands, "
     "main as the main function); if none is, it claims no entry point and names a subsystem's start file.\n"
@@ -74,6 +76,9 @@ SYSTEM_PROMPT = (
     "Paragraph 3, only if a subsystem's description or start-file summary says it stores, sends or "
     "returns data, names every such subsystem as a place results can go and cites one of their start files; "
     "never a single file as the only destination.\n"
+    "Paragraph 4 says how the repository does its work beyond that one path: it names two or three "
+    "subsystems the paragraphs above have not covered, each written as its handle, saying what each "
+    "one does in the repository and citing one of its files in backticks.\n"
     '"subsystems" holds a paragraph for each subsystem marked paragraph and for no other, keyed by its handle: '
     "at most three sentences on what it does, naming its start file in backticks, "
     "with every other subsystem written as its handle.\n"

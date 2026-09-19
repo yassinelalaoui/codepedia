@@ -370,8 +370,25 @@ def test_an_unknown_subsystem_handle_rejects_its_paragraph():  # G3
     assert [r.rule for r in result.rejected] == ["G3"]
 
 
+def test_the_four_paragraph_lead_the_prompt_asks_for_is_accepted_whole():
+    """Paragraph 4 names further subsystems and cites a file, which is what G3
+    and G7 require of it; a lead in that shape must survive intact."""
+    result = _ground(
+        GOOD,
+        "The `alpha_entry` function in `alpha.py` is an entry point, and its calls reach [[f0]].",
+        "Results are kept by [[f1]], whose start file is `pkg_a/store.py`.",
+        "Beyond that path, [[f1]] reads and writes records through `pkg_a/store.py`, and [[f0]] runs the work in `beta.py`.",
+    )
+
+    assert len(result.lead) == MAX_LEAD_PARAGRAPHS
+    assert result.rejected == ()
+    assert not result.leadWithheld
+
+
 def test_the_word_budget_trims_subsystem_paragraphs_before_the_lead():  # G9
-    long = "It passes through `beta.py` " + "and keeps working " * 190 + "until done."
+    # Sized from the budget, not a fixed repeat count: one paragraph alone
+    # must overrun it, whatever the budget is raised to.
+    long = "It passes through `beta.py` " + "and keeps working " * (MAX_NARRATIVE_WORDS // 3) + "until done."
     result = _ground_subsystems({"f0": CORE, "f1": long}, GOOD)
 
     assert len(result.lead) == 1

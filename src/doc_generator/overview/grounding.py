@@ -49,8 +49,10 @@ MAX_LEAD_PARAGRAPHS = 4
 # Spec FR-025: a subsystem paragraph is at most three sentences (G8).
 MAX_SUBSYSTEM_SENTENCES = 3
 
-# Spec FR-005a: all generated prose on the page stays *under* this.
-MAX_NARRATIVE_WORDS = 600
+# Spec FR-005a: all generated prose on the page stays *under* this. Raised
+# from 600 when the lead gained paragraph 4, so the added coverage does not
+# push subsystem paragraphs out of the budget instead.
+MAX_NARRATIVE_WORDS = 720
 
 # Spec FR-013's house style: the maintained list its examples illustrate.
 # Word-bounded and case-insensitive. Evaluative words a reader cannot check
