@@ -25,11 +25,18 @@ function basename(path: string): string {
 export interface HistoryListProps {
   entries: HistoryEntry[];
   onOpen: (entry: HistoryEntry) => void;
+  onCloseServer: (entry: HistoryEntry) => void;
   onRemove: (entry: HistoryEntry) => void;
   busy?: boolean;
 }
 
-export function HistoryList({ entries, onOpen, onRemove, busy = false }: HistoryListProps): JSX.Element {
+export function HistoryList({
+  entries,
+  onOpen,
+  onCloseServer,
+  onRemove,
+  busy = false,
+}: HistoryListProps): JSX.Element {
   if (entries.length === 0) {
     return (
       <section className="history" aria-label="Analyse history">
@@ -68,6 +75,7 @@ export function HistoryList({ entries, onOpen, onRemove, busy = false }: History
             <HistoryRowMenu
               entry={entry}
               onOpen={() => onOpen(entry)}
+              onClose={() => onCloseServer(entry)}
               onRemove={() => onRemove(entry)}
               disabled={busy}
             />

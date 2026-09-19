@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import type { HistoryEntry } from "../lib/hubApiClient";
 
 /**
- * A history row's overflow menu: Properties, Open, Remove (spec FR-033).
+ * A history row's overflow menu: Properties, Open, Close, Remove (spec FR-033).
+ *
+ * Close is offered only while this hub is serving a wiki for the row. Opening
+ * a repository deliberately leaves its server running - returning to it is then
+ * instant - and every child dies with the hub, so this is the one way to stop
+ * one in between. Remove refuses while a server runs and says to close it
+ * first, which was an instruction with nothing to press until this existed.
  *
  * There is deliberately **no re-analyse action**, and that absence is a
  * decision rather than an omission. Opening a repository already brings it up
@@ -18,11 +24,18 @@ import type { HistoryEntry } from "../lib/hubApiClient";
 export interface HistoryRowMenuProps {
   entry: HistoryEntry;
   onOpen: () => void;
+  onClose: () => void;
   onRemove: () => void;
   disabled?: boolean;
 }
 
-export function HistoryRowMenu({ entry, onOpen, onRemove, disabled = false }: HistoryRowMenuProps): JSX.Element {
+export function HistoryRowMenu({
+  entry,
+  onOpen,
+  onClose,
+  onRemove,
+  disabled = false,
+}: HistoryRowMenuProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const [showProperties, setShowProperties] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -80,6 +93,18 @@ export function HistoryRowMenu({ entry, onOpen, onRemove, disabled = false }: Hi
           >
             Open
           </button>
+          {entry.open ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onClose();
+              }}
+            >
+              Close
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"

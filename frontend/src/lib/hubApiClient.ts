@@ -51,6 +51,8 @@ export interface HistoryEntry {
   repositoryPath: string;
   lastIndexedAt: string | null;
   available: boolean;
+  /** Whether this hub run is currently serving a wiki for it. */
+  open: boolean;
 }
 
 export interface RunRecord {
@@ -123,6 +125,11 @@ export const hubApi = {
       `/api/repositories/${encodeURIComponent(stateId)}/open`,
       { method: "POST" },
     ),
+
+  closeRepository: (stateId: string) =>
+    request<{ closed: boolean }>(`/api/repositories/${encodeURIComponent(stateId)}/close`, {
+      method: "POST",
+    }),
 
   removeRepository: (stateId: string) =>
     request<void>(`/api/repositories/${encodeURIComponent(stateId)}`, { method: "DELETE" }),

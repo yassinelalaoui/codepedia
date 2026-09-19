@@ -17,30 +17,64 @@ const ENTRY: HistoryEntry = {
   repositoryPath: "C:/code/project",
   lastIndexedAt: "2026-09-01T10:00:00",
   available: true,
+  open: false,
 };
+
+/** The same row while this hub is serving a wiki for it. */
+const OPEN_ENTRY: HistoryEntry = { ...ENTRY, open: true };
 
 function open(): void {
   fireEvent.click(screen.getByRole("button", { name: /Actions for/ }));
 }
 
 describe("HistoryRowMenu", () => {
-  it("offers exactly Properties, Open and Remove", () => {
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={vi.fn()} />);
+  it("offers exactly Properties, Open and Remove for a closed repository", () => {
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />);
     open();
 
     const items = screen.getAllByRole("menuitem");
     expect(items.map((item) => item.textContent)).toEqual(["Properties", "Open", "Remove"]);
   });
 
+  it("offers Close only while a wiki is being served for the row", () => {
+    // Remove refuses while a server runs and says to close it first, so the
+    // action it names has to exist - but only where there is something to close.
+    render(<HistoryRowMenu entry={OPEN_ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />);
+    open();
+
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Properties", "Open", "Close", "Remove"]);
+  });
+
+  it("closes the wiki when Close is chosen", () => {
+    const onClose = vi.fn();
+    render(<HistoryRowMenu entry={OPEN_ENTRY} onOpen={vi.fn()} onClose={onClose} onRemove={vi.fn()} />);
+    open();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close" }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for no confirmation to close, unlike Remove", () => {
+    // Closing costs a reopen; removing deletes documentation that can take
+    // minutes to rebuild (spec FR-040).
+    render(<HistoryRowMenu entry={OPEN_ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />);
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
   it("offers no re-analyse action", () => {
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={vi.fn()} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />);
     open();
 
     expect(screen.queryByRole("menuitem", { name: /re-?analyse|re-?index/i })).not.toBeInTheDocument();
   });
 
   it("shows the full path and last-analysed time in Properties", () => {
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={vi.fn()} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Properties" }));
 
@@ -51,7 +85,7 @@ describe("HistoryRowMenu", () => {
 
   it("says so in Properties when the folder is gone", () => {
     render(
-      <HistoryRowMenu entry={{ ...ENTRY, available: false }} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <HistoryRowMenu entry={{ ...ENTRY, available: false }} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />,
     );
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Properties" }));
@@ -61,7 +95,7 @@ describe("HistoryRowMenu", () => {
 
   it("opens the repository from the menu", () => {
     const onOpen = vi.fn();
-    render(<HistoryRowMenu entry={ENTRY} onOpen={onOpen} onRemove={vi.fn()} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={onOpen} onClose={vi.fn()} onRemove={vi.fn()} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
 
@@ -70,7 +104,7 @@ describe("HistoryRowMenu", () => {
 
   it("never removes without a confirmation that names the repository", () => {
     const onRemove = vi.fn();
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={onRemove} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={onRemove} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
 
@@ -80,7 +114,7 @@ describe("HistoryRowMenu", () => {
   });
 
   it("says what removal does and does not touch", () => {
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={vi.fn()} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
 
@@ -91,7 +125,7 @@ describe("HistoryRowMenu", () => {
 
   it("removes once confirmed", () => {
     const onRemove = vi.fn();
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={onRemove} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={onRemove} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
@@ -101,7 +135,7 @@ describe("HistoryRowMenu", () => {
 
   it("deletes nothing when the confirmation is declined", () => {
     const onRemove = vi.fn();
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={onRemove} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={onRemove} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -111,7 +145,7 @@ describe("HistoryRowMenu", () => {
   });
 
   it("closes on Escape", () => {
-    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onRemove={vi.fn()} />);
+    render(<HistoryRowMenu entry={ENTRY} onOpen={vi.fn()} onClose={vi.fn()} onRemove={vi.fn()} />);
     open();
 
     fireEvent.keyDown(document, { key: "Escape" });

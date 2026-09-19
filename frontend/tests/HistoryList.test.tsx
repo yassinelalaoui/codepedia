@@ -12,13 +12,14 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
     repositoryPath: "C:/code/project",
     lastIndexedAt: "2026-09-01T10:00:00",
     available: true,
+    open: false,
     ...overrides,
   };
 }
 
 describe("HistoryList", () => {
   it("shows an empty state before anything has been analysed", () => {
-    render(<HistoryList entries={[]} onOpen={vi.fn()} onRemove={vi.fn()} />);
+    render(<HistoryList entries={[]} onOpen={vi.fn()} onCloseServer={vi.fn()} onRemove={vi.fn()} />);
 
     expect(screen.getByText(/Nothing analysed yet/)).toBeInTheDocument();
   });
@@ -28,6 +29,7 @@ describe("HistoryList", () => {
       <HistoryList
         entries={[entry(), entry({ stateId: "fedcba9876543210", repositoryPath: "C:/code/other" })]}
         onOpen={vi.fn()}
+        onCloseServer={vi.fn()}
         onRemove={vi.fn()}
       />,
     );
@@ -43,6 +45,7 @@ describe("HistoryList", () => {
           entry({ stateId: "bbbbbbbbbbbbbbbb", repositoryPath: "C:/code/oldest" }),
         ]}
         onOpen={vi.fn()}
+        onCloseServer={vi.fn()}
         onRemove={vi.fn()}
       />,
     );
@@ -53,7 +56,7 @@ describe("HistoryList", () => {
   });
 
   it("shows both the folder name and its full path", () => {
-    render(<HistoryList entries={[entry()]} onOpen={vi.fn()} onRemove={vi.fn()} />);
+    render(<HistoryList entries={[entry()]} onOpen={vi.fn()} onCloseServer={vi.fn()} onRemove={vi.fn()} />);
 
     expect(screen.getByText("project")).toBeInTheDocument();
     expect(screen.getByText("C:/code/project")).toBeInTheDocument();
@@ -62,7 +65,7 @@ describe("HistoryList", () => {
   it("marks a repository whose folder is gone rather than hiding it", () => {
     // Spec FR-031b: its documentation is still readable, and hiding it would
     // strand generated output with no way to reach or remove it.
-    render(<HistoryList entries={[entry({ available: false })]} onOpen={vi.fn()} onRemove={vi.fn()} />);
+    render(<HistoryList entries={[entry({ available: false })]} onOpen={vi.fn()} onCloseServer={vi.fn()} onRemove={vi.fn()} />);
 
     expect(screen.getByText("folder missing")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
@@ -71,7 +74,7 @@ describe("HistoryList", () => {
   it("opens a repository when its row is activated", () => {
     const onOpen = vi.fn();
     const target = entry();
-    render(<HistoryList entries={[target]} onOpen={onOpen} onRemove={vi.fn()} />);
+    render(<HistoryList entries={[target]} onOpen={onOpen} onCloseServer={vi.fn()} onRemove={vi.fn()} />);
 
     fireEvent.click(screen.getByTitle("C:/code/project"));
 
@@ -79,7 +82,7 @@ describe("HistoryList", () => {
   });
 
   it("disables activation while an analysis is running", () => {
-    render(<HistoryList entries={[entry()]} onOpen={vi.fn()} onRemove={vi.fn()} busy />);
+    render(<HistoryList entries={[entry()]} onOpen={vi.fn()} onCloseServer={vi.fn()} onRemove={vi.fn()} busy />);
 
     expect(screen.getByTitle("C:/code/project")).toBeDisabled();
   });

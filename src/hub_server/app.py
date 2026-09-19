@@ -173,6 +173,31 @@ class HubState:
         self._record_outcome(run)
         return run
 
+    def is_server_running(self, state_id: str) -> bool:
+        """Whether a wiki server this hub started is still serving `state_id`."""
+        with self.lock:
+            child = self.servers.get(state_id)
+        return child is not None and child.is_running()
+
+    def close_server(self, state_id: str) -> bool:
+        """Stop the wiki server for one repository. True when one was running.
+
+        `shutdown` does this for every child when the hub itself exits. This is
+        the same move for a reader who is done with one repository and wants its
+        watcher, its port and its memory back without ending the session.
+
+        Idempotent on purpose: closing a repository whose server already exited
+        is what the reader asked for, not an error to report.
+        """
+        with self.lock:
+            child = self.servers.pop(state_id, None)
+        if child is None:
+            return False
+        was_running = child.is_running()
+        if was_running:
+            child.terminate()
+        return was_running
+
     def shutdown(self) -> None:
         """Stop every child this hub started (spec FR-007)."""
         with self.lock:
@@ -303,7 +328,17 @@ def create_hub_app(
 
     @app.get("/api/repositories", dependencies=[Depends(require_hub_token)])
     async def list_repositories() -> Any:
-        return {"repositories": [entry.to_dict() for entry in history.list_entries()]}
+        # `open` is this hub run's own state, not something the history on disk
+        # could know, so it is merged in here rather than pushed into
+        # `HistoryEntry`: the row is a record of an analysis, and whether a
+        # server happens to be serving it belongs to this process.
+        state = hub()
+        return {
+            "repositories": [
+                {**entry.to_dict(), "open": state.is_server_running(entry.stateId)}
+                for entry in history.list_entries()
+            ]
+        }
 
     @app.post("/api/repositories/{state_id}/open", dependencies=[Depends(require_hub_token)])
     async def open_repository(state_id: str) -> Any:
@@ -357,6 +392,34 @@ def create_hub_app(
         # Still working: there is catch-up to show (spec FR-019). The page
         # follows the stream and navigates when `server_ready` arrives.
         return JSONResponse({"runId": run.runId, "catchup": True}, status_code=202)
+
+    @app.post("/api/repositories/{state_id}/close", dependencies=[Depends(require_hub_token)])
+    async def close_repository(state_id: str) -> Any:
+        """Stop the wiki server for one repository, without ending the session.
+
+        Opening a repository leaves its server running on purpose - returning to
+        it is then instant, and its watcher keeps it current - and every child
+        dies with the hub (spec FR-007). Between those two points there was no
+        way to close one, which `remove_repository` nonetheless told the reader
+        to do before removing it.
+        """
+        entry = history.find(state_id)
+        if entry is None:
+            return _error("not_found", "That repository is not in the history.", 404)
+
+        state = hub()
+        run = state.currentRun
+        if run is not None and not run.isTerminal and run.repositoryPath == entry.repositoryPath:
+            # The same conflict `remove_repository` reports, for the same
+            # reason: a run still working on this repository is cancelled
+            # through the run, never closed out from under itself.
+            return _error(
+                "conflict",
+                "That repository is being analysed right now. Stop the analysis before closing it.",
+                409,
+            )
+
+        return {"closed": state.close_server(state_id)}
 
     @app.delete("/api/repositories/{state_id}", dependencies=[Depends(require_hub_token)])
     async def remove_repository(state_id: str) -> Any:

@@ -173,6 +173,24 @@ export function HubPage(): JSX.Element {
     [],
   );
 
+  const closeServer = useCallback(
+    async (entry: HistoryEntry) => {
+      setError(null);
+      try {
+        const result = await hubApi.closeRepository(entry.stateId);
+        setNotice(
+          result.closed
+            ? `Closed the wiki for ${entry.repositoryPath}.`
+            : `No wiki was running for ${entry.repositoryPath}.`,
+        );
+        await refreshHistory();
+      } catch (thrown) {
+        setError(thrown instanceof HubApiError ? thrown.message : String(thrown));
+      }
+    },
+    [refreshHistory],
+  );
+
   const remove = useCallback(
     async (entry: HistoryEntry) => {
       setError(null);
@@ -226,7 +244,13 @@ export function HubPage(): JSX.Element {
           </p>
         ) : null}
 
-        <HistoryList entries={entries} onOpen={open} onRemove={remove} busy={active} />
+        <HistoryList
+          entries={entries}
+          onOpen={open}
+          onCloseServer={closeServer}
+          onRemove={remove}
+          busy={active}
+        />
         <RunLogList runs={runs} />
       </main>
     </div>
