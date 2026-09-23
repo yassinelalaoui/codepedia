@@ -78,7 +78,7 @@ class ChatMessage:
     citedSymbolIds: tuple[str, ...] = ()
     citedFilePaths: tuple[str, ...] = ()
     timestamp: str = field(default_factory=_utc_now)
-    # The ProviderRef string (e.g. "groq:llama-3.3-70b-versatile") of
+    # The provider id (e.g. "local:qwen2.5-coder") of
     # whichever provider in the chat chain actually produced this message
     # (spec FR-008). Empty for a user message, or for any assistant message
     # persisted before this feature shipped.

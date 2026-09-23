@@ -5,9 +5,7 @@ from typing import Any, AsyncIterator, Optional, Sequence
 
 from chat import ChatMessage
 from chat.session import ensure_local_dependencies_available
-from fastapi import Depends, FastAPI, Query
-from provider_routing import list_failover_events
-from repository_metadata.sqlite_store import connect as connect_metadata_db
+from fastapi import Depends, FastAPI
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import StreamingResponse
 from starlette.staticfiles import StaticFiles
@@ -20,8 +18,6 @@ from .schemas import (
     AskQuestionResponse,
     ChatMessageView,
     CreateSessionResponse,
-    FailoverLogEntryView,
-    FailoverLogResponse,
     SessionHistoryResponse,
 )
 from .security import (
@@ -33,8 +29,6 @@ from .session_store import SessionRegistry
 
 # The failover log is a diagnostic, not a feed: an unbounded `limit` lets one
 # request pull the whole table into memory and serialize it.
-MAX_FAILOVER_LOG_LIMIT = 500
-DEFAULT_FAILOVER_LOG_LIMIT = 100
 
 
 def _error_code_for(exc: Exception) -> str:
@@ -117,33 +111,6 @@ def create_app(
             for message in session.messages
         )
         return SessionHistoryResponse(sessionId=session_id, messages=messages)
-
-    @app.get("/providers/failover-log", dependencies=[Depends(require_api_token)])
-    def get_failover_log(
-        stage: Optional[str] = None,
-        limit: int = Query(DEFAULT_FAILOVER_LOG_LIMIT, ge=1, le=MAX_FAILOVER_LOG_LIMIT),
-    ) -> FailoverLogResponse:
-        db_path = app.state.metadata_db_path
-        if db_path is None:
-            return FailoverLogResponse(events=())
-        connection = connect_metadata_db(db_path)
-        try:
-            events = list_failover_events(connection, stage=stage, limit=limit)
-        finally:
-            connection.close()
-        return FailoverLogResponse(
-            events=tuple(
-                FailoverLogEntryView(
-                    id=event.id,
-                    timestamp=event.timestamp,
-                    stage=event.stage,
-                    attemptedProvider=event.attemptedProvider,
-                    resultProvider=event.resultProvider,
-                    reason=event.reason,
-                )
-                for event in events
-            )
-        )
 
     docs_root = Path(docs_root)
     if not (docs_root / "index.html").exists():

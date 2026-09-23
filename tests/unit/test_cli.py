@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import json
 
 import pytest
 from typer.testing import CliRunner
@@ -80,12 +81,12 @@ def test_save_config_rejects_non_positive_generate_timeout(cli_home):
     assert not cli.paths.config_path().exists()
 
 
-def test_chain_fields_round_trip_through_save_and_load(cli_home):
+def test_model_fields_round_trip_through_save_and_load(cli_home):
     original = CLIConfiguration(
-        embeddingChain=("local:nomic-embed-text",),
-        summaryChain=("groq:llama-3.3-70b-versatile", "local:qwen2.5-coder"),
-        chatChain=("groq:llama-3.3-70b-versatile",),
-        disclosureAcknowledgedSignature="abc123",
+        llmModel="qwen2.5-coder:1.5b",
+        embeddingModel="nomic-embed-text",
+        summaryConcurrency=2,
+        embeddingConcurrency=6,
     )
 
     save_config(original)
@@ -94,40 +95,66 @@ def test_chain_fields_round_trip_through_save_and_load(cli_home):
     assert loaded == original
 
 
-def test_config_file_predating_this_feature_loads_with_remote_defaults(cli_home):
+def test_a_config_file_written_before_providers_were_removed_still_loads(cli_home):
+    """Obsolete keys are ignored, not rejected.
+
+    A file from the version that had provider chains still carries
+    `embeddingChain`, `summaryChain`, `chatChain` and
+    `disclosureAcknowledgedSignature`. Refusing to start over their presence
+    would strand every existing installation behind a manual edit, so they are
+    dropped on load and gone after the next write.
+    """
     cli.paths.config_path().parent.mkdir(parents=True, exist_ok=True)
     cli.paths.config_path().write_text(
-        '{"llmModel": "qwen2.5-coder", "llmEndpointUrl": "http://localhost:11434"}', encoding="utf-8"
+        json.dumps(
+            {
+                "llmModel": "qwen2.5-coder",
+                "llmEndpointUrl": "http://localhost:11434",
+                "embeddingChain": ["local:nomic-embed-text", "openai:text-embedding-3-small"],
+                "summaryChain": ["groq:openai/gpt-oss-20b"],
+                "chatChain": ["groq:openai/gpt-oss-20b"],
+                "disclosureAcknowledgedSignature": "abc123",
+                "summaryConcurrency": 1,
+            }
+        ),
+        encoding="utf-8",
     )
 
     loaded = load_config()
 
-    assert loaded.embeddingChain == cli.config.DEFAULT_EMBEDDING_CHAIN
-    assert loaded.summaryChain == cli.config.DEFAULT_SUMMARY_CHAIN
-    assert loaded.chatChain == cli.config.DEFAULT_CHAT_CHAIN
     assert loaded.llmModel == "qwen2.5-coder"
+    assert loaded.embeddingModel == cli.config.DEFAULT_EMBEDDING_MODEL
+    # The setting that is still meaningful survives; the obsolete ones do not.
+    assert loaded.summaryConcurrency == 1
+    assert not hasattr(loaded, "embeddingChain")
+
+    save_config(loaded)
+    written = json.loads(cli.paths.config_path().read_text(encoding="utf-8"))
+    assert "embeddingChain" not in written
+    assert "disclosureAcknowledgedSignature" not in written
 
 
-def test_save_config_rejects_empty_chain(cli_home):
+def test_save_config_rejects_a_blank_model_name(cli_home):
     with pytest.raises(ValueError):
-        save_config(CLIConfiguration(summaryChain=()))
+        save_config(CLIConfiguration(llmModel="  "))
 
     assert not cli.paths.config_path().exists()
 
 
-def test_save_config_rejects_unparseable_chain_entry(cli_home):
+def test_save_config_rejects_concurrency_below_one(cli_home):
     with pytest.raises(ValueError):
-        save_config(CLIConfiguration(chatChain=("not-a-valid-entry",)))
+        save_config(CLIConfiguration(summaryConcurrency=0))
 
     assert not cli.paths.config_path().exists()
 
 
-def test_llm_provider_and_remote_llm_model_are_no_longer_accepted_fields():
+def test_removed_provider_fields_are_not_accepted(cli_home):
     import dataclasses
 
     field_names = {field.name for field in dataclasses.fields(CLIConfiguration)}
-    assert "llmProvider" not in field_names
-    assert "remoteLlmModel" not in field_names
+    for removed in ("llmProvider", "remoteLlmModel", "embeddingChain", "summaryChain", "chatChain",
+                    "disclosureAcknowledgedSignature"):
+        assert removed not in field_names
 
 
 def test_state_id_is_stable_and_filesystem_safe(tmp_path):

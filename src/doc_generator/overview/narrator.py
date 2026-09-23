@@ -201,12 +201,11 @@ def build_overview_prompt(evidence: OverviewEvidence) -> PromptEnvelope:
         promptText="\n".join(parts) + "\n",
         systemPrompt=SYSTEM_PROMPT,
         context=(f"featureCount={listed}", f"formatVersion={NARRATIVE_FORMAT_VERSION}"),
+        # Ollama's own option name, for the reason the planner gives
+        # (features/planner.py): `max_tokens` is an OpenAI-style key that
+        # Ollama ignores, so the cap was silently inert.
         options={
-            "max_tokens": MAX_NARRATIVE_RESPONSE_TOKENS,
-            # Suppress the reasoning channel, for the reason the planner does
-            # (features/planner.py): left at its default, reasoning tokens count
-            # against the same window and can consume the whole answer.
-            "reasoning_effort": "low",
+            "num_predict": MAX_NARRATIVE_RESPONSE_TOKENS,
         },
     )
 
@@ -224,7 +223,7 @@ def narrative_cache_key(envelope: PromptEnvelope) -> str:
         NARRATIVE_FORMAT_VERSION,
         envelope.systemPrompt or "",
         envelope.promptText,
-        str(envelope.options.get("max_tokens", "")),
+        str(envelope.options.get("num_predict", "")),
     ):
         digest.update(part.encode("utf-8"))
         digest.update(b"\0")
@@ -278,8 +277,8 @@ class OverviewNarrator:
     """Writes the Overview's narrative with **one** LLM call, cached.
 
     ``llmEngine`` is duck-typed for the same reason `FeaturePlanner` types it
-    as `Any`: the CLI hands over a `provider_routing.FailoverExecutor`, and
-    `doc_generator` sits below `provider_routing` in the dependency graph.
+    as `Any`: the CLI hands over the local LLM engine, and `doc_generator`
+    sits below `local_llm` in the dependency graph.
     """
 
     def __init__(
@@ -320,17 +319,14 @@ class OverviewNarrator:
             failure = "unavailable"
         else:
             try:
-                # Through `run`, never `generate`: the CLI hands over a
-                # `FailoverExecutor`, which exposes the chain and not the
-                # engine's own methods.
-                result = self.llmEngine.run(lambda engine: engine.generate(envelope))
+                result = self.llmEngine.generate(envelope)
             except RuntimeError:
-                # Every provider failure is a `RuntimeError`. Deliberately *not*
+                # Every engine failure is a `RuntimeError`. Deliberately *not*
                 # `Exception`: an `AttributeError` here is a wiring bug and must
-                # stay loud rather than masquerade as an unreachable provider.
+                # stay loud rather than masquerade as an unreachable engine.
                 failure = "failed"
             else:
-                text = getattr(result, "value", "") or ""
+                text = result or ""
                 reply = parse_narrative_reply(text if isinstance(text, str) else str(text))
                 if reply is not None:
                     self._save(key, text, handle_map, evidence.repositoryFingerprint)

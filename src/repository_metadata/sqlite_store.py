@@ -133,16 +133,6 @@ SCHEMA_STATEMENTS = (
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS engine_failover_log (
-        id TEXT PRIMARY KEY,
-        timestamp TEXT NOT NULL,
-        stage TEXT NOT NULL,
-        attempted_provider TEXT NOT NULL,
-        result_provider TEXT,
-        reason TEXT NOT NULL
-    )
-    """,
-    """
     CREATE TABLE IF NOT EXISTS summary_ledger (
         context_hash TEXT PRIMARY KEY,
         source_file_id TEXT NOT NULL,
@@ -159,7 +149,6 @@ SCHEMA_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_dependency_edges_source_file ON dependency_edges(source_file_id)",
     "CREATE INDEX IF NOT EXISTS idx_dependency_edges_target_id ON dependency_edges(target_id)",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_session_timestamp ON chat_messages(session_id, timestamp)",
-    "CREATE INDEX IF NOT EXISTS idx_engine_failover_log_timestamp ON engine_failover_log(timestamp)",
 )
 
 

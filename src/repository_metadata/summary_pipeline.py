@@ -42,10 +42,14 @@ from .summary_prompts import (
 SummaryProgressCallback = Callable[[int, int, Symbol], None]
 
 # Symbols are summarized concurrently because each one is a single blocking
-# remote call - the pass is almost entirely network wait, not computation.
-# Four is deliberately modest: the ceiling here is the provider's rate limit
-# on one API key, not local CPU, and `provider_routing`'s backoff turns any
-# excess straight back into waiting.
+# call to the Ollama runtime.
+#
+# Four made sense when the call was network wait against a remote API, and it
+# still earns its keep locally: Ollama overlaps requests up to
+# OLLAMA_NUM_PARALLEL rather than serializing them. Measured on the embedding
+# stage of this project's own machine, eight workers ran 7.6x faster than one.
+# The ceiling here is the local CPU/GPU rather than a rate limit, so the right
+# number is machine-specific - hence `summaryConcurrency`.
 DEFAULT_SUMMARY_WORKERS = 4
 
 
@@ -54,18 +58,16 @@ class SummaryPipelineError(RuntimeError):
 
 
 class EmptySummaryError(SummaryPipelineError):
-    """One provider returned a blank summary for one symbol.
-
-    Carries `.kind` so `provider_routing.classify_failure` can read it like any
-    engine error and fail the symbol over to the next provider in the chain.
-    Raised *inside* the `FailoverExecutor.run` callable for exactly that reason
-    - checked after the executor returned, a blank answer from the first
-    provider ended the whole indexing run instead of asking the second one.
+    """The engine returned a blank summary for one symbol.
 
     Small local models return an occasional empty completion; that is ordinary
     behaviour, not a broken repository. One blank answer at symbol 454 of 500
     used to discard twenty minutes of finished work, because `index` builds
-    into a staging directory and deletes it on any exception.
+    into a staging directory and deletes it on any exception - so this is
+    caught per symbol and the symbol is recorded as unsummarized.
+
+    It still carries `.kind`, in the uniform shape every engine error in this
+    project exposes, so callers can treat it like any other engine failure.
     """
 
     kind = "empty_response"
@@ -84,17 +86,15 @@ class CodeSummaryPipeline:
         llmEngine: Any,
         maxWorkers: int = DEFAULT_SUMMARY_WORKERS,
     ) -> None:
-        """`llmEngine` is a `provider_routing.FailoverExecutor` wrapping the
-        summary stage's configured provider chain (research.md's "deferred
-        implementation" of constitution 2.1/2.3) - this package must not
-        depend on `provider_routing` directly (it sits below it in the
-        dependency graph), so it's accepted duck-typed via `Any`.
+        """`llmEngine` is the local LLM engine (`local_llm.LocalLLMEngine`),
+        accepted duck-typed via `Any` because this package sits below
+        `local_llm` in `docs/architecture.md`'s layering and must not import
+        it.
 
         Both collaborators are safe to share across `maxWorkers` threads
         without any change of their own: `RepositoryMetadataStore` opens a
-        connection per call, and `_summarize_symbol` reads the provider from
-        the `FailoverResult` it was handed rather than from the executor's
-        `providerUsed` attribute, which concurrent calls do overwrite.
+        connection per call, and the engine holds no per-call state - its
+        `providerId` is a constant derived from the configured model name.
         """
         if maxWorkers < 1:
             raise ValueError("maxWorkers must be at least 1")
@@ -276,8 +276,9 @@ class CodeSummaryPipeline:
     def _ensure_ready(self) -> None:
         if not self.llmEngine.isAvailable():
             raise LocalLLMUnavailableError(
-                "No provider in the summary chain is currently available. Start the local service, "
-                "install the required model, or check your remote provider credentials, then try again."
+                "The model for the 'summary' stage is not available. Start Ollama and make sure "
+                "the configured model is installed (`ollama list`, then `ollama pull <model>`), "
+                "then try again."
             )
 
     def _summarize_bundle_list(
@@ -312,15 +313,33 @@ class CodeSummaryPipeline:
         progress_lock = threading.Lock()
         completed = 0
 
-        def summarize_one(bundle: SourceFileBundle, symbol: Symbol) -> SummaryResult:
+        def summarize_one(bundle: SourceFileBundle, symbol: Symbol) -> SummaryResult | None:
             nonlocal completed
-            result = self._summarize_symbol(
-                repository_root,
-                bundle,
-                symbol,
-                source_text=source_text_by_file_id[bundle.file.id],
-                incremental=incremental,
-            )
+            try:
+                result = self._summarize_symbol(
+                    repository_root,
+                    bundle,
+                    symbol,
+                    source_text=source_text_by_file_id[bundle.file.id],
+                    incremental=incremental,
+                )
+            except EmptySummaryError:
+                # One symbol the model had nothing to say about. It is not a
+                # reason to lose the rest of the run.
+                #
+                # This used to be handled by failing the symbol over to the
+                # next provider in the chain. There is no next provider now
+                # (constitution 2.3 v4.0.0), so it is handled here instead,
+                # and it matters more than it did: a small local model returns
+                # an occasional empty completion, `index` builds into a
+                # staging directory, and an exception escaping this pool
+                # deletes that directory. One blank answer at symbol 454 of
+                # 500 would otherwise discard the whole pass.
+                #
+                # The symbol is simply left unsummarized; the wiki renders it
+                # without prose, exactly as it does for a symbol no provider
+                # was available for.
+                result = None
             if on_progress is not None:
                 # Counter and callback under one lock, so the reported count is
                 # both gap-free and printed in the order it was counted -
@@ -337,17 +356,21 @@ class CodeSummaryPipeline:
             workers = min(self.maxWorkers, total)
             executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="codepedia-summary")
             try:
-                futures: list[Future[SummaryResult]] = [
+                futures: list[Future[SummaryResult | None]] = [
                     executor.submit(summarize_one, bundle, symbol) for bundle, symbol in pending
                 ]
                 results: list[SummaryResult] = []
                 for future in futures:
                     # Collected in submission order, so `results` stays ordered
-                    # exactly as the sequential pass returned it. The first failure
-                    # propagates, as before; calls already in flight when it does
-                    # may still complete and persist their summary, which is
-                    # harmless - a summary is idempotent per symbol.
-                    results.append(future.result())
+                    # exactly as the sequential pass returned it. A symbol the
+                    # model blanked on contributes nothing and is skipped; any
+                    # other failure still propagates, and calls already in
+                    # flight when it does may still complete and persist their
+                    # summary, which is harmless - a summary is idempotent per
+                    # symbol.
+                    outcome = future.result()
+                    if outcome is not None:
+                        results.append(outcome)
                 return results
             finally:
                 executor.shutdown(wait=True, cancel_futures=True)
@@ -417,23 +440,17 @@ class CodeSummaryPipeline:
 
         prompt = self._build_prompt(summary_context)
 
-        def generate_non_empty(engine: Any) -> str:
-            # The emptiness check belongs to the provider that produced it, so
-            # it has to happen in here: raising after `run` returns is past the
-            # point where the chain can still try anyone else.
-            text = engine.generate(prompt).strip()
-            if not text:
-                raise EmptySummaryError(
-                    f"LLM returned an empty summary for symbol {symbol.id}"
-                )
-            return text
-
-        failover_result = self.llmEngine.run(generate_non_empty)
-        generated_summary = failover_result.value
+        generated_summary = self.llmEngine.generate(prompt).strip()
+        if not generated_summary:
+            # A small local model does this occasionally. There is no second
+            # provider to try any more, so this ends the symbol's summary
+            # rather than switching engines - the caller records the failure
+            # and the wiki renders the symbol without prose.
+            raise EmptySummaryError(f"LLM returned an empty summary for symbol {symbol.id}")
         result = SummaryResult(
             symbolId=symbol.id,
             generatedSummary=generated_summary,
-            modelName=str(failover_result.providerUsed),
+            modelName=str(getattr(self.llmEngine, "providerId", "") or ""),
             contextHash=current_context_hash,
             sourceFileId=bundle.file.id,
             symbolKind=symbol.kind,

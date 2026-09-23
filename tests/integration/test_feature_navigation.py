@@ -21,7 +21,7 @@ from ._doc_generator_support import build_indexed_repo, index_repo
 
 
 class _PlanningEngine:
-    """A `FailoverExecutor`-shaped engine that answers with whatever it is told."""
+    """An LLM engine that answers with whatever it is told."""
 
     def __init__(self, title: str) -> None:
         self.title = title
@@ -50,18 +50,9 @@ class _PlanningEngine:
             ]
         )
 
-    def run(self, call):
-        outer = self
-
-        class _Inner:
-            def generate(self, prompt):
-                outer.calls += 1
-                return outer._reply()
-
-        class _Result:
-            value = call(_Inner())
-
-        return _Result()
+    def generate(self, prompt):
+        self.calls += 1
+        return self._reply()
 
 
 def _generator(tmp_path: Path, root: Path, store, graph, engine) -> DocGenerator:

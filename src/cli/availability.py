@@ -5,24 +5,24 @@ from typing import Any
 from .errors import LocalModelUnavailableError
 
 
-def check_ai_dependencies(**stage_executors: Any) -> None:
-    """Verify every named stage's provider chain has at least one available
-    provider before any AI-dependent pipeline step runs (constitution 2.3;
-    spec.md's "Local-model availability checks" requirement).
+def check_ai_dependencies(**stage_engines: Any) -> None:
+    """Verify every named stage's engine is available before any
+    AI-dependent pipeline step runs (spec.md's "Local-model availability
+    checks" requirement).
 
     Each keyword argument names a stage (e.g. `summary=...`,
-    `embeddings=...`) and is anything exposing `FailoverExecutor.isAvailable()`
-    - a raw single engine or a `provider_routing.FailoverExecutor` both work
-    uniformly (research.md §13's C1 fix). Since a multi-provider chain has no
-    single status message to faithfully surface, the error names the stage
-    rather than repeating one engine's specific reason - the specific reason
-    still surfaces in full once `FailoverExecutor.run`/`.stream` is actually
-    attempted and raises `FailoverExhaustedError`.
+    `embeddings=...`) and is anything exposing `isAvailable()` - in practice
+    `local_llm.LocalLLMEngine` or `embedding_engine.EmbeddingEngine`.
+
+    The error names the stage and the remedy rather than repeating the
+    engine's own status message, because at this point the useful information
+    is which stage cannot proceed; the engine's specific reason surfaces in
+    full the moment a call is actually attempted.
     """
-    for stage, executor in stage_executors.items():
-        if not executor.isAvailable():
+    for stage, engine in stage_engines.items():
+        if not engine.isAvailable():
             raise LocalModelUnavailableError(
-                f"No provider in the '{stage}' chain is currently available. Start the local "
-                "service, install the required model, or check your remote provider credentials, "
+                f"The model for the '{stage}' stage is not available. Start Ollama and make sure "
+                "the configured model is installed (`ollama list`, then `ollama pull <model>`), "
                 "then try again."
             )

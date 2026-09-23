@@ -52,11 +52,10 @@ def test_every_api_route_is_guarded_not_just_the_first(tmp_path):
         bare.post("/sessions").status_code,
         bare.post(f"/sessions/{session_id}/messages", json={"question": "where?"}).status_code,
         bare.get(f"/sessions/{session_id}/messages").status_code,
-        bare.get("/providers/failover-log").status_code,
     ]
     index.close()
 
-    assert statuses == [401, 401, 401, 401]
+    assert statuses == [401, 401, 401]
 
 
 def test_the_run_token_is_accepted(tmp_path):
@@ -124,24 +123,6 @@ def test_the_wiki_is_served_without_a_token(tmp_path):
 
     assert response.status_code == 200
     assert "wiki" in response.text
-
-
-def test_the_failover_log_limit_is_bounded(tmp_path):
-    app, index = build_test_app(tmp_path, metadata_db_path=tmp_path / "meta-store.sqlite")
-    client = api_client(app)
-
-    too_large = client.get("/providers/failover-log", params={"limit": 10_000})
-    too_small = client.get("/providers/failover-log", params={"limit": 0})
-    accepted = client.get("/providers/failover-log", params={"limit": 500})
-    index.close()
-
-    assert too_large.status_code == 422
-    assert too_small.status_code == 422
-    # An out-of-range limit is not an empty question; it used to answer as one.
-    assert too_large.json()["code"] == "invalid_request"
-    assert accepted.status_code == 200
-
-
 def test_an_empty_question_still_answers_empty_question(tmp_path):
     app, index = build_test_app(tmp_path)
     client = api_client(app)

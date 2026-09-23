@@ -15,7 +15,6 @@ import pytest
 
 from dependency_graph import DependencyGraph
 from parser_engine import SourceFile, extract_symbols
-from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, compute_content_hash
 from repository_metadata.summary_pipeline import LocalLLMUnavailableError
 
@@ -60,7 +59,7 @@ class Harness:
         self.pipeline = CodeSummaryPipeline(
             metadataStore=self.store,
             dependencyGraph=graph,
-            llmEngine=FailoverExecutor("summary", [(ProviderRef(kind="groq", model="m"), self.llm)]),
+            llmEngine=self.llm,
             maxWorkers=1,
         )
 

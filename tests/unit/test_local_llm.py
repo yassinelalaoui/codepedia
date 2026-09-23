@@ -11,7 +11,6 @@ import pytest
 
 from local_llm import (
     GenerationFailedError,
-    GroqLLMEngine,
     InvalidResponseError,
     LocalLLMEngine,
     ModelMissingError,
@@ -251,35 +250,29 @@ def test_first_fragment_delay_does_not_grow_with_how_many_more_fragments_follow(
     assert long_delay < short_delay + 0.2
 
 
-def test_create_llm_engine_builds_exactly_one_engine_per_provider():
-    local_engine = create_llm_engine("local", "llama3", "http://127.0.0.1:6553")
-    assert isinstance(local_engine, LocalLLMEngine)
+def test_create_llm_engine_builds_the_local_engine():
+    engine = create_llm_engine("llama3", "http://127.0.0.1:6553")
 
-    groq_engine = create_llm_engine("groq", "llama-3.3-70b-versatile")
-    assert isinstance(groq_engine, GroqLLMEngine)
-
-    # Never a composite/fallback engine, never chosen automatically -
-    # requesting one provider never returns (or silently touches) the other.
-    assert not isinstance(local_engine, GroqLLMEngine)
-    assert not isinstance(groq_engine, LocalLLMEngine)
-
-    with pytest.raises(ValueError):
-        create_llm_engine("something-else", "llama3")
+    assert isinstance(engine, LocalLLMEngine)
+    # Never a composite or fallback engine: there is one engine and it runs
+    # on this machine (constitution 2.1/2.3 v4.0.0).
+    assert engine.providerId == "local:llama3"
 
 
-def test_create_llm_engine_never_consults_the_other_provider_when_one_is_unavailable(monkeypatch):
-    from local_llm.groq_transport import API_KEY_ENV_VAR
+def test_an_unavailable_engine_fails_on_its_own_terms(monkeypatch):
+    """There is nothing to fall back to, and the failure says what is wrong.
 
-    monkeypatch.delenv(API_KEY_ENV_VAR, raising=False)
-    groq_engine = create_llm_engine("groq", "llama-3.3-70b-versatile")
+    This used to assert that asking for one provider never touched the other.
+    With a single local engine the property it protects is simpler and
+    stronger: an unreachable runtime surfaces as an unreachable runtime, not
+    as a silent substitution (constitution 2.3 v4.0.0).
+    """
+    engine = create_llm_engine("llama3", "http://127.0.0.1:6553")
 
-    # The local engine is never configured/reachable in this test at all -
-    # if create_llm_engine or the engine itself ever fell back to it, this
-    # would either error differently or hang; instead it must fail exactly
-    # as an unavailable Groq engine would, on its own.
-    assert groq_engine.isAvailableLocally() is False
-    status = groq_engine.checkAvailability()
-    assert "GROQ_API_KEY" in status.message
+    assert engine.isAvailableLocally() is False
+    status = engine.checkAvailability()
+    assert status.available is False
+    assert status.message
 
 
 def test_generate_stream_never_targets_a_host_other_than_the_configured_endpoint(monkeypatch):
@@ -329,7 +322,7 @@ def test_availability_is_probed_once_per_ttl_rather_than_once_per_generate():
     """Every `generate` pre-flights `checkAvailability`, which lists every
     installed model. Uncached, summarizing a repository cost two round-trips
     per symbol where one would do - paid again on each thread of the summary
-    pool, all pointed at the same Ollama. `GroqLLMEngine` already cached this;
+    pool, all pointed at the same Ollama. The remote engine used to cache this;
     the local engine is the one that makes the call per symbol."""
     handler = _counting_handler()
     server = _start_server(handler)
@@ -375,34 +368,6 @@ def test_a_failed_generation_invalidates_the_cached_availability():
         handler.generate_status = 200
         server.shutdown()
         server.server_close()
-
-
-def test_groq_payload_carries_prompt_options():
-    """`PromptEnvelope.options` reaches the request body.
-
-    It had always been the designed pass-through for per-call parameters and
-    nothing read it, so every caller's options were silently inert - which is how
-    the feature planner's `reasoning_effort` and `max_tokens` did nothing at all
-    until a live run returned an empty answer.
-    """
-    from local_llm import PromptEnvelope
-    from local_llm.groq_transport import GroqLLMTransport
-
-    envelope = PromptEnvelope(
-        promptText="hello",
-        options={"reasoning_effort": "low", "max_tokens": 1200},
-    )
-    payload = {
-        "model": "m",
-        "messages": [{"role": "user", "content": envelope.to_prompt_text()}],
-        "stream": True,
-    }
-    payload.update(
-        {k: v for k, v in envelope.options.items() if k not in ("model", "messages", "stream")}
-    )
-
-    assert payload["reasoning_effort"] == "low"
-    assert payload["max_tokens"] == 1200
 
 
 def test_groq_payload_options_cannot_override_reserved_keys():

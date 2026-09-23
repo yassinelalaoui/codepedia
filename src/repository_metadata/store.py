@@ -271,7 +271,7 @@ class _MetadataSession:
     assigns `exc.__traceback__` when an exception passes through it, and this
     codebase's engine errors are frozen dataclasses that raise
     `FrozenInstanceError` on any attribute assignment. A summarization pass is
-    exactly where `FailoverExhaustedError` comes from, so a generator here
+    exactly where an engine's unavailability error comes from, so a generator here
     would replace every real provider error with a meaningless one.
     """
 

@@ -2,7 +2,7 @@
 
 The command's own contract: no positional argument, loopback by default, a port
 that does not collide with `serve`, a token in the printed URL, and the
-disclosure gate applying to it as it does to every other chain-consuming entry
+entry-point wiring applying to it as it does to every other entry
 point.
 """
 
@@ -51,10 +51,12 @@ def test_defaults_are_loopback_and_a_port_that_does_not_clash_with_serve():
     assert DEFAULT_HOME_PORT != cli.main.DEFAULT_PORT
 
 
-def test_home_is_behind_the_disclosure_gate():
-    """Constitution 2.1: the hub is an entry point to chain-consuming stages,
-    so it must not be a way around the disclosure."""
-    assert "home" in cli.main._DISCLOSURE_GATED_COMMANDS
+def test_there_is_no_disclosure_gate_to_be_behind():
+    """Constitution 2.1 v4.0.0: nothing leaves the machine, so nothing is
+    disclosed. The gate the hub used to sit behind was removed with the remote
+    providers it warned about, and no entry point may reintroduce one
+    silently."""
+    assert not hasattr(cli.main, "_DISCLOSURE_GATED_COMMANDS")
 
 
 # -- what it prints ---------------------------------------------------------

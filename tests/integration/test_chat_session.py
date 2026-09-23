@@ -6,7 +6,6 @@ import urllib.request
 
 import pytest
 from chat import ChatMessage, ChatSession, sqlite_store as chat_sqlite_store
-from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata.sqlite_store import connect
 from vector_index import VectorIndex, build_code_chunk
 from vector_index.search import encode_text
@@ -45,11 +44,15 @@ class FakeLLMEngine:
         yield self.response_text[midpoint:]
 
 
-def _wrap_chat(llm: FakeLLMEngine) -> FailoverExecutor:
-    """ChatSession.askStream() now routes through a `FailoverExecutor`
-    (spec 029) - a single-provider chain is regression-equivalent to
-    today's direct-engine behavior (T034)."""
-    return FailoverExecutor("chat", ((ProviderRef("local", "fake"), llm),))
+def _wrap_chat(llm: FakeLLMEngine) -> FakeLLMEngine:
+    """Stamp the engine with a provider id and hand it back.
+
+    `ChatSession.askStream` used to route through a `FailoverExecutor` over a
+    one-entry chain; it streams from the engine directly now and reads
+    `providerId` to record which model answered.
+    """
+    llm.providerId = "local:fake"
+    return llm
 
 
 async def _collect_stream(session: ChatSession, question: str) -> tuple[list[str], ChatMessage]:

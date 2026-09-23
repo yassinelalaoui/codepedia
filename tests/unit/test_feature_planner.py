@@ -55,34 +55,22 @@ class RecordingEngine:
     def isAvailable(self) -> bool:
         return self.available
 
-    def run(self, operation):
+    def generate(self, prompt):
         self.calls += 1
         if self.raises is not None:
             raise self.raises
-        return self
-
-    @property
-    def value(self) -> str:
-        return self.reply
-
-    def generate(self, prompt):
         self.prompts.append(prompt)
         return self.reply
 
 
 class CapturingEngine(RecordingEngine):
-    """Runs the operation, so the rendered prompt can be inspected."""
+    """Kept as a distinct name for the tests that inspect the rendered prompt.
 
-    def run(self, operation):
-        self.calls += 1
-        if self.raises is not None:
-            raise self.raises
-        self.reply_value = operation(self)
-        return self
-
-    @property
-    def value(self) -> str:
-        return getattr(self, "reply_value", self.reply)
+    It needed its own `run` while the planner called through a
+    `FailoverExecutor` and the base double short-circuited the operation. The
+    planner calls `generate` directly now, so the base class already records
+    every prompt and this is a plain alias.
+    """
 
 
 def _evidence(count: int = 6) -> RepositoryEvidence:
@@ -498,7 +486,7 @@ def test_the_planner_calls_the_provider_chain_not_the_engine_directly():
 def test_the_prompt_requests_a_bounded_response():
     envelope = build_feature_plan_prompt(assign_handles(_candidates(2)), _evidence(2))
 
-    assert envelope.options.get("max_tokens") == MAX_PLAN_RESPONSE_TOKENS
+    assert envelope.options.get("num_predict") == MAX_PLAN_RESPONSE_TOKENS
 
 
 # --------------------------------------------------------------------------
@@ -655,4 +643,5 @@ def test_the_prompt_suppresses_the_reasoning_channel():
     """
     envelope = build_feature_plan_prompt(assign_handles(_candidates(2)), _evidence(2))
 
-    assert envelope.options.get("reasoning_effort") == "low"
+    # Ollama's own option name; OpenAI-style keys were silently ignored.
+    assert envelope.options == {"num_predict": MAX_PLAN_RESPONSE_TOKENS}

@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from provider_routing import FailoverExecutor, ProviderRef
 from vector_index import VectorIndex, build_code_chunk
 from vector_index.search import encode_text
 
@@ -120,6 +119,8 @@ def build_test_app(
     )
     index.addChunk(chunk)
 
-    chat_executor = FailoverExecutor("chat", ((ProviderRef("local", "fake"), llm_engine),))
+    # The engine answers for itself now; `generatedBy` reads this.
+    llm_engine.providerId = "local:fake"
+    chat_executor = llm_engine
     app = create_app(index, embedding_engine, chat_executor, docs_root, metadata_db_path)
     return app, index

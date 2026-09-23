@@ -6,12 +6,12 @@ at all, and it is the fastest-growing part: every prior assistant answer is
 replayed into the prompt in full, so a long session eventually overruns the
 model's context window with no warning.
 
-Exact token counting is not possible here. The default chat chain is Groq's
-`openai/gpt-oss-20b` and the full-local alternative is an Ollama model with a
-different tokenizer; neither is available offline, and a dependency that fit one
-would be wrong for the other. A conservative characters-per-token ratio is used
-instead - the same posture `retrieval.py` already takes with its README cap
-("a generous cap, not a token-accurate budget").
+Exact token counting is not possible here. The model is whichever Ollama tag
+the operator configured, and its tokenizer is not something this project can
+load; a dependency that fit one model would be wrong for the next. A
+conservative characters-per-token ratio is used instead - the same posture
+`retrieval.py` already takes with its README cap ("a generous cap, not a
+token-accurate budget").
 """
 
 from __future__ import annotations

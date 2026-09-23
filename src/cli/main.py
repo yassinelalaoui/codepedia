@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import importlib.metadata
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
 from local_llm import LocalLLMError
-from provider_routing import FailoverExhaustedError
 from repo_scanner.models import RepositoryScanRequest
 from repo_scanner.output import serialize_scan_result
 from repo_scanner.scanner import scan_repository
@@ -14,7 +13,6 @@ from repository_metadata import SummaryPipelineError
 
 from cli import config as config_module
 from cli.config_command import run_config
-from cli.disclosure import ensure_disclosure_acknowledged
 from cli.errors import (
     IndexNotFoundError,
     LocalModelUnavailableError,
@@ -24,29 +22,19 @@ from cli.errors import (
 )
 from cli.home_command import run_home
 from cli.index_command import run_index
-from cli.provider_command import run_provider_chain_set, run_provider_mode_full_local
 from cli.serve_command import run_serve
 from cli.server import start_local_server
 
 # The pre-flight availability check (check_ai_dependencies, called inside
-# run_index/run_serve) only rules out an unreachable service or a missing
+# run_index/run_serve) only rules out an unreachable runtime or a missing
 # model *before* work starts. Once summarization/embedding/chat is actually
-# running, a slow or misbehaving provider can still raise LocalLLMError, a
-# FailoverExhaustedError (every provider in a chain unavailable), or
+# running, a slow or misbehaving model can still raise LocalLLMError or
 # SummaryPipelineError - those need to be caught here too, or they reach the
 # terminal as a raw traceback instead of report_and_exit's clean, actionable
 # message (its own stated contract).
-_AI_PIPELINE_ERRORS = (LocalLLMError, SummaryPipelineError, FailoverExhaustedError)
-
-# Subcommands that touch a chain-consuming stage - the disclosure gate
-# (contracts/cli-provider-commands.md) runs before all of these; `scan` and
-# `config --show` are read-only/static-analysis-only and are not gated
-# (spec FR-014).
-_DISCLOSURE_GATED_COMMANDS = {"index", "serve", "provider", "home"}
+_AI_PIPELINE_ERRORS = (LocalLLMError, SummaryPipelineError)
 
 app = typer.Typer(add_completion=False, help="Turn a local code repository into a browsable documentation wiki.")
-provider_app = typer.Typer(add_completion=False, help="Manage per-stage AI provider chains and the full-local switch.")
-app.add_typer(provider_app, name="provider")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -72,9 +60,10 @@ def main(
         help="Show the installed codepedia version and exit.",
     ),
 ) -> None:
-    invoked = ctx.invoked_subcommand
-    if invoked in _DISCLOSURE_GATED_COMMANDS:
-        ensure_disclosure_acknowledged(config_module.load_config())
+    # No disclosure gate: nothing this tool does sends repository content
+    # anywhere. Every model call goes to a runtime on this machine
+    # (constitution 2.1 v4.0.0), so there is no third party to disclose.
+    return
 
 
 @app.command("scan")
@@ -150,14 +139,14 @@ def home(
 
 @app.command("config")
 def config_command(
-    llm_model: Optional[str] = typer.Option(None, "--llm-model", help="Local LLM model to use for any 'local:' chain entry."),
+    llm_model: Optional[str] = typer.Option(None, "--llm-model", help="Ollama model used for summaries and chat."),
     llm_endpoint: Optional[str] = typer.Option(None, "--llm-endpoint", help="Local LLM endpoint URL."),
     llm_generate_timeout: Optional[float] = typer.Option(
         None,
         "--llm-generate-timeout",
         help="Seconds to wait for the local LLM to finish generating a summary before failing (default: 120).",
     ),
-    embedding_model: Optional[str] = typer.Option(None, "--embedding-model", help="Local embedding model to use for any 'local:' chain entry."),
+    embedding_model: Optional[str] = typer.Option(None, "--embedding-model", help="Ollama model used for embeddings."),
     embedding_endpoint: Optional[str] = typer.Option(None, "--embedding-endpoint", help="Local embedding endpoint URL."),
     embedding_generate_timeout: Optional[float] = typer.Option(
         None,
@@ -166,9 +155,8 @@ def config_command(
     ),
     show: bool = typer.Option(False, "--show", help="Show the current configuration without changing it."),
 ) -> None:
-    """View or change local connection settings and see the current provider
-    chains. Use `codepedia provider chain set`/`provider mode full-local`
-    to change which providers a stage actually uses."""
+    """View or change which local models this tool uses, and check whether
+    the Ollama runtime has them installed."""
     try:
         run_config(
             llm_model=llm_model,
@@ -179,34 +167,6 @@ def config_command(
             embedding_generate_timeout=embedding_generate_timeout,
             show=show,
         )
-    except ValueError as exc:
-        report_and_exit(exc)
-
-
-@provider_app.command("mode")
-def provider_mode(mode: str = typer.Argument(..., help="Only 'full-local' is currently supported.")) -> None:
-    """`codepedia provider mode full-local` - atomically switch all three
-    stages to local-only providers (spec FR-004)."""
-    if mode != "full-local":
-        report_and_exit(ValueError(f"Unknown provider mode {mode!r}; expected 'full-local'."))
-    try:
-        run_provider_mode_full_local()
-    except ValueError as exc:
-        report_and_exit(exc)
-
-
-@provider_app.command("chain")
-def provider_chain(
-    action: str = typer.Argument(..., help="Only 'set' is currently supported."),
-    stage: str = typer.Argument(..., help="'embeddings', 'summary', or 'chat'."),
-    providers: List[str] = typer.Argument(..., help="One or more '<provider>:<model>' entries, in try-order."),
-) -> None:
-    """`codepedia provider chain set <stage> <provider:model>...` - replace
-    one stage's provider chain (spec FR-006/FR-007)."""
-    if action != "set":
-        report_and_exit(ValueError(f"Unknown provider chain action {action!r}; expected 'set'."))
-    try:
-        run_provider_chain_set(stage, providers)
     except ValueError as exc:
         report_and_exit(exc)
 

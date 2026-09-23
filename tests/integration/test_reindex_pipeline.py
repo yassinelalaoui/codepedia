@@ -11,7 +11,6 @@ from doc_generator import DocGenerator, open_doc_manifest_store
 from local_llm import PromptEnvelope
 from local_llm.models import AvailabilityStatus
 from parser_engine import SourceFile, extract_symbols
-from provider_routing import FailoverExecutor, ProviderRef
 from reindex_pipeline import IncrementalReindexPipeline
 from reindex_pipeline.embeddings import update_embeddings
 from repo_watcher import ChangeBatch, ChangeType, FileChange
@@ -92,7 +91,8 @@ class Harness:
             outputRoot=self.output_root,
             repositoryRoot=self.root,
         )
-        self.llmExecutor = FailoverExecutor("summary", ((ProviderRef("local", self.llm.modelName), self.llm),))
+        self.llm.providerId = f"local:{self.llm.modelName}"
+        self.llmExecutor = self.llm
         self.summary_pipeline = CodeSummaryPipeline(
             metadataStore=self.store, dependencyGraph=self.graph, llmEngine=self.llmExecutor
         )

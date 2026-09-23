@@ -130,7 +130,7 @@ def test_unavailable_provider_emits_a_failed_event_naming_the_chain(tmp_path, cl
 
     def unavailable(**_: object) -> None:
         raise LocalModelUnavailableError(
-            "No provider in the 'embeddings' chain is currently available. Start the local "
+            "The model for the 'embeddings' stage is not available. Start the local "
             "service, install the required model, or check your remote provider credentials, "
             "then try again."
         )
@@ -146,6 +146,3 @@ def test_unavailable_provider_emits_a_failed_event_naming_the_chain(tmp_path, cl
     assert failure["stage"] == "CHECKING_MODELS"
     assert failure["chain"] == "embeddings"
     assert "embeddings" in failure["message"]
-    # The providers actually configured for that chain, so the homepage can say
-    # which ones were tried rather than only that something was unavailable.
-    assert failure["providers"] == list(config.embeddingChain)

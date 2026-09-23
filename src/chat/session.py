@@ -15,7 +15,7 @@ class LocalDependencyUnavailableError(RuntimeError):
 
 def ensure_local_dependencies_available(embedding_engine: Any, llm_engine: Any) -> None:
     """Works identically whether handed a raw engine or a
-    `provider_routing.FailoverExecutor` wrapping a chain - both expose
+    the local LLM engine - both expose
     `isAvailable()` (research.md §13's C2 fix)."""
     if not embedding_engine.isAvailable():
         raise LocalDependencyUnavailableError(
@@ -79,11 +79,11 @@ class ChatSession(_ChatSessionData):
             )
             envelope = build_prompt_envelope(context)
             raw_parts: list[str] = []
-            async for fragment in self.llmEngine.stream(lambda engine: engine.generateStream(envelope)):
+            async for fragment in self.llmEngine.generateStream(envelope):
                 raw_parts.append(fragment)
                 yield fragment
             raw_answer = "".join(raw_parts)
-            generated_by = str(self.llmEngine.providerUsed) if self.llmEngine.providerUsed is not None else ""
+            generated_by = str(getattr(self.llmEngine, "providerId", "") or "")
             content = render_answer_text(
                 raw_answer,
                 insufficient=insufficient,

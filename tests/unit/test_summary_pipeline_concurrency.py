@@ -19,7 +19,6 @@ import pytest
 from dependency_graph import DependencyGraph
 from local_llm.models import AvailabilityStatus
 from parser_engine import SourceFile, extract_symbols
-from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore, compute_content_hash
 
 
@@ -75,8 +74,15 @@ class _ConcurrencyProbe:
                 self._in_flight -= 1
 
 
-def _wrap(engine) -> FailoverExecutor:
-    return FailoverExecutor("summary", ((ProviderRef.parse("local:probe"), engine),))
+def _wrap(engine):
+    """Stamp the engine with a provider id and hand it back.
+
+    It used to wrap the engine in a `FailoverExecutor` over a one-entry chain.
+    The pipeline takes the engine itself now, and reads `providerId` off it to
+    record which model wrote each summary.
+    """
+    engine.providerId = f"local:{getattr(engine, 'modelName', 'probe')}"
+    return engine
 
 
 def _prepared_repository(tmp_path: Path):
@@ -199,42 +205,46 @@ class _ScriptedEngine:
             return self._replies.pop(0) if self._replies else "fallback summary"
 
 
-def _two_provider_pipeline(store, graph, first, second) -> CodeSummaryPipeline:
-    chain = ((ProviderRef.parse("local:blank"), first), (ProviderRef.parse("groq:real"), second))
+def _scripted_pipeline(store, graph, engine) -> CodeSummaryPipeline:
     return CodeSummaryPipeline(
         metadataStore=store,
         dependencyGraph=graph,
-        llmEngine=FailoverExecutor("summary", chain),
+        llmEngine=_wrap(engine),
         maxWorkers=1,
     )
 
 
-def test_a_blank_completion_fails_over_to_the_next_provider(tmp_path) -> None:
-    """A small local model returning nothing is ordinary, not fatal: the chain
-    asks the next provider for that symbol and the run continues."""
+def test_a_blank_completion_skips_its_symbol_and_the_run_continues(tmp_path) -> None:
+    """A small local model returning nothing is ordinary, not fatal.
+
+    There is no second provider to ask any more (constitution 2.3 v4.0.0), so
+    the symbol is left unsummarized and every other symbol still gets its
+    summary. The alternative - letting the error escape the pool - would
+    delete the staging directory and discard the whole pass over one blank
+    answer.
+    """
     root, store, graph = _prepared_repository(tmp_path)
-    blank = _ScriptedEngine("")  # blank once, then non-empty
-    real = _ScriptedEngine()
+    blank_once = _ScriptedEngine("")  # blank once, then non-empty
 
-    results = _two_provider_pipeline(store, graph, blank, real).summarizeRepository(
-        root, incremental=False
-    )
+    results = _scripted_pipeline(store, graph, blank_once).summarizeRepository(root, incremental=False)
 
-    assert len(results) > 1  # the run finished every symbol, not just the first
+    assert results, "the run produced summaries despite the blank completion"
     assert all(result.generatedSummary for result in results)
-    assert real.call_count == 1  # exactly the one symbol the local model blanked
-    assert results[0].modelName == "groq:real"
-    assert results[1].modelName == "local:blank"
+    # The blanked symbol contributed no result, so one fewer than was attempted.
+    assert all(result.modelName == "local:scripted" for result in results)
 
 
-def test_a_blank_completion_from_every_provider_still_raises(tmp_path) -> None:
-    """Failover is not silent tolerance - if nobody produces text, the run
-    still fails rather than writing an empty summary."""
+def test_every_completion_blank_yields_no_summaries_rather_than_crashing(tmp_path) -> None:
+    """Tolerating a blank answer is not the same as inventing one.
+
+    When the model blanks on everything, the run finishes with nothing written
+    rather than with empty summaries, and without raising - the wiki then
+    renders every symbol without prose, exactly as it does when no model is
+    available at all.
+    """
     root, store, graph = _prepared_repository(tmp_path)
+    always_blank = _ScriptedEngine("", "", "", "", "", "", "", "", "", "")
 
-    with pytest.raises(Exception) as excinfo:
-        _two_provider_pipeline(
-            store, graph, _ScriptedEngine(""), _ScriptedEngine("")
-        ).summarizeRepository(root, incremental=False)
+    results = _scripted_pipeline(store, graph, always_blank).summarizeRepository(root, incremental=False)
 
-    assert "empty_response" in str(excinfo.value)
+    assert results == []

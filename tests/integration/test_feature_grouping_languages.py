@@ -202,23 +202,14 @@ class _CountingPlanner:
     def isAvailable(self) -> bool:
         return True
 
-    def run(self, call):
-        outer = self
-
-        class _Inner:
-            def generate(self, prompt):
-                outer.calls += 1
-                return json.dumps(
-                    [
-                        {"title": "Wallets", "description": "Wallets.", "kind": "capability", "memberCandidateIds": ["c0"]},
-                        {"title": "Access", "description": "Access.", "kind": "subsystem", "memberCandidateIds": ["c1"]},
-                    ]
-                )
-
-        class _Result:
-            value = call(_Inner())
-
-        return _Result()
+    def generate(self, prompt):
+        self.calls += 1
+        return json.dumps(
+            [
+                {"title": "Wallets", "description": "Wallets.", "kind": "capability", "memberCandidateIds": ["c0"]},
+                {"title": "Access", "description": "Access.", "kind": "subsystem", "memberCandidateIds": ["c1"]},
+            ]
+        )
 
 
 def test_a_body_only_java_edit_keeps_the_grouping(tmp_path):

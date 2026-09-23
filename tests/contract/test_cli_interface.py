@@ -57,8 +57,9 @@ def test_config_command_accepts_optional_model_endpoint_and_show_flags():
     for name in ("llm_model", "llm_endpoint", "embedding_model", "embedding_endpoint"):
         assert _param_default(cmd.callback, name) is None
     assert _param_default(cmd.callback, "show") is False
-    # llmProvider/remoteLlmModel (026) were removed - superseded entirely by
-    # `provider chain set`/`provider mode full-local` (029).
+    # llmProvider/remoteLlmModel (026) were removed when 029 introduced
+    # provider chains, and the chains themselves went at constitution v4.0.0.
+    # `config` is the whole provider interface again.
     assert "llm_provider" not in parameters
     assert "remote_llm_model" not in parameters
 
@@ -70,35 +71,28 @@ def cli_home(tmp_path, monkeypatch):
     return home
 
 
-def test_provider_mode_full_local_switches_all_three_chains(cli_home):
+def test_the_provider_command_group_is_gone(cli_home):
+    """`codepedia provider ...` configured chains that no longer exist.
+
+    Every stage runs one local model (constitution 2.1/2.3 v4.0.0), named by
+    `codepedia config`, so there is nothing for this group to set.
+    """
     runner = CliRunner()
 
-    # Two confirmations expected: the main callback's gate (fresh install,
-    # signature never acknowledged) and `run_provider_mode_full_local`'s own
-    # immediate re-check against the just-saved all-local configuration
-    # (research.md §13's M1 fix).
-    result = runner.invoke(app, ["provider", "mode", "full-local"], input="y\ny\n")
-
-    assert result.exit_code == 0, result.output
-    assert "local:nomic-embed-text" in result.output
-    assert "local:qwen2.5-coder" in result.output
-
-
-def test_provider_chain_set_replaces_one_stage_only(cli_home):
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["provider", "chain", "set", "chat", "groq:llama-3.3-70b-versatile"], input="y\ny\n")
-
-    assert result.exit_code == 0, result.output
-    assert "groq:llama-3.3-70b-versatile" in result.output
-
-
-def test_provider_chain_set_rejects_unknown_stage(cli_home):
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["provider", "chain", "set", "bogus", "groq:llama-3.3-70b-versatile"], input="y\ny\n")
+    result = runner.invoke(app, ["provider", "mode", "full-local"])
 
     assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
+def test_config_sets_both_stage_models(cli_home):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--llm-model", "my-llm", "--embedding-model", "my-embed"])
+
+    assert result.exit_code == 0, result.output
+    assert "my-llm" in result.output
+    assert "my-embed" in result.output
 
 
 def test_version_flag_output_is_a_bare_version_string_matching_the_package():

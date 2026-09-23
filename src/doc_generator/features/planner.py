@@ -211,23 +211,15 @@ def build_feature_plan_prompt(
         promptText=prompt_text,
         systemPrompt=SYSTEM_PROMPT,
         context=(f"candidateCount={len(candidates)}",),
+        # Ollama's own option names. `PromptEnvelope.options` is passed
+        # straight through as the `options` object of `/api/generate`, so a key
+        # it does not know is simply ignored - which is what used to happen
+        # here: these were OpenAI-style names (`max_tokens`, `reasoning_effort`)
+        # chosen for a remote provider, and against Ollama the response cap was
+        # silently inert. `num_predict` is the same intent in the name the only
+        # remaining engine reads.
         options={
-            "max_tokens": MAX_PLAN_RESPONSE_TOKENS,
-            # Suppress the reasoning channel. Measured against
-            # `openai/gpt-oss-20b`, the model this project is configured with:
-            # left at its default, the planning prompt produced 7,941 characters
-            # of reasoning, hit `finish_reason: length`, and returned **no
-            # content at all** - a rejected plan that looks exactly like an
-            # unreachable provider. With this set, 60 characters of reasoning
-            # and a complete answer.
-            #
-            # It is also what makes the token budget above true rather than
-            # aspirational: reasoning tokens count, and an unsuppressed run
-            # emitted more of them than the entire per-minute allowance.
-            #
-            # Providers that do not recognise the key ignore it; this is a
-            # request parameter, not a second route to a model.
-            "reasoning_effort": "low",
+            "num_predict": MAX_PLAN_RESPONSE_TOKENS,
         },
     )
 
@@ -285,8 +277,8 @@ class FeaturePlanner:
     """Names the whole feature set with **one** LLM call, cached.
 
     ``llmEngine`` is duck-typed for the same reason `CodeSummaryPipeline` types
-    it as `Any`: the CLI hands over a `provider_routing.FailoverExecutor`, and
-    `doc_generator` sits below `provider_routing` in the dependency graph.
+    it as `Any`: the CLI hands over the local LLM engine, and `doc_generator`
+    sits below `local_llm` in the dependency graph.
     """
 
     def __init__(
@@ -328,23 +320,16 @@ class FeaturePlanner:
         handled = assign_handles(list(candidates)[:MAX_PROMPTED_CANDIDATES])
         prompt = build_feature_plan_prompt(handled, evidence)
         try:
-            # Through `run`, never `generate`: the CLI hands over a
-            # `provider_routing.FailoverExecutor`, which exposes the chain
-            # (`isAvailable`, `run`, `stream`, `result`) and not the engine's own
-            # methods. `CodeSummaryPipeline` and `vector_index` call it the same
-            # way.
-            failover_result = self.llmEngine.run(lambda engine: engine.generate(prompt))
+            generated = self.llmEngine.generate(prompt)
         except RuntimeError:
-            # Every provider failure lands here - `FailoverExhaustedError`,
-            # `LocalLLMError` and `RemoteLLMError` are all `RuntimeError`s, and
-            # `provider_routing` cannot be imported from this package anyway.
-            # Deliberately *not* `Exception`: an `AttributeError` here means the
-            # engine was called with a method it does not have, and that is a
-            # wiring bug that must be loud rather than masquerade as an
-            # unreachable provider.
+            # Every engine failure lands here - `LocalLLMError` is a
+            # `RuntimeError`. Deliberately *not* `Exception`: an
+            # `AttributeError` here means the engine was called with a method
+            # it does not have, and that is a wiring bug that must be loud
+            # rather than masquerade as an unreachable engine.
             return None
 
-        plan = parse_feature_plan(getattr(failover_result, "value", "") or "")
+        plan = parse_feature_plan(generated if isinstance(generated, str) else "")
         if plan is not None:
             self._save_cached(plan_key, plan)
         return plan

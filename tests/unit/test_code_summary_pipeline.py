@@ -9,7 +9,6 @@ from dependency_graph import DependencyGraph
 from local_llm import PromptEnvelope
 from local_llm.models import AvailabilityStatus
 from parser_engine import SourceFile, extract_symbols
-from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata import CodeSummaryPipeline, DependencyEdge, LocalLLMUnavailableError, RepositoryMetadataStore, compute_content_hash
 from repository_metadata.sqlite_store import stable_repository_id, stable_source_file_id
 
@@ -72,11 +71,12 @@ class RecordingLLMEngine:
 
 
 def _wrap(engine: RecordingLLMEngine) -> FailoverExecutor:
-    """CodeSummaryPipeline now takes a `provider_routing.FailoverExecutor`
+    """CodeSummaryPipeline takes the engine itself.
     wrapping the summary chain rather than a raw engine (spec 029) - a
     single-provider chain is regression-equivalent to today's direct-engine
     behavior."""
-    return FailoverExecutor("summary", ((ProviderRef("local", engine.modelName), engine),))
+    engine.providerId = f"local:{engine.modelName}"
+    return engine
 
 
 def test_summary_pipeline_generates_and_persists_summaries(tmp_path):

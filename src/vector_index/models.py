@@ -28,7 +28,7 @@ class CodeChunk:
     sourceFilePath: str = ""
     chunkType: ChunkType = "code"
     metadata: dict[str, Any] = field(default_factory=dict)
-    # The ProviderRef string (e.g. "openai:text-embedding-3-small") of
+    # The provider id (e.g. "local:nomic-embed-text") of
     # whichever provider/model actually computed `embedding` (spec FR-009).
     # Empty for a chunk built before this feature shipped.
     embeddingModelId: str = ""

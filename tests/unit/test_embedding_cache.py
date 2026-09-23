@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import threading
 
-from provider_routing import FailoverExecutor, ProviderRef
 from reindex_pipeline.embedding_cache import EmbeddingCache, expected_embedding_model_id
 from vector_index import VectorEntry, build_chunk_id
 
@@ -30,8 +29,10 @@ class _Provider:
         return tuple(float(len(text) + offset) for offset in range(self._dimensions))
 
 
-def _executor(ref: str = "openai:text-embedding-3-small", provider: _Provider | None = None) -> FailoverExecutor:
-    return FailoverExecutor("embeddings", ((ProviderRef.parse(ref), provider or _Provider()),))
+def _executor(ref: str = "local:nomic-embed-text", provider: _Provider | None = None) -> _Provider:
+    engine = provider or _Provider()
+    engine.providerId = ref
+    return engine
 
 
 def test_the_same_chunk_and_model_is_served_from_the_cache() -> None:
@@ -132,18 +133,23 @@ def test_seeding_skips_entries_with_no_model_attribution() -> None:
     assert cache.get(source_symbol_id="sym1", content="value = 1", chunk_type="code", model_id="openai:m") == (1.0, 2.0)
 
 
-def test_the_expected_model_is_the_head_of_the_chain() -> None:
-    executor = FailoverExecutor(
-        "embeddings",
-        ((ProviderRef.parse("openai:m1"), _Provider()), (ProviderRef.parse("local:m2"), _Provider())),
-    )
-
-    assert expected_embedding_model_id(executor) == "openai:m1"
+def test_the_expected_model_is_the_engines_own_provider_id() -> None:
+    assert expected_embedding_model_id(_executor("local:m1")) == "local:m1"
 
 
-def test_a_raw_provider_has_no_reusable_model_id() -> None:
-    """A bare `EmbeddingProvider` stamps no id onto its chunks, so nothing it
-    produced can be safely matched later."""
+def test_changing_the_model_invalidates_every_cached_vector() -> None:
+    """The cache is keyed on the producing model, so a model change is a total
+    miss rather than a silent reuse of incomparable vectors."""
+    cache = EmbeddingCache()
+    cache.put(source_symbol_id="sym1", content="value = 1", chunk_type="code", model_id="local:old", vector=(1.0, 2.0))
+
+    assert cache.get(source_symbol_id="sym1", content="value = 1", chunk_type="code", model_id="local:old") == (1.0, 2.0)
+    assert cache.get(source_symbol_id="sym1", content="value = 1", chunk_type="code", model_id="local:new") is None
+
+
+def test_a_provider_without_a_provider_id_has_nothing_reusable() -> None:
+    """A stand-in with no `providerId` stamps no id onto its chunks, so nothing
+    it produced can be safely matched later."""
     assert expected_embedding_model_id(_Provider()) == ""
 
 

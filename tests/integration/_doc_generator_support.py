@@ -6,7 +6,6 @@ from shutil import copytree
 from dependency_graph import DependencyGraph
 from local_llm.models import AvailabilityStatus
 from parser_engine import SourceFile, extract_symbols
-from provider_routing import FailoverExecutor, ProviderRef
 from repository_metadata import DependencyEdge, RepositoryMetadataStore, compute_content_hash
 from repository_metadata.sqlite_store import stable_repository_id, stable_source_file_id
 
@@ -110,6 +109,10 @@ class RecordingLLMEngine:
         self.modelName = "llama3"
         self.endpointUrl = "http://localhost:11434"
 
+    @property
+    def providerId(self) -> str:
+        return f"local:{self.modelName}"
+
     def checkAvailability(self) -> AvailabilityStatus:
         if self.available:
             return AvailabilityStatus(True, True, True, "available")
@@ -131,7 +134,12 @@ class RecordingLLMEngine:
         return f"{symbol_name} summary"
 
 
-def wrap_llm(engine: RecordingLLMEngine) -> FailoverExecutor:
-    """CodeSummaryPipeline now takes a `provider_routing.FailoverExecutor`
-    wrapping the summary chain rather than a raw engine (spec 029)."""
-    return FailoverExecutor("summary", ((ProviderRef("local", engine.modelName), engine),))
+def wrap_llm(engine: RecordingLLMEngine) -> RecordingLLMEngine:
+    """Identity, kept so existing call sites read unchanged.
+
+    `CodeSummaryPipeline` took a `FailoverExecutor` wrapping the summary chain
+    while remote providers existed; it takes the engine itself now. The
+    function stays rather than being deleted at forty call sites, and is the
+    one place to change if engines ever need wrapping again.
+    """
+    return engine

@@ -250,22 +250,13 @@ def test_a_planned_title_does_not_move_a_page_path(tmp_path):
         def isAvailable(self):
             return True
 
-        def run(self, call):
-            outer = self
-
-            class _Inner:
-                def generate(self, prompt):
-                    return json.dumps(
-                        [
-                            {"title": outer.title, "kind": "capability", "memberCandidateIds": ["c0"]},
-                            {"title": f"{outer.title} Two", "kind": "tooling", "memberCandidateIds": ["c1"]},
-                        ]
-                    )
-
-            class _Result:
-                value = call(_Inner())
-
-            return _Result()
+        def generate(self, prompt):
+            return json.dumps(
+                [
+                    {"title": self.title, "kind": "capability", "memberCandidateIds": ["c0"]},
+                    {"title": f"{self.title} Two", "kind": "tooling", "memberCandidateIds": ["c1"]},
+                ]
+            )
 
     root, store, graph = _two_area_repo(tmp_path)
     manifest = open_doc_manifest_store(tmp_path / "two-area-repo.sqlite")

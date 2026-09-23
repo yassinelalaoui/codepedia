@@ -42,12 +42,12 @@ def build_code_chunk(
     metadata: dict[str, object] | None = None,
     embedding_model_id: str = "",
 ) -> CodeChunk:
-    """`embedding_engine` is either a raw `EmbeddingProvider` (`.embed(text)`)
-    or a `provider_routing.FailoverExecutor` wrapping one (`.run(call)`,
-    duck-typed via `hasattr` since this package must not depend on
-    `provider_routing` - it sits below it in the dependency graph). When a
-    `FailoverExecutor` is given, `embeddingModelId` is stamped from whichever
-    provider actually produced the vector (spec FR-009).
+    """`embedding_engine` is an `EmbeddingProvider` (`.embed(text)`).
+    `embeddingModelId` is stamped from its `providerId` when it has one, so a
+    stored vector always records the model that produced it (spec FR-009). A
+    provider without `providerId` stamps "", which makes the vector
+    unreusable by the embedding cache rather than reusable under the wrong
+    model.
 
     `embedding_model_id` names the provider behind an `embedding` passed in
     directly - a vector reused from a cache or from a previous index. Without
@@ -66,12 +66,8 @@ def build_code_chunk(
         embedding_model_id = ""
         if embedding_engine is None:
             raise ValueError("embedding_engine must be provided when embedding is omitted")
-        if hasattr(embedding_engine, "run"):
-            failover_result = embedding_engine.run(lambda engine: engine.embed(normalized_content))
-            embedding = failover_result.value
-            embedding_model_id = str(failover_result.providerUsed)
-        else:
-            embedding = embedding_engine.embed(normalized_content)
+        embedding = embedding_engine.embed(normalized_content)
+        embedding_model_id = str(getattr(embedding_engine, "providerId", "") or "")
     return CodeChunk(
         id=chunk_id or build_chunk_id(source_symbol_id, normalized_content, chunk_type=chunk_type),
         content=normalized_content,

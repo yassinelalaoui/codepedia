@@ -80,7 +80,7 @@ def test_a_failed_analysis_also_leaves_the_repository_untouched(tmp_path, cli_ho
     before = fingerprint(root)
 
     def unavailable(**_: object) -> None:
-        raise LocalModelUnavailableError("No provider in the 'embeddings' chain is currently available.")
+        raise LocalModelUnavailableError("The model for the 'embeddings' stage is not available.")
 
     monkeypatch.setattr(index_command, "check_ai_dependencies", unavailable)
 

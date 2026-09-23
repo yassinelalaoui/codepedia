@@ -231,20 +231,20 @@ def test_a_missing_index_is_classified_as_an_unusable_analysis():
 def test_a_provider_outage_is_classified_separately_and_names_the_chain():
     """Spec FR-038a, and research.md §11's finding.
 
-    `run_serve` checks all three chains before doing anything, so on a machine
-    with an unreachable embedding chain every Open fails even though the wiki is
+    `run_serve` checks all three stages' engines before doing anything, so on a
+    machine where Ollama is stopped every Open fails even though the wiki is
     complete on disk. Calling that "your analysis is unusable" would be a false
     diagnosis that sends someone to re-run an index that was never the problem.
     """
     child = _child_with_output(
-        ["No provider in the 'embeddings' chain is currently available. Start the local service..."]
+        ["The model for the 'embeddings' stage is not available. Start Ollama..."]
     )
 
     result = classify_failure(child)
 
     assert result["kind"] == "provider_unavailable"
     assert result["chain"] == "embeddings"
-    assert "provider problem, not a problem with the analysis" in result["message"]
+    assert "model problem, not a problem with the analysis" in result["message"]
     assert "documentation is intact" in result["message"]
 
 

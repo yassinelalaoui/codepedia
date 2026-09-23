@@ -10,7 +10,6 @@ worth having at all.
 
 from __future__ import annotations
 
-from provider_routing import FailoverExecutor, ProviderRef
 from reindex_pipeline.embedding_cache import EmbeddingCache
 from reindex_pipeline.embeddings import update_embeddings
 from vector_index import VectorIndex
@@ -34,7 +33,8 @@ class CountingEmbeddingProvider:
 
 
 def _executor(provider: CountingEmbeddingProvider) -> FailoverExecutor:
-    return FailoverExecutor("embeddings", ((ProviderRef.parse(_MODEL), provider),))
+    provider.providerId = _MODEL
+    return provider
 
 
 def _embed(tmp_path, root, store, relative_path, *, engine, cache, index_name="vectors.sqlite"):

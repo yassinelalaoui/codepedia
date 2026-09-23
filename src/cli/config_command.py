@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Callable, Optional
 
 import typer
 from embedding_engine import create_embedding_engine
 from local_llm import create_local_llm_engine
-from provider_routing.factory import resolve_chain
-from provider_routing.chain import ProviderChain, ProviderRef
 
 from .config import CLIConfiguration, load_config, save_config
 
@@ -21,12 +20,12 @@ def run_config(
     embedding_generate_timeout: Optional[float],
     show: bool,
 ) -> None:
-    """View or change `CLIConfiguration`'s local connection settings
-    (research.md §10 - `llmModel`/`llmEndpointUrl`/etc. now scope to "any
-    `local:` chain entry's connection settings", not "the model in use";
-    chain membership itself is changed via `provider chain set`/`provider
-    mode full-local`). Never fails solely because a selected model isn't
-    installed yet - reported as a warning."""
+    """View or change the local model settings.
+
+    Never fails solely because a selected model isn't installed yet - that is
+    reported as a warning, since `ollama pull` is the fix and refusing to
+    store the name would make it impossible to configure ahead of the pull.
+    """
     current = load_config()
 
     has_changes = not show and any(
@@ -44,20 +43,25 @@ def run_config(
         _print_status(current)
         return
 
-    updated = CLIConfiguration(
-        llmModel=llm_model if llm_model is not None else current.llmModel,
-        llmEndpointUrl=llm_endpoint if llm_endpoint is not None else current.llmEndpointUrl,
-        llmGenerateTimeout=llm_generate_timeout if llm_generate_timeout is not None else current.llmGenerateTimeout,
-        embeddingModel=embedding_model if embedding_model is not None else current.embeddingModel,
-        embeddingEndpointUrl=embedding_endpoint if embedding_endpoint is not None else current.embeddingEndpointUrl,
-        embeddingGenerateTimeout=(
-            embedding_generate_timeout if embedding_generate_timeout is not None else current.embeddingGenerateTimeout
-        ),
-        embeddingChain=current.embeddingChain,
-        summaryChain=current.summaryChain,
-        chatChain=current.chatChain,
-        disclosureAcknowledgedSignature=current.disclosureAcknowledgedSignature,
-    )
+    # Built from `current` with `replace` rather than field by field: the
+    # field-by-field rebuild this used to do silently dropped
+    # `summaryConcurrency` and `embeddingConcurrency`, resetting them to their
+    # defaults on every `config` edit.
+    updates: dict[str, Any] = {}
+    if llm_model is not None:
+        updates["llmModel"] = llm_model
+    if llm_endpoint is not None:
+        updates["llmEndpointUrl"] = llm_endpoint
+    if llm_generate_timeout is not None:
+        updates["llmGenerateTimeout"] = llm_generate_timeout
+    if embedding_model is not None:
+        updates["embeddingModel"] = embedding_model
+    if embedding_endpoint is not None:
+        updates["embeddingEndpointUrl"] = embedding_endpoint
+    if embedding_generate_timeout is not None:
+        updates["embeddingGenerateTimeout"] = embedding_generate_timeout
+
+    updated = replace(current, **updates)
     save_config(updated)  # raises ValueError before writing if invalid
     typer.echo("Configuration saved.")
 
@@ -70,44 +74,26 @@ def run_config(
 
 
 def _print_status(config: CLIConfiguration) -> None:
-    typer.echo(f"Local LLM connection: {config.llmModel} ({config.llmEndpointUrl})")
+    typer.echo(f"Local LLM: {config.llmModel} ({config.llmEndpointUrl})")
     typer.echo(f"LLM generation timeout: {config.llmGenerateTimeout:g}s")
-    typer.echo(f"Local embedding connection: {config.embeddingModel} ({config.embeddingEndpointUrl})")
+    typer.echo(f"Local embedding model: {config.embeddingModel} ({config.embeddingEndpointUrl})")
     typer.echo(f"Embedding generation timeout: {config.embeddingGenerateTimeout:g}s")
+    typer.echo(f"Summary concurrency: {config.summaryConcurrency}")
+    typer.echo(f"Embedding concurrency: {config.embeddingConcurrency}")
 
-    for stage_label, stage, chain in (
-        ("Embeddings", "embeddings", config.embeddingChain),
-        ("Summary", "summary", config.summaryChain),
-        ("Chat", "chat", config.chatChain),
-    ):
-        typer.echo(f"{stage_label} chain: {', '.join(chain)}")
-        _print_chain_availability(stage, chain, config)
+    _print_availability("Summary/chat", config.llmModel, config.llmEndpointUrl, create_local_llm_engine)
+    _print_availability("Embeddings", config.embeddingModel, config.embeddingEndpointUrl, create_embedding_engine)
 
 
-def _print_chain_availability(stage: str, chain: tuple[str, ...], config: CLIConfiguration) -> None:
-    provider_chain = ProviderChain(stage=stage, providers=tuple(ProviderRef.parse(entry) for entry in chain))
+def _print_availability(label: str, model_name: str, endpoint_url: str, factory: Callable[[str, str], Any]) -> None:
     try:
-        resolved = resolve_chain(provider_chain, config)
+        engine = factory(model_name, endpoint_url)
+        status = engine.checkAvailability()
     except Exception as exc:  # noqa: BLE001 - status display is best-effort, never fatal
-        typer.echo(f"  (could not check availability: {exc})")
+        typer.echo(f"{label}: could not check availability ({exc})")
         return
-    for ref, engine in resolved:
-        try:
-            status = engine.checkAvailability()
-            state = "available" if status.available else "unavailable"
-            typer.echo(f"  {ref}: {state} - {status.message}")
-        except Exception as exc:  # noqa: BLE001 - status display is best-effort, never fatal
-            typer.echo(f"  {ref}: could not check availability ({exc})")
-
-
-def _print_other_installed_models(label: str, engine: Any, configured_model: str) -> None:
-    try:
-        installed = engine.listInstalledModels()
-    except Exception:  # noqa: BLE001 - best-effort extra info, never fatal
-        return
-    others = [name for name in installed if name != configured_model]
-    if others:
-        typer.echo(f"Other installed {label} models at this endpoint: {', '.join(others)}")
+    state = "available" if status.available else "unavailable"
+    typer.echo(f"{label}: {state} - {status.message}")
 
 
 def _warn_if_not_installed(label: str, model_name: str, endpoint_url: str, factory: Callable[[str, str], Any]) -> None:
@@ -122,5 +108,5 @@ def _warn_if_not_installed(label: str, model_name: str, endpoint_url: str, facto
     if reachable and not status.modelInstalled:
         typer.echo(
             f"Warning: {label} model '{model_name}' is not currently installed at {endpoint_url}. "
-            "Install it before it can be used."
+            f"Run `ollama pull {model_name}` before it can be used."
         )

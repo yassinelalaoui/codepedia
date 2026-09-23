@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from chat_api.security import TOKEN_HEADER
 from cli import paths as cli_paths
-from cli.config import CLIConfiguration, disclosure_signature
+from cli.config import CLIConfiguration
 from hub_server.app import create_hub_app
 
 TOKEN = "config-token"
@@ -30,17 +30,13 @@ def hub_home(tmp_path, monkeypatch):
     (home / "repos").mkdir(parents=True)
     monkeypatch.setattr(cli_paths, "codepedia_home", lambda: home)
 
-    # A chain that cannot possibly work - exactly the situation the hub is
-    # expected to report on.
+    # Models that cannot possibly be installed - exactly the situation the hub
+    # is expected to report on without touching the file.
     config = CLIConfiguration(
-        embeddingChain=("local:nomic-embed-text:latest", "openai:text-embedding-3-small"),
-        summaryChain=("groq:openai/gpt-oss-20b",),
-        chatChain=("groq:openai/gpt-oss-20b",),
+        llmModel="definitely-not-installed",
+        embeddingModel="also-not-installed",
     )
-    acknowledged = CLIConfiguration(
-        **{**config.to_dict(), "disclosureAcknowledgedSignature": disclosure_signature(config)}
-    )
-    (home / "config.json").write_text(json.dumps(acknowledged.to_dict()), encoding="utf-8")
+    (home / "config.json").write_text(json.dumps(config.to_dict()), encoding="utf-8")
     return home
 
 

@@ -44,7 +44,7 @@ REPLY = json.dumps({"lead": ["The system starts in `alpha_entry` and hands work 
 
 
 class RecordingEngine:
-    """A local double for the FailoverExecutor. Counts calls, so "one" is observable."""
+    """A local double for the LLM engine. Counts calls, so "one" is observable."""
 
     def __init__(self, reply: str = REPLY, *, available: bool = True, raises: Exception | None = None):
         self.reply = reply
@@ -52,18 +52,15 @@ class RecordingEngine:
         self.raises = raises
         self.calls = 0
         self.prompts: list = []
+        self.providerId = "local:recording"
 
     def isAvailable(self) -> bool:
         return self.available
 
-    def run(self, operation):
+    def generate(self, prompt):
         self.calls += 1
         if self.raises is not None:
             raise self.raises
-        self.value = operation(self)
-        return self
-
-    def generate(self, prompt):
         self.prompts.append(prompt)
         return self.reply
 
@@ -148,10 +145,10 @@ def test_a_real_prompt_stays_under_the_worst_case():
     assert len(envelope.to_prompt_text()) // CHARS_PER_TOKEN <= worst_case_prompt_tokens()
 
 
-def test_prompt_sets_low_reasoning_effort_and_the_response_cap():
+def test_prompt_sets_the_response_cap_in_ollamas_own_option_name():
     options = build_overview_prompt(_evidence()).options
 
-    assert options == {"max_tokens": MAX_NARRATIVE_RESPONSE_TOKENS, "reasoning_effort": "low"}
+    assert options == {"num_predict": MAX_NARRATIVE_RESPONSE_TOKENS}
 
 
 def test_prompt_asks_for_two_to_four_lead_paragraphs_each_citing_a_listed_name():
@@ -338,7 +335,7 @@ def test_unavailable_engine_yields_unavailable(tmp_path):
 
 
 def test_runtime_error_yields_failed(tmp_path):
-    narrator, _ = _narrator(tmp_path, RecordingEngine(raises=RuntimeError("chain exhausted")))
+    narrator, _ = _narrator(tmp_path, RecordingEngine(raises=RuntimeError("engine unavailable")))
 
     assert narrator.narrate(_evidence()).status == "failed"
 
@@ -366,20 +363,20 @@ def test_a_parseable_reply_is_saved_with_its_handle_map_even_if_nothing_grounds(
 
 
 def test_an_attribute_error_is_not_disguised_as_an_unavailable_provider(tmp_path):
-    narrator, _ = _narrator(tmp_path, RecordingEngine(raises=AttributeError("run")))
+    narrator, _ = _narrator(tmp_path, RecordingEngine(raises=AttributeError("generate")))
 
     with pytest.raises(AttributeError):
         narrator.narrate(_evidence())
 
 
-def test_the_narrator_calls_the_provider_chain_not_the_engine_directly(tmp_path):
+def test_the_narrator_makes_exactly_one_call_per_repository(tmp_path):
     engine = RecordingEngine()
     narrator, _ = _narrator(tmp_path, engine)
 
     narrator.narrate(_evidence())
 
-    assert engine.calls == 1, "run() was not used"
-    assert engine.prompts, "the operation handed to run() never reached generate()"
+    assert engine.calls == 1, "the narrator is meant to cost exactly one call"
+    assert engine.prompts, "generate() never saw a prompt"
 
 
 @pytest.mark.parametrize(

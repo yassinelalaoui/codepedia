@@ -228,13 +228,13 @@ def discard_staging(repository_path: str, pid: int) -> bool:
 def classify_failure(child: ChildProcess) -> dict[str, Any]:
     """Say what went wrong in the terms the person needs (data-model.md §4).
 
-    The distinction between "your stored analysis is unusable" and "no provider
-    is available" matters more than it looks. `run_serve` checks all three
-    provider chains before doing anything (`serve_command.py:36`), so on a
-    machine with an unreachable embedding chain every Open fails even though the
-    wiki is complete on disk (research.md §11). Reporting that as a broken
-    analysis would be a false diagnosis, and would send someone off to re-run an
-    index that was never the problem - hence spec FR-038a.
+    The distinction between "your stored analysis is unusable" and "the model
+    is not available" matters more than it looks. `run_serve` checks all three
+    stages' engines before doing anything (`serve_command.py:36`), so on a
+    machine where Ollama is stopped every Open fails even though the wiki is
+    complete on disk (research.md §11). Reporting that as a broken analysis
+    would be a false diagnosis, and would send someone off to re-run an index
+    that was never the problem - hence spec FR-038a.
     """
     output = "\n".join(child.lines)
     lowered = output.lower()
@@ -245,20 +245,20 @@ def classify_failure(child: ChildProcess) -> dict[str, Any]:
             "message": "That repository has no stored analysis yet, or it is unusable. Analyse it to rebuild.",
             "detail": child.tail(),
         }
-    if "no provider in the" in lowered and "chain is currently available" in lowered:
+    if "the model for the" in lowered and "stage is not available" in lowered:
         chain = None
         for candidate in ("embeddings", "summary", "chat"):
             if f"'{candidate}'" in output:
                 chain = candidate
                 break
-        named = f"the '{chain}' provider chain" if chain else "a required provider chain"
+        named = f"the '{chain}' stage" if chain else "a required stage"
         return {
             "kind": "provider_unavailable",
             "chain": chain,
             "message": (
-                f"No provider in {named} is available, so this repository cannot be served. "
-                "Its documentation is intact - this is a provider problem, not a problem with "
-                "the analysis."
+                f"The model for {named} is not available, so this repository cannot be served. "
+                "Start Ollama and make sure the configured model is installed. Its documentation "
+                "is intact - this is a model problem, not a problem with the analysis."
             ),
             "detail": child.tail(),
         }

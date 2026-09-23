@@ -53,16 +53,3 @@ class SessionHistoryResponse(BaseModel):
 class ApiErrorResponse(BaseModel):
     code: str
     message: str
-
-
-class FailoverLogEntryView(BaseModel):
-    id: str
-    timestamp: str
-    stage: str
-    attemptedProvider: str
-    resultProvider: Optional[str]
-    reason: str
-
-
-class FailoverLogResponse(BaseModel):
-    events: tuple[FailoverLogEntryView, ...]

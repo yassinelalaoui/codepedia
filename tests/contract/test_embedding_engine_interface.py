@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from embedding_engine import EmbeddingEngine, EmbeddingVector, OpenAIEmbeddingProvider, create_embedding_engine
-from embedding_engine.openai_provider import create_openai_embedding_provider
+from embedding_engine import EmbeddingEngine, EmbeddingVector, create_embedding_engine
 from embedding_engine.protocol import EmbeddingProvider
 
 
@@ -19,14 +18,13 @@ def test_embedding_engine_supports_expected_methods():
     assert hasattr(engine, "checkAvailability")
 
 
-def test_local_and_openai_providers_both_satisfy_embedding_provider_protocol():
+def test_the_local_engine_satisfies_the_embedding_provider_protocol():
     local_engine = create_embedding_engine("nomic-embed-text", "http://localhost:11434")
-    remote_provider = create_openai_embedding_provider()
 
     assert isinstance(local_engine, EmbeddingProvider)
-    assert isinstance(remote_provider, EmbeddingProvider)
-    assert isinstance(remote_provider, OpenAIEmbeddingProvider)
     assert local_engine.isAvailable() == local_engine.isAvailableLocally()
-    assert callable(remote_provider.isAvailable)
-    assert callable(remote_provider.checkAvailability)
-    assert callable(remote_provider.embed)
+    assert callable(local_engine.checkAvailability)
+    assert callable(local_engine.embed)
+    # Every stored vector records the model that produced it, so a query is
+    # never scored against vectors from another one.
+    assert local_engine.providerId == "local:nomic-embed-text"

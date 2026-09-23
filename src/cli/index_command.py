@@ -13,9 +13,10 @@ from typing import Any, Optional
 
 import typer
 from dependency_graph import DependencyGraph
+from embedding_engine import EmbeddingEngine, create_embedding_engine
 from doc_generator import DocGenerator, FeaturePlanner, OverviewNarrator, open_doc_manifest_store
+from local_llm import LocalLLMEngine, create_local_llm_engine
 from parser_engine import SourceFile, extract_symbols
-from provider_routing import FailoverExecutor, PathFailoverLog, build_stage_executor
 from reindex_pipeline import EmbeddingCache
 from reindex_pipeline.embeddings import update_embeddings
 from repo_scanner.docs_scope import load_docs_scope
@@ -115,10 +116,10 @@ class IndexRunResult:
 
     docsRoot: Path
     vectorIndex: VectorIndex
-    embeddingEngine: FailoverExecutor
-    llmEngine: FailoverExecutor
+    embeddingEngine: EmbeddingEngine
+    llmEngine: LocalLLMEngine
     metadataDbPath: Path
-    chatLlmEngine: FailoverExecutor
+    chatLlmEngine: LocalLLMEngine
     watcher: Optional[RepositoryWatcher] = None
     dependencyGraph: Optional[DependencyGraph] = None
 
@@ -192,63 +193,6 @@ def _emit_failure(stage: "Stage | None", error: BaseException, config: CLIConfig
     )
 
 
-@dataclass(slots=True)
-class _EmittingFailoverLog:
-    """Wrap the real failover log so a switch reaches the homepage too.
-
-    Constitution 2.3 permits automatic failover only inside a configured chain,
-    and requires every switch stay visible. The durable record in
-    `engine_failover_log` is unchanged and is written first: if it raises, this
-    behaves exactly as `PathFailoverLog` alone did, and nothing is emitted for a
-    switch that was never recorded (spec FR-017).
-    """
-
-    inner: PathFailoverLog
-
-    def __call__(
-        self, *, stage: str, attempted_provider: str, result_provider: Optional[str], reason: str
-    ) -> None:
-        self.inner(
-            stage=stage,
-            attempted_provider=attempted_provider,
-            result_provider=result_provider,
-            reason=reason,
-        )
-        progress_stream.emit(
-            "failover",
-            chain=stage,
-            fromProvider=attempted_provider,
-            toProvider=result_provider,
-            reason=reason,
-        )
-
-
-def _echo_backoff(*, stage: str, provider: str, delay_seconds: float, wait_number: int, max_waits: int) -> None:
-    """Print a rate-limit wait as it happens.
-
-    A wait is deliberately absent from `engine_failover_log`, which records
-    provider *switches* (constitution 2.3) - waiting on the same provider is
-    the opposite of switching. It still has to be visible, or a run that slows
-    down under a rate limit looks like a run that has simply hung.
-    """
-    typer.echo(
-        f"  rate limited by {provider} ({stage}); waiting {delay_seconds:.1f}s "
-        f"before retry {wait_number}/{max_waits}"
-    )
-    # Constitution 2.3 requires an automatic switch never be silent "in
-    # practice". Until now the terminal was the only place it showed; the
-    # homepage is now a second, and for a browser-started run the only one the
-    # person is looking at (spec FR-017).
-    progress_stream.emit(
-        "backoff",
-        chain=stage,
-        provider=provider,
-        delaySeconds=round(delay_seconds, 3),
-        waitNumber=wait_number,
-        maxWaits=max_waits,
-    )
-
-
 class _stage:
     """Announce a stage, then report what it cost.
 
@@ -258,11 +202,10 @@ class _stage:
     Deliberately a class rather than a `@contextmanager` generator:
     `contextlib`'s generator wrapper assigns `exc.__traceback__` when an
     exception passes through it, and this codebase's engine errors are frozen
-    dataclasses (`FailoverExhaustedError`, `EmbeddingError`, `LocalLLMError`).
-    Assigning any attribute on a directly-raised one raises
-    `FrozenInstanceError`, which would replace a real "every provider is
-    unavailable" message with a meaningless one. A plain `__exit__` touches
-    nothing on the exception.
+    dataclasses (`EmbeddingError`, `LocalLLMError`). Assigning any attribute
+    on a directly-raised one raises `FrozenInstanceError`, which would replace
+    a real "the model is unavailable" message with a meaningless one. A plain
+    `__exit__` touches nothing on the exception.
     """
 
     def __init__(self, stage: "Stage") -> None:
@@ -305,25 +248,34 @@ def validate_repo_path(repo_path: Path) -> Path:
     return resolved
 
 
-def _build_stage_executors(
+def _build_stage_engines(
     config: CLIConfiguration, metadata_db_path: Path
-) -> tuple[FailoverExecutor, FailoverExecutor, FailoverExecutor]:
-    """Build the three per-stage `FailoverExecutor`s from `config`'s chains
-    (provider_routing.factory), each logging its own actual switches to the
-    repository's `engine_failover_log` table (T017/T018). Uses
-    `PathFailoverLog` (connects fresh per event, never holds the metadata db
-    open) rather than one long-lived connection, so nothing here can block a
-    later rename/replace of that file on Windows."""
-    failover_log = _EmittingFailoverLog(PathFailoverLog(metadata_db_path, connect_metadata_db))
-    # The two indexing stages announce their rate-limit waits; chat does not,
-    # because `FailoverExecutor.stream` - the only path chat uses - carries no
-    # backoff and would never call it.
-    embeddings_executor = build_stage_executor(
-        "embeddings", config, failover_log=failover_log, on_backoff=_echo_backoff
+) -> tuple[EmbeddingEngine, LocalLLMEngine, LocalLLMEngine]:
+    """Build the engines the three stages use.
+
+    Summary and chat get separate engine instances rather than one shared
+    object even though they read the same configured model: `LocalLLMEngine`
+    caches an availability verdict behind a lock, and the indexing pool and a
+    chat request have no reason to contend for it.
+
+    `metadata_db_path` is accepted and unused. It fed the failover log, which
+    recorded switches between providers in a chain; with one engine per stage
+    there are no switches to record. The parameter stays so the call sites
+    below keep their shape and the argument remains available if per-stage
+    engine telemetry is ever wanted.
+    """
+    embedding_engine = create_embedding_engine(
+        config.embeddingModel,
+        config.embeddingEndpointUrl,
+        embed_timeout=config.embeddingGenerateTimeout,
     )
-    summary_executor = build_stage_executor("summary", config, failover_log=failover_log, on_backoff=_echo_backoff)
-    chat_executor = build_stage_executor("chat", config, failover_log=failover_log)
-    return embeddings_executor, summary_executor, chat_executor
+    summary_engine = create_local_llm_engine(
+        config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
+    )
+    chat_engine = create_local_llm_engine(
+        config.llmModel, config.llmEndpointUrl, generate_timeout=config.llmGenerateTimeout
+    )
+    return embedding_engine, summary_engine, chat_engine
 
 
 def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
@@ -352,7 +304,7 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
 
     typer.echo(Stage.CHECKING_MODELS.value)
     progress_stream.emit("stage", stage=Stage.CHECKING_MODELS.name, label=Stage.CHECKING_MODELS.value)
-    embeddings_executor, summary_executor, chat_executor = _build_stage_executors(
+    embeddings_executor, summary_executor, chat_executor = _build_stage_engines(
         config, paths.metadata_db_path(staging_dir)
     )
     try:
@@ -390,7 +342,7 @@ def run_index(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
     _replace_with_retry(staging_dir, final_state_dir)
 
     docs_root = paths.docs_output_dir(final_state_dir)
-    embeddings_executor, summary_executor, chat_executor = _build_stage_executors(
+    embeddings_executor, summary_executor, chat_executor = _build_stage_engines(
         config, paths.metadata_db_path(final_state_dir)
     )
     vector_index = VectorIndex(

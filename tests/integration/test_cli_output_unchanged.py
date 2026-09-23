@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from cli.config import CLIConfiguration, disclosure_signature
+from cli.config import CLIConfiguration
 from cli.progress_stream import ENV_VAR, SENTINEL
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -63,34 +63,25 @@ def _run_cli(args: list[str], *, home: Path, progress_stream: bool) -> subproces
     )
 
 
-def _seed_acknowledged_config(home: Path) -> None:
-    """Write an already-acknowledged config into the child's `~/.codepedia`.
+def _seed_config(home: Path) -> None:
+    """Write a config naming deliberately unreachable models.
 
-    Without it the disclosure gate (`cli/main.py:41-43`) prompts on a fresh
-    home, the non-interactive child aborts at the confirmation, and no stage
-    ever runs - so the test would be asserting on an empty pipeline rather than
-    on the progress channel. The chains point at deliberately unreachable local
-    entries: these tests only need the run to *start*, and `VALIDATING` and
-    `CHECKING_MODELS` are both announced before availability is checked.
+    These tests only need the run to *start*: `VALIDATING` and
+    `CHECKING_MODELS` are both announced before availability is checked, so a
+    model that does not exist is enough and keeps the test off the network and
+    off Ollama entirely.
     """
-    config = CLIConfiguration(
-        embeddingChain=("local:test-embed",),
-        summaryChain=("local:test-llm",),
-        chatChain=("local:test-llm",),
-    )
-    acknowledged = CLIConfiguration(
-        **{**config.to_dict(), "disclosureAcknowledgedSignature": disclosure_signature(config)}
-    )
+    config = CLIConfiguration(llmModel="test-llm", embeddingModel="test-embed")
     target = home / ".codepedia"
     target.mkdir(parents=True, exist_ok=True)
-    (target / "config.json").write_text(json.dumps(acknowledged.to_dict()), encoding="utf-8")
+    (target / "config.json").write_text(json.dumps(config.to_dict()), encoding="utf-8")
 
 
 @pytest.fixture()
 def child_home(tmp_path) -> Path:
     home = tmp_path / "home"
     home.mkdir()
-    _seed_acknowledged_config(home)
+    _seed_config(home)
     return home
 
 

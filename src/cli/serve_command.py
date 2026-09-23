@@ -8,16 +8,14 @@ from doc_generator import DocGenerator, FeaturePlanner, OverviewNarrator, open_d
 from reindex_pipeline import IncrementalReindexPipeline
 from repo_watcher import RepositoryWatcher
 from repository_metadata import CodeSummaryPipeline, RepositoryMetadataStore
-from repository_metadata.sqlite_store import connect as connect_metadata_db
 from repository_metadata.sqlite_store import stable_repository_id
-from provider_routing import PathFailoverLog, build_stage_executor
 from vector_index import VectorIndex
 
 from . import paths, progress_stream
 from .availability import check_ai_dependencies
 from .config import CLIConfiguration
 from .errors import IndexNotFoundError
-from .index_command import IndexRunResult, Stage, validate_repo_path
+from .index_command import IndexRunResult, Stage, _build_stage_engines, validate_repo_path
 
 
 def _emit_catchup_progress(phase: str, completed: int, total: int, relative_path: str) -> None:
@@ -87,10 +85,7 @@ def run_serve(repo_path: Path, *, config: CLIConfiguration) -> IndexRunResult:
 
     state_dir = paths.repo_state_dir(root)
     metadata_db_path = paths.metadata_db_path(state_dir)
-    failover_log = PathFailoverLog(metadata_db_path, connect_metadata_db)
-    embeddings_executor = build_stage_executor("embeddings", config, failover_log=failover_log)
-    summary_executor = build_stage_executor("summary", config, failover_log=failover_log)
-    chat_executor = build_stage_executor("chat", config, failover_log=failover_log)
+    embeddings_executor, summary_executor, chat_executor = _build_stage_engines(config, metadata_db_path)
     check_ai_dependencies(embeddings=embeddings_executor, summary=summary_executor, chat=chat_executor)
 
     not_indexed_message = f"No index found for {root}. Run `codepedia index {root}` first."

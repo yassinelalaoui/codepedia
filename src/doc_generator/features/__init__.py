@@ -13,10 +13,14 @@ one would degrade with nothing anywhere reporting it.
 
 from __future__ import annotations
 
-# The smallest per-minute token window this project is configured against
-# (Groq's free tier). The planner's whole prompt-shaping design exists to fit
-# inside it, so the number lives here rather than in `planner.py`: the test that
-# asserts the ceiling must not import the module that could raise the ceiling.
+# The prompt-size ceiling the planner shapes its single call to fit.
+#
+# It was originally the smallest per-minute token window this project ran
+# against (a remote free tier). That provider is gone, but the number is kept
+# as a prompt budget on its own merits: the planner sends one call describing
+# the whole repository, and an unbounded prompt is what makes a small local
+# model return nothing usable. It lives here rather than in `planner.py` so the
+# test that asserts the ceiling cannot import the module that could raise it.
 PROVIDER_TOKEN_BUDGET = 8000
 
 # Deliberately pessimistic. Real English runs nearer 4.5 characters per token,

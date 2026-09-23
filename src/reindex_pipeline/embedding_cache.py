@@ -17,17 +17,16 @@ def expected_embedding_model_id(embedding_engine: Any) -> str:
     enough: reusing a vector from a different model mixes dimensionalities into
     one index, which `search` can only respond to by returning nothing.
 
-    For a `FailoverExecutor` the answer is the head of its chain, which is the
-    provider a call resolves to in every case except an active failure. This
-    mirrors `VectorIndex._embed_query_preferring_indexed_provider`, which
-    already prefers the indexed provider over whatever the chain would pick
-    fresh. A raw provider has no chain and no stamped id, so nothing is
-    reusable and this returns "".
+    The engine answers for itself, via `providerId`. Changing the configured
+    embedding model therefore invalidates every cached vector automatically -
+    the new id matches none of them, so they are all recomputed. That is the
+    intended behaviour and the only correct one: vectors from two models are
+    not comparable, whichever machine produced them.
+
+    A stand-in without `providerId` (a test double, say) makes nothing
+    reusable and gets "".
     """
-    chain = getattr(embedding_engine, "chain", None)
-    if not chain:
-        return ""
-    return str(chain[0][0])
+    return str(getattr(embedding_engine, "providerId", "") or "")
 
 
 class EmbeddingCache:
