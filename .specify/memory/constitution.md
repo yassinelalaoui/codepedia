@@ -1,45 +1,37 @@
 <!--
 Sync Impact Report
-- Version change: 2.0.0 -> 3.0.0
+- Version change: 3.0.0 -> 4.0.0
 - Modified principles:
-  - 2.1 Confidentialite par defaut, moteur distant seulement sur choix
-    explicite -> 2.1 Moteur distant par defaut, mode local disponible sur
-    choix explicite (MAJOR, breaking: reverses the previous absolute
-    guarantee that code summarization and embeddings always stay local
-    "sans exception... non negociable... n'est concerne par aucune
-    configuration". A configured remote provider is now the DEFAULT for
-    all three AI-consuming stages - code summarization, embeddings, and
-    chat answer generation - not only chat. Local-only (Ollama) remains
-    fully supported but is now an explicit opt-in rather than the
-    untouchable baseline. Static analysis (Tree-sitter parsing, symbol
-    extraction, dependency graph construction) is unaffected either way:
-    it never called any model and stays local by construction, not by
-    policy choice.)
-  - 2.3 Jamais de repli silencieux vers le cloud -> 2.3 Repli automatique
-    seulement au sein d'une chaine de moteurs explicitement configuree
-    (MAJOR: the previous version forbade ANY automatic switch between
-    configured engines, with no exception. This version permits automatic
-    failover, per AI-consuming stage, strictly within an explicit,
-    user-ordered list of providers for that stage - e.g. Groq then a
-    second configured provider if Groq rate-limits or errors. Falling
-    back to a provider not on that list, or to/from local mode when local
-    is not itself a member of the configured list, remains forbidden
-    without the user changing configuration first. Every automatic
-    failover MUST still be visible to the user, not silent in practice.)
-- Added sections: none (2.1's disclosure requirement is strengthened
-  in place, not split into a new principle)
+  - 2.1 Moteur distant par defaut, mode local disponible sur choix
+    explicite -> 2.1 Execution locale exclusive (MAJOR, breaking: reverses
+    3.0.0 entirely. A remote engine is no longer the default, no longer an
+    option, and no longer present in the code: the Groq inference transport,
+    the OpenAI embedding transport, the provider chains and the API-key
+    handling were all removed. The three AI-consuming stages - embeddings,
+    code summarization, chat answer generation - run against a local runtime
+    (Ollama) or do not run. The first-run disclosure required by 3.0.0 is
+    removed with the thing it disclosed: no repository content leaves the
+    machine, so there is nothing to disclose and no consent to record.)
+  - 2.3 Repli automatique seulement au sein d'une chaine de moteurs
+    explicitement configuree -> 2.3 Un seul moteur par etape, aucun repli
+    (MAJOR: 3.0.0 permitted automatic failover within a user-ordered list of
+    providers per stage. There are no lists any more. Each stage has exactly
+    one engine; when it is unavailable the system says so and stops. The
+    `engine_failover_log` table and the `/providers/failover-log` endpoint
+    are removed, as is the `codepedia provider` command group.)
+- Added sections: none
 - Removed sections: none
-- Rationale: operator-reported hardware constraints (weak CPU/GPU) made
-  local Ollama inference impractically slow for indexing and chat alike.
-  Decided directly with the user on 2026-08-25, with explicit scope
-  confirmation (all three stages move to remote-by-default; real
-  automatic fallback across multiple remote providers is in scope) before
-  this amendment was drafted.
-- Deferred items: the actual pipeline/config/CLI implementation of this
-  amendment (default provider wiring, the ordered-fallback-list
-  mechanism, a remote embedding provider since Groq offers none, and the
-  strengthened first-run/config-time disclosure UX) is intentionally NOT
-  done by this amendment - it follows as a separate spec-kit feature.
+- Rationale: decided directly with the operator on 2026-09-23, reversing the
+  2026-08-25 amendment. The hardware argument that motivated 3.0.0 has not
+  changed - local inference on this machine is still slow - but the operator
+  chose privacy and simplicity over speed, and chose to remove the remote
+  path outright rather than leave it configurable. The cost is accepted and
+  recorded: indexing is slower, and the Overview narrative produced by a
+  small local model may fail its grounding checks.
+- Consequence for 2.5: changing the configured embedding model invalidates
+  every stored vector for that repository, because vectors from two models
+  are not comparable. This is a re-embedding, not a re-analysis: static
+  analysis, code summaries and the Overview narrative all survive.
 -->
 
 # Constitution du projet
@@ -48,14 +40,13 @@ Sync Impact Report
 
 Ce projet est un outil local de generation automatique de documentation de code,
 avec un pipeline d'indexation statique, d'embeddings, d'inference IA, et une
-interface de chat en langage naturel sur le code analyse - les etapes qui
-consomment un modele d'IA (embeddings, resume, chat) utilisent par defaut un
-ou plusieurs moteurs distants configures, avec un mode entierement local
-disponible sur choix explicite.
+interface de chat en langage naturel sur le code analyse - toutes les etapes,
+y compris celles qui consomment un modele d'IA (embeddings, resume, chat),
+s'executent sur la machine de l'utilisateur.
 
 ## 2. Principes
 
-### 2.1 Moteur distant par defaut, mode local disponible sur choix explicite
+### 2.1 Execution locale exclusive
 
 L'analyse statique du depot (parsing Tree-sitter, extraction de symboles,
 construction du graphe de dependances) ne fait appel a aucun modele d'IA et
@@ -63,36 +54,24 @@ reste locale dans tous les cas - ce n'est pas une politique configurable,
 c'est simplement qu'aucune de ces etapes n'a jamais besoin d'un service
 externe.
 
-Pour les trois etapes qui consomment effectivement un modele d'IA - le calcul
-des embeddings (Partie 3.2), le resume de code genere pendant l'indexation
+Les trois etapes qui consomment effectivement un modele d'IA - le calcul des
+embeddings (Partie 3.2), le resume de code genere pendant l'indexation
 (Partie 3.3), et la generation de reponses du chat (Partie 3.1, `LLMEngine`) -
-un ou plusieurs moteurs distants (API cloud, par exemple Groq pour
-l'inference; un autre fournisseur pour les embeddings, Groq n'en proposant
-pas) sont utilises **par defaut**. Le code source, les fragments cites, les
-questions posees et les embeddings calcules transitent donc vers ces services
-tiers par defaut.
+s'executent **exclusivement** sur un runtime local (Ollama). Aucun moteur
+distant n'est configurable, et aucun code permettant d'en appeler un ne
+subsiste dans le projet: le transport Groq, le transport d'embeddings OpenAI,
+les chaines de fournisseurs et la lecture de cles d'API ont ete supprimes.
 
-Un mode entierement local (Tree-sitter deja local par nature, plus un moteur
-d'embeddings et un moteur d'inference locaux, par exemple via Ollama) reste
-disponible et pleinement supporte pour chacune des trois etapes, mais doit
-etre choisi explicitement par l'utilisateur - il n'est plus le comportement
-par defaut.
+Le code source, les fragments cites, les questions posees et les embeddings
+calcules ne quittent jamais la machine. Il n'y a donc aucune divulgation a
+faire ni aucun consentement a recueillir: la garantie est structurelle, pas
+configuree. Un ecran d'avertissement au premier lancement serait trompeur,
+puisqu'il n'existe aucun reglage capable de l'invalider.
 
-Que ce soit au premier lancement ou a tout changement de configuration, le
-systeme DOIT indiquer de maniere claire et proeminente - pas seulement quand
-l'utilisateur choisit une option inhabituelle - que le code source, les
-embeddings et le contenu du chat sont envoyes vers des services tiers par
-defaut, et DOIT documenter clairement comment repasser en mode entierement
-local pour l'utilisateur qui souhaite retrouver l'ancienne garantie de
-confidentialite absolue.
-
-Raison: le code analyse peut contenir des informations sensibles ou privees,
-et cet arbitrage doit rester une decision eclairee de l'utilisateur - mais
-sur du materiel modeste, l'inference et les embeddings locaux deviennent
-impraticablement lents pour l'indexation comme pour le chat; le moteur
-distant devient donc le chemin par defaut, a condition que la divulgation
-reste claire et que le mode local reste toujours accessible en une
-configuration explicite.
+Raison: le code analyse peut contenir des informations sensibles ou privees.
+La version 3.0.0 avait fait du moteur distant le chemin par defaut au nom de
+la vitesse sur du materiel modeste; cet arbitrage est annule. La lenteur de
+l'inference locale est acceptee et documentee comme le prix de la garantie.
 
 ### 2.2 Zero exposition reseau par defaut
 
@@ -101,34 +80,30 @@ reseau externe n'est autorisee sans action explicite de l'utilisateur.
 
 Raison: le projet doit rester isole localement tant que l'utilisateur n'a pas
 choisi autrement. Ce principe concerne l'exposition entrante du serveur web
-local; il est independant des appels sortants vers des moteurs distants
-prevus par 2.1.
+local. Depuis 4.0.0 il n'existe plus d'appel sortant a couvrir: 2.1 a supprime
+les moteurs distants, donc les deux sens du reseau sont fermes par defaut.
 
-### 2.3 Repli automatique seulement au sein d'une chaine de moteurs explicitement configuree
+### 2.3 Un seul moteur par etape, aucun repli
 
-Pour chaque etape consommant un modele d'IA (embeddings, resume, chat), le
-systeme peut basculer automatiquement d'un moteur vers le suivant
-**uniquement au sein d'une liste ordonnee de moteurs que l'utilisateur a
-lui-meme configuree pour cette etape** (par exemple: Groq en premier, puis un
-second fournisseur distant si Groq est indisponible ou limite en taux). Ce
-repli automatique n'est jamais silencieux en pratique: chaque bascule DOIT
-rester visible pour l'utilisateur (journalisation ou indication claire),
-meme si elle ne requiert pas de confirmation a chaque occurrence.
+Chaque etape consommant un modele d'IA (embeddings, resume, chat) utilise
+exactement un moteur, designe par un nom de modele dans la configuration. Il
+n'existe pas de liste ordonnee, pas de bascule automatique, pas de second
+moteur a essayer.
 
-Le systeme ne bascule jamais automatiquement vers un moteur absent de cette
-liste configuree, ni vers ou depuis le mode local si celui-ci n'en fait pas
-partie, sans que l'utilisateur ait lui-meme modifie la configuration au
-prealable. Si tous les moteurs de la liste configuree sont indisponibles, le
-systeme doit le detecter explicitement via `isAvailableLocally` /
-l'equivalent pour un moteur distant, et guider l'utilisateur vers la
-resolution plutot que d'inventer un repli non consenti.
+Lorsque ce moteur est indisponible - runtime arrete, modele non installe -
+le systeme le detecte explicitement via `isAvailable` / `checkAvailability`,
+l'annonce, et s'arrete. Il n'invente aucun repli.
 
-Raison: sur du materiel modeste ou face aux limites de taux d'un fournisseur
-gratuit, un repli automatique entre plusieurs moteurs distants preconfigures
-est necessaire pour rester utilisable - mais la previsibilite reste
-prioritaire: l'utilisateur doit toujours savoir, a l'avance, l'ensemble des
-moteurs susceptibles de traiter ses donnees, jamais decouvrir apres coup
-qu'un moteur non choisi a ete utilise.
+Changer de modele reste possible a tout moment via `codepedia config`, mais
+c'est une action de l'utilisateur, jamais une decision du systeme. Changer le
+modele d'embeddings invalide les vecteurs deja stockes pour un depot: des
+vecteurs produits par deux modeles differents ne sont pas comparables, et une
+recherche ne melange jamais les deux. Une re-indexation les recalcule.
+
+Raison: la previsibilite. L'utilisateur doit toujours savoir, a l'avance, quel
+modele traite ses donnees. Avec un seul moteur local par etape, la reponse est
+donnee par la configuration elle-meme et ne depend d'aucun evenement
+d'execution.
 
 ### 2.4 Traçabilite des reponses IA
 
@@ -150,13 +125,12 @@ Raison: le pipeline doit rester rapide et economique en calcul local.
 Aucune dependance a une infrastructure lourde n'est admise: pas de serveur de
 base de donnees externe, pas de broker de messages, pas de composant cloud
 pour le stockage. Le stockage embarque uniquement est autorise, avec SQLite
-et un index vectoriel local sur fichier - y compris pour des embeddings
-calcules par un moteur distant (2.1): le resultat est toujours persiste
-localement, seul le calcul peut avoir lieu a distance.
+et un index vectoriel local sur fichier. Le calcul comme le stockage ont
+lieu sur la machine (2.1).
 
-Raison: la portabilite et le fonctionnement hors ligne des donnees deja
-indexees restent des objectifs structurants, independamment de l'endroit ou
-l'inference ou le calcul d'embeddings a lieu.
+Raison: la portabilite et le fonctionnement hors ligne restent des objectifs
+structurants. Depuis 4.0.0 ils sont acquis de bout en bout: un depot deja
+indexe se consulte sans reseau, et l'indexer n'en demandait pas davantage.
 
 ### 2.7 Depot analyse en lecture seule
 
@@ -195,9 +169,9 @@ les principes ci-dessus avant implementation.
 
 Date de ratification initiale: 2026-08-10.
 
-Version 3.0.0 - derniere modification: 2026-08-25 (voir Sync Impact Report
-en tete de fichier - le moteur distant devient le chemin par defaut pour
-les embeddings, le resume de code, et le chat, avec repli automatique
-possible au sein d'une chaine de moteurs distants explicitement configuree;
-le mode entierement local reste disponible en choix explicite).
+Version 4.0.0 - derniere modification: 2026-09-23 (voir Sync Impact Report
+en tete de fichier - l'execution devient exclusivement locale pour les
+embeddings, le resume de code et le chat; les moteurs distants, les chaines
+de fournisseurs, le repli automatique et la divulgation de premier lancement
+sont supprimes du projet).
 
