@@ -19,7 +19,7 @@ repository changes, without ever sending code off the machine it runs on.
 ## Architectural style
 
 **A local-first, modular pipeline** — not a distributed system, not a client/server
-product with a remote backend. Every "service" (local LLM, embedding engine, web
+product with a remote backend. Every "service" (LLM, embedding engine, web
 server) runs on `127.0.0.1` on the developer's own machine. The system is organized as
 a **linear analysis pipeline** (scan → parse → build graph → persist → summarize →
 embed → generate docs → serve) with a **second, parallel automation loop** (watch →
@@ -61,9 +61,8 @@ domain data itself.
 
 | Package | Responsibility |
 |---|---|
-| `local_llm` | Generate text from a prompt via a local (Ollama-compatible) endpoint, streamed as it's produced (`generateStream`, 026; `generate` is a convenience wrapper that drains it); verify availability before every call (`isAvailableLocally`/`isAvailable`). `GroqLLMEngine` implements the same `LLMEngine` interface as a remote provider. |
-| `embedding_engine` | Turn text into a vector via the same local-endpoint convention (`EmbeddingEngine`), or via `OpenAIEmbeddingProvider` (029) - both satisfy the `EmbeddingProvider` protocol. |
-| `provider_routing` (029) | Sits alongside `local_llm`/`embedding_engine`, depending on both: `ProviderRef`/`ProviderChain` (an ordered, per-stage list of `"<kind>:<model>"` entries), `FailoverExecutor` (tries each configured provider in order, failing over only on a classified network/rate-limit/auth error - never on preference, never outside the configured chain - constitution 2.3), and `failover_log`/`engine_failover_log` (one row per actual switch). This is the deferred implementation of constitution v3.0.0's 2.1/2.3 amendment: every stage now defaults to a named remote provider with automatic, chain-scoped failover, replacing the earlier "local by default, one explicit opt-in remote engine, never a fallback chain" model. |
+| `local_llm` | Generate text from a prompt via a local (Ollama-compatible) endpoint, streamed as it's produced (`generateStream`, 026; `generate` is a convenience wrapper that drains it); verify availability before every call (`isAvailableLocally`/`isAvailable`). `providerId` (`"local:<model>"`) names the model behind an answer, and is what `generated_by` and `embeddingModelId` record. |
+| `embedding_engine` | Turn text into a vector via the same local-endpoint convention (`EmbeddingEngine`), satisfying the `EmbeddingProvider` protocol, and expose `providerId` for the same reason `local_llm` does. |
 
 ### 3. Knowledge Derivation
 
@@ -72,9 +71,9 @@ generated knowledge about the codebase.
 
 | Package | Responsibility |
 |---|---|
-| `repository_metadata.summary_pipeline` (`CodeSummaryPipeline`) | Generate a natural-language summary per module/public function, using source + imports + direct callers as context; regenerate only impacted summaries on a change. Its `llmEngine` is a `provider_routing.FailoverExecutor` over the configured summary chain (029), not a single engine. |
-| `vector_index` | Store and search embedded code chunks, fusing vector similarity with an FTS5 lexical index (BM25) by Reciprocal Rank Fusion so an exact identifier is not buried by merely-similar text; fusion sets the order while `score` stays the raw cosine the chat banners compare against absolute thresholds. Holds a long-lived connection opened with `check_same_thread=False` behind a reentrant lock, since `serve` writes from the watcher thread and searches from the server thread. Each stored chunk carries `embeddingModelId` (029, the `ProviderRef` that computed it); a search excludes vectors from any other model *before* the dimensionality check, so a repository indexed with more than one embedding provider never blends incompatible vectors (and never crashes on the mismatch either). A query embeds through whichever provider's model dominates the index (falling back to the normal failover chain when the index is empty/mixed or that provider errors), rather than whatever the chain would naturally answer with first — keeping a query consistent with what's actually stored despite `FailoverExecutor` not being sticky across calls; if the resulting auto-applied `embeddingModelId` filter still yields zero matches, the search retries once with that filter relaxed rather than surfacing an empty result the index could actually answer. |
-| `chat` | Answer a natural-language question by retrieving relevant chunks - reranked by proximity in the dependency graph to symbols the conversation already cited, and trimmed to an explicit token budget (oldest history first, then the README, then evidence bodies - evidence is truncated, never dropped, so every persisted citation stays honest) - - enriched with recent conversation context for follow-up questions (026, local text/citation concatenation only, no LLM call) - and streaming the configured engine's answer (`askStream`, 026) *grounded in* that evidence, with citations attached once generation completes. `askStream` routes generation through a `provider_routing.FailoverExecutor` over the configured chat chain (029) and records which provider actually answered (`ChatMessage.generatedBy`). The repository's README (if one exists) is always attached as unconditional baseline context, unlike retrieved evidence - never subject to retrieval scoring - so a broad, project-level question can still be answered (and cited) even when nothing in the vector index scores as relevant for it. |
+| `repository_metadata.summary_pipeline` (`CodeSummaryPipeline`) | Generate a natural-language summary per module/public function, using source + imports + direct callers as context; regenerate only impacted summaries on a change. Its `llmEngine` is the local engine itself. A symbol the model returns nothing for is left unsummarized and the pass continues - with no second provider to ask, letting that escape the pool would delete the staging directory and discard the whole run. |
+| `vector_index` | Store and search embedded code chunks, fusing vector similarity with an FTS5 lexical index (BM25) by Reciprocal Rank Fusion so an exact identifier is not buried by merely-similar text; fusion sets the order while `score` stays the raw cosine the chat banners compare against absolute thresholds. Holds a long-lived connection opened with `check_same_thread=False` behind a reentrant lock, since `serve` writes from the watcher thread and searches from the server thread. Each stored chunk carries `embeddingModelId`, the `providerId` of the model that computed it; a search excludes vectors from any other model *before* the dimensionality check, so changing the configured embedding model never blends incompatible vectors (and never crashes on the mismatch either). Two local models can share a vector length, so the model id, not the length, is what decides. A search after a model change returns nothing rather than wrong answers; re-indexing is the fix, and the model id is compared exactly rather than relaxed, because a confident wrong ranking is worse than an empty one. |
+| `chat` | Answer a natural-language question by retrieving relevant chunks - reranked by proximity in the dependency graph to symbols the conversation already cited, and trimmed to an explicit token budget (oldest history first, then the README, then evidence bodies - evidence is truncated, never dropped, so every persisted citation stays honest) - - enriched with recent conversation context for follow-up questions (026, local text/citation concatenation only, no LLM call) - and streaming the configured engine's answer (`askStream`, 026) *grounded in* that evidence, with citations attached once generation completes. `askStream` streams from the configured local engine and records which model answered (`ChatMessage.generatedBy`). The repository's README (if one exists) is always attached as unconditional baseline context, unlike retrieved evidence - never subject to retrieval scoring - so a broad, project-level question can still be answered (and cited) even when nothing in the vector index scores as relevant for it. |
 
 ### 4. Presentation
 
@@ -82,8 +81,8 @@ Turns the analyzed/derived knowledge into something a human reads or interacts w
 
 | Package | Responsibility |
 |---|---|
-| `doc_generator` | Render the wiki: a home page, one page per module, dependency-diagram pages, a single repository-wide class diagram (its structurally major classes, capped for legibility), one bounded call-sequence diagram per identified entry point (CLI command, API route handler, or uncalled public function/method), a single repository-wide use-case diagram (one shared actor per entry-point exposure kind, linked to its use cases), and a single always-reachable Diagrams page aggregating links to every diagram above; every generated page shares a persistent sidebar listing every module, built from `_nav_modules` and rendered through a markdown-escaping filter so module/link names with special characters can't corrupt the page; every page also carries an "On this page" rail of its own H2/H3 sections, derived from Python-Markdown's `toc_tokens` at render time and never persisted; symbol and file mentions inside generated prose are resolved against the same manifest `search_index.py` produces and rewritten as links by a Python-Markdown treeprocessor (`cross_references.py`), which touches only the rendered HTML so the Markdown artifacts never churn; regenerate only the pages a change actually affects. (033, 039) Modules are grouped into **features**, the sidebar's entries and the Overview's subsystems, by the `doc_generator.features` package, and the grouping uses no model. Every non-test module holding an entry point seeds a group, and modules join the seed they are most coupled to. Coupling comes from imports only: Python through the dependency graph, Java and JavaScript/TypeScript through `features.imports`, which resolves the import names the graph records against the repository's paths, a wildcard import split evenly across its package. Groups too small to stand alone fold by coupling, then by the directory they share, never into the largest group. A group holding a command, a route or `main` is never absorbed by one without. Test files are placed last, with the code they exercise. A feature is anchored, and addressed, at its entry module, else its seed, and that anchor is the module the Overview's table and paragraph both tell a reader to start with. **One** planner call per grouping then names and combines the groups, cached by a key that covers the grouping itself. With no provider the features keep the same modules and addresses under deterministic titles, and a moved address is kept alive by a redirect stub. (038) The home page, the Overview, opens with a short AI-written explanation (what the repository is, where work enters, where results end up), followed by a table of its subsystems with where to start reading each and a module list with distinct labels and plain-text descriptions. The explanation comes from the `doc_generator.overview` package in three steps. `evidence` gathers a bounded, ordered set of facts. `narrator` makes **one** call per repository through the summary chain's `FailoverExecutor`, cached by the exact prompt; it is the package's only module that takes an engine, and `test_overview_package.py` enforces that. `grounding` accepts or rejects each paragraph against the repository's own symbol index, so every name in the prose is real, every paragraph cites a file or symbol, and model text never reaches the page as raw Markdown. With no provider the page keeps the same structure and links and loses only the prose. The Overview is recomputed on every pass and written only when its Markdown changes, and the terminal prints one `overview:` line whenever prose is missing, reduced or out of date. |
-| `chat_api` | The one local process (FastAPI) that serves the generated wiki as static files and exposes the chat session endpoints the browser UI calls: creating a session, streaming an answer, listing every existing session, and reading a chosen session's full history. `AskQuestionResponse`/`ChatMessageView` carry `generatedBy`; `GET /providers/failover-log` (029) reads `engine_failover_log`, optionally filtered by stage. |
+| `doc_generator` | Render the wiki: a home page, one page per module, dependency-diagram pages, a single repository-wide class diagram (its structurally major classes, capped for legibility), one bounded call-sequence diagram per identified entry point (CLI command, API route handler, or uncalled public function/method), a single repository-wide use-case diagram (one shared actor per entry-point exposure kind, linked to its use cases), and a single always-reachable Diagrams page aggregating links to every diagram above; every generated page shares a persistent sidebar listing every module, built from `_nav_modules` and rendered through a markdown-escaping filter so module/link names with special characters can't corrupt the page; every page also carries an "On this page" rail of its own H2/H3 sections, derived from Python-Markdown's `toc_tokens` at render time and never persisted; symbol and file mentions inside generated prose are resolved against the same manifest `search_index.py` produces and rewritten as links by a Python-Markdown treeprocessor (`cross_references.py`), which touches only the rendered HTML so the Markdown artifacts never churn; regenerate only the pages a change actually affects. (033, 039) Modules are grouped into **features**, the sidebar's entries and the Overview's subsystems, by the `doc_generator.features` package, and the grouping uses no model. Every non-test module holding an entry point seeds a group, and modules join the seed they are most coupled to. Coupling comes from imports only: Python through the dependency graph, Java and JavaScript/TypeScript through `features.imports`, which resolves the import names the graph records against the repository's paths, a wildcard import split evenly across its package. Groups too small to stand alone fold by coupling, then by the directory they share, never into the largest group. A group holding a command, a route or `main` is never absorbed by one without. Test files are placed last, with the code they exercise. A feature is anchored, and addressed, at its entry module, else its seed, and that anchor is the module the Overview's table and paragraph both tell a reader to start with. **One** planner call per grouping then names and combines the groups, cached by a key that covers the grouping itself. With no provider the features keep the same modules and addresses under deterministic titles, and a moved address is kept alive by a redirect stub. (038) The home page, the Overview, opens with a short AI-written explanation (what the repository is, where work enters, where results end up), followed by a table of its subsystems with where to start reading each and a module list with distinct labels and plain-text descriptions. The explanation comes from the `doc_generator.overview` package in three steps. `evidence` gathers a bounded, ordered set of facts. `narrator` makes **one** call per repository through the summary engine, cached by the exact prompt; it is the package's only module that takes an engine, and `test_overview_package.py` enforces that. `grounding` accepts or rejects each paragraph against the repository's own symbol index, so every name in the prose is real, every paragraph cites a file or symbol, and model text never reaches the page as raw Markdown. With no provider the page keeps the same structure and links and loses only the prose. The Overview is recomputed on every pass and written only when its Markdown changes, and the terminal prints one `overview:` line whenever prose is missing, reduced or out of date. |
+| `chat_api` | The one local process (FastAPI) that serves the generated wiki as static files and exposes the chat session endpoints the browser UI calls: creating a session, streaming an answer, listing every existing session, and reading a chosen session's full history. `AskQuestionResponse`/`ChatMessageView` carry `generatedBy`. |
 | `frontend/` (`wiki-ui`) | The React UI running in the browser: symbol search, dependency-diagram click-through, chat panel. The chat panel (028) shows a visible activity indicator from submission until the first streamed fragment arrives, renders answers as structured Markdown with syntax-highlighted code and clickable in-text symbol/file references (resolved the same way as the separate citation list), and carries the current session id as a URL query parameter so a reload, a copied link, or a different browser/device all restore the same conversation via the existing history route. |
 
 ### 5. Automation
@@ -102,7 +101,7 @@ every layer above; nothing depends on it.
 
 | Package | Responsibility |
 |---|---|
-| `cli` | The `codepedia` command (`index`/`serve`/`config`/`scan`/`provider`/`home`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active, and (037) runs one generation pass first so a wiki written by older templates or an older UI bundle is brought up to date before it is served; `config` sets connection settings (endpoint/timeout) for any `local:` chain entry; `provider chain set <stage> <provider:model>...`/`provider mode full-local` (029) change which providers a stage's chain actually uses; `home` (037) starts the launcher described in layer 7. A Typer-callback-enforced disclosure gate (`cli.disclosure`) blocks `index`/`serve`/`provider`/`home` until the operator explicitly acknowledges the three chains' current providers, re-triggered whenever that combination actually changes. |
+| `cli` | The `codepedia` command (`index`/`serve`/`config`/`scan`/`home`) that sequences layers 1–5 into a single-command workflow: `index` runs the full pipeline and starts serving it; `serve` resumes an already-indexed repository with the watcher (5) active, and (037) runs one generation pass first so a wiki written by older templates or an older UI bundle is brought up to date before it is served; `config` sets which local models each stage uses, plus their endpoints, timeouts and pool widths; `home` (037) starts the launcher described in layer 7. There is no provider configuration beyond the model names: one local engine serves each stage, and nothing leaves the machine to be disclosed. |
 | `progress_stream` | (037) An environment-gated emitter: with `CODEPEDIA_PROGRESS_STREAM=1` set, the pipeline additionally writes sentinel-prefixed JSON progress events to stdout, alongside — never instead of — what it already prints. Unset, every call is a no-op, which is what keeps the CLI's output identical for anyone running it themselves. Only layer 7 sets it. |
 
 ### 7. Launcher
@@ -122,7 +121,6 @@ Cross-cutting helpers that belong to no layer; every layer may use them.
 | Package | Responsibility |
 |---|---|
 | `sqlite_support` | Shared SQLite connection and checkpoint helpers, so each owning package's store does not re-implement them. |
-| `http_support` | Shared HTTP client construction and timeout handling for the remote provider calls in layer 2. |
 
 ## Data flow
 
@@ -162,8 +160,10 @@ the wiki** and **asking the chat a question** — see
 The full-indexing flow is linear in its *stages* but not inside two of them.
 `CodeSummaryPipeline` dispatches its symbols, and the CLI's embedding stage
 dispatches its files, to a `ThreadPoolExecutor` — both stages are one blocking
-remote call per unit of work, so overlapping them is the difference between a
-pass measured in tens of minutes and one measured in minutes. Stage *order* is
+model call per unit of work, and overlapping them is what makes a pass take
+minutes rather than tens of minutes: Ollama overlaps requests up to
+`OLLAMA_NUM_PARALLEL`, and eight concurrent embeddings measured 7.6x faster
+than one at a time on this project's own machine. Stage *order* is
 unchanged: each pool is fully drained before the next stage begins, so nothing
 downstream ever observes a half-finished stage.
 
@@ -177,36 +177,23 @@ component's contract, and they are worth keeping true:
   call** and hold nothing open between them, so concurrent callers contend
   only inside SQLite — which is why `repository_metadata`'s connections raise
   the busy timeout rather than share a connection.
-- **`FailoverExecutor` results are read from the returned value**, never from
-  its mutable `providerUsed`/`attempts` attributes, everywhere inside an
-  indexing loop. Those attributes race under concurrency; the returned
-  `FailoverResult` does not. `chat/session.py` is the one place that reads the
-  attribute, and it runs nowhere near these loops.
-
-A rate limit met by those pools is waited out on the same provider before the
-chain advances (`provider_routing.BackoffPolicy`). Constitution 2.3's
-requirement is unaffected: `engine_failover_log` still records exactly one row
-per real provider switch, and a wait — which is the opposite of a switch —
-stays out of that table and is surfaced on the console instead.
+- **The engines hold no per-call state.** `providerId` is a constant derived
+  from the configured model name, and availability is cached behind a lock, so
+  one engine instance is safe to share across a pool without any mutable
+  attribute for concurrent calls to race over.
 
 ## Storage architecture
 
 **One SQLite file per owning component**, not one shared database:
 
 - `repository_metadata` — files, symbols, dependency edges, content hashes,
-  (025) chat sessions/messages, and (029) `engine_failover_log`:
-  `chat_sessions`/`chat_messages`/`engine_failover_log` join this same file
-  rather than getting their own — a deliberate exception (see the "own
-  store" note below). `chat_messages` gained a `generated_by` column (029);
-  `engine_failover_log` is cross-cutting (populated by all three
-  AI-consuming stages, not owned by any one later layer), so its own
-  row↔object mapping lives in `provider_routing.failover_log`, following
-  the same "schema stays in `repository_metadata.sqlite_store`, mapping
-  code lives in the later layer that actually populates it" split
-  `chat.sqlite_store` already established for `chat_sessions`/`chat_messages`.
+  and (025) chat sessions/messages: `chat_sessions`/`chat_messages` join this
+  same file rather than getting their own — a deliberate exception (see the
+  "own store" note below). `chat_messages` carries a `generated_by` column
+  naming the model that wrote each answer.
 - `dependency_graph` — the persisted graph snapshot (nodes/edges).
 - `vector_index` — embedded chunks + their vectors, each chunk's row also
-  carrying `embedding_model_id` (029) — which provider/model produced it.
+  carrying `embedding_model_id` — which model produced it.
   That column is what makes a vector reusable: `index` reads the *previous*
   run's vector store before re-embedding and reuses any vector whose content
   and model both still match (032), so an unchanged file costs no API calls
@@ -291,21 +278,17 @@ the authoritative source:
 1. **Local network exposure stays `localhost`/`127.0.0.1`-only.** The web
    server/`chat_api` never binds anywhere else by default (constitution 2.2);
    `local_llm`/`embedding_engine`'s own local endpoints validate this at the
-   URL-parsing level (`normalize_endpoint_url`). This does **not** mean every
-   *AI provider* call stays local — a fresh install's default chains lead with
-   the local Ollama runtime but keep a named remote provider (Groq, OpenAI)
-   behind it as a fallback, so a call can still leave the machine when the
-   local entry is unreachable or its model isn't pulled. That fallback is
-   disclosed once, blockingly, before first use; `provider mode full-local`
-   removes it, which is the only configuration that guarantees no remote call.
-2. **No silent, undisclosed, or out-of-chain failover.** A stage automatically
-   fails over only within its own explicitly configured provider chain, only on
-   a classified network/rate-limit/auth failure — never on preference, never to
-   a provider absent from that chain, and every actual switch is both logged
-   (`engine_failover_log`) and visible (`generatedBy`, `GET
-   /providers/failover-log`). If every provider in the chain is unavailable,
-   the caller fails loudly with a specific error (`FailoverExhaustedError`)
-   telling the user how to fix it — never a silent, unexplained failure.
+   URL-parsing level (`normalize_endpoint_url`). This covers every *AI* call
+   too: there is no engine anywhere but the local one, so nothing in the
+   project can send repository content off the machine, and no disclosure or
+   consent step is needed — the guarantee is structural rather than
+   configured (constitution 2.1).
+2. **One engine per stage.** Each stage names exactly one model. There is no
+   ordered list of engines, no automatic switch between them, and nothing to
+   log about one. When the engine is unavailable the caller fails loudly with
+   a specific error telling the user how to fix it — never a silent,
+   unexplained failure, and never a substitute engine chosen on the user's
+   behalf (constitution 2.3).
 3. **Incremental by design, not by afterthought.** Every stage in the Analysis and
    Knowledge Derivation layers was built with a "just this one file/symbol" mode from
    the start (`store_inventory` per file, `summarizeRepository(changed_paths=...)`,
@@ -346,8 +329,6 @@ the layer table above. A new feature usually:
 ## Current status by layer
 
 - **Ingestion & Analysis, Local AI Services, Knowledge Derivation, Presentation,
-  Automation**: implemented (specs 001–018, provider chains/failover added by
-  029).
+  Automation**: implemented (specs 001–018).
 - **Entry Point**: implemented (spec 019) — `codepedia` is the project's
-  `[project.scripts]` console command; its `provider` subcommands and
-  disclosure gate were added by 029.
+  `[project.scripts]` console command.

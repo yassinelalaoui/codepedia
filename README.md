@@ -57,19 +57,14 @@ picture and *why* it's built this way.
   browser or device) restores the same conversation — and every existing
   conversation is listable, so a client that lost track of its session id
   (a closed tab, a dropped connection) can find it again and resume it.
-  Summarization, embeddings, and chat answers each try the local Ollama
-  runtime first on a fresh install, falling back to a named remote provider
-  (Groq for summaries/chat, OpenAI for embeddings) only when the local one
-  isn't reachable or hasn't pulled the model. The remote fallback is still
-  disclosed once, blockingly, the first time any of these run, and again
-  whenever the configured providers actually change. Run `codepedia provider
-  mode full-local` to drop the remote fallback entirely, or `codepedia
-  provider chain set <stage> <provider:model>...` to configure a specific
-  stage's try-in-order provider chain. A chain with more than one
-  provider fails over automatically on a network/rate-limit/auth failure —
-  never silently, never outside the configured chain — and every switch is
-  logged and shown (`generatedBy` on chat answers, `GET
-  /providers/failover-log`).
+  Summarization, embeddings and chat answers all run on a local Ollama
+  runtime. Nothing in this tool can send code, questions or embeddings to a
+  third party — that is a property of how it is built, not a setting you have
+  to find and switch on, which is why there is no consent prompt to dismiss
+  and no API key to manage. Each stage uses exactly one model, named in
+  `codepedia config`; when it is unavailable the run says so and stops rather
+  than substituting anything. Every answer records which model wrote it
+  (`generatedBy` on chat answers).
 - **Watches the repository** in the background and **incrementally
   re-indexes** just what a change actually affects — never a full
   repository re-analysis.
@@ -104,18 +99,16 @@ picture and *why* it's built this way.
 - **For the AI-backed features** (summaries, chat): a local LLM/embedding
   runtime exposing an Ollama-compatible API on `localhost`
   (e.g. [Ollama](https://ollama.com) itself) with `qwen2.5-coder` and
-  `nomic-embed-text` pulled — what the fresh-install defaults reach for
-  first — **and/or** a `GROQ_API_KEY` (summaries/chat) and `OPENAI_API_KEY`
-  (embeddings) in your environment, which the defaults fall back to when the
-  local runtime isn't there. Either alone is enough to run. A local runtime is
-  a separate, external prerequisite the installer below does not and cannot
-  include — install and start it yourself; `codepedia index`/`serve` detect
-  and report clearly if no provider in a stage's chain is reachable, rather
-  than failing silently.
-  - **Needs one of the above**: `codepedia index`, and the AI-backed
-    parts of `codepedia serve` (summarization, embedding, chat). `codepedia
-    home` starts without any provider — it is only the runs you launch *from*
-    it that need one.
+  `nomic-embed-text` pulled — the fresh-install defaults. This is the only
+  way to run them: there is no cloud option and no API key to set. The
+  runtime is a separate, external prerequisite the installer below does not
+  and cannot include — install and start it yourself; `codepedia
+  index`/`serve` detect and report clearly when a stage's model is
+  unreachable or not pulled, rather than failing silently.
+  - **Needs the above**: `codepedia index`, and the AI-backed parts of
+    `codepedia serve` (summarization, embedding, chat). `codepedia home`
+    starts without it — it is only the runs you launch *from* it that need
+    it.
   - **Doesn't need either**: `codepedia scan`, `codepedia config`
     (configuring or viewing your settings works regardless of what's
     installed/configured yet).
@@ -204,16 +197,11 @@ serving it and prints the local URL:
 codepedia index /path/to/some/repository
 ```
 
-On a fresh install, `index` prefers the local Ollama runtime for every stage
-— `local:qwen2.5-coder` for summaries and chat, `local:nomic-embed-text` for
-embeddings — with `groq:openai/gpt-oss-20b` and
-`openai:text-embedding-3-small` behind them as fallbacks. Because those
-remote fallbacks are in the chain, `index` still blocks the first time,
-printing exactly which providers it's about to use and how to opt out, until
-you explicitly acknowledge it. It checks every configured provider's availability up
-front and fails with a clear, actionable message (naming what's missing
-and how to fix it) before doing any work if none of a stage's chain is
-reachable.
+`index` uses the local Ollama runtime for every stage — `qwen2.5-coder` for
+summaries and chat, `nomic-embed-text` for embeddings. It checks both models'
+availability up front and fails with a clear, actionable message (naming
+what's missing and how to fix it) before doing any work, rather than failing
+part-way through.
 
 **Resume an indexed repository with live updates**: serves the wiki + chat
 API from the previous `index` run and activates the repository watcher, so
@@ -242,33 +230,25 @@ current and needs no provider when it is not.
 > against the old ids stop resolving and show the raw id instead — starting
 > a new chat session is enough.
 
-**Switch everything to fully local** — one action, atomically drops the
-remote fallback from all three stages and re-discloses immediately. Unlike
-the local-first default, this guarantees no call can leave the machine:
-
-```bash
-codepedia provider mode full-local
-```
-
-**Configure a specific stage's provider chain** — try-in-order, so a chain
-with more than one entry fails over automatically on a network/rate-limit/
-auth failure (never silently, never outside this list):
-
-```bash
-export GROQ_API_KEY=...       # for a groq: entry
-export OPENAI_API_KEY=...     # for an openai: entry - neither key is ever stored by this tool
-codepedia provider chain set chat local:qwen2.5-coder groq:openai/gpt-oss-20b
-codepedia provider chain set embeddings openai:text-embedding-3-small
-```
-
-**Set connection settings** (endpoint/timeout) for any `local:` chain entry —
-this does not change which providers a stage uses, only how a `local:` one
-is reached:
+**Choose which local models to use** — summaries and chat share one model,
+embeddings use another. Both must be pulled in Ollama (`ollama pull <name>`);
+`config` warns rather than refuses when one is not, so you can set the name
+before the pull finishes:
 
 ```bash
 codepedia config --llm-model <your-local-model-name> --embedding-model <your-embedding-model-name>
-codepedia config --show   # view the current configuration and chains
+codepedia config --show   # view the current configuration and model availability
 ```
+
+Changing the embedding model invalidates the vectors already stored for a
+repository — two models' vectors are not comparable, so a search after the
+change returns nothing until you re-run `index`. Summaries are unaffected and
+carry forward.
+
+> **`config.json` ignores settings it does not recognise.** A configuration
+> file carrying extra keys still loads: unknown entries are dropped rather
+> than rejected, and the next write leaves them out. Upgrading never strands
+> you behind a manual edit of that file.
 
 **Choose which documentation gets indexed** — every Markdown heading becomes
 a symbol, and every symbol costs one summary call plus one embedding, so the

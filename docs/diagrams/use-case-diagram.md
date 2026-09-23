@@ -24,7 +24,6 @@ flowchart LR
         ucDocs(["Generate the documentation wiki"])
         ucServe(["codepedia serve\n(resume an indexed repo, watcher active)"])
         ucConfig(["codepedia config\n(connection settings for local: entries)"])
-        ucProvider(["codepedia provider\n(choose each stage's provider chain)"])
         ucHome(["codepedia home\n(open the launcher homepage)"])
         ucAnalyseFromPage(["Analyse a repository\nby typing its path"])
         ucWatchProgress(["Watch a run advance\nstage by stage"])
@@ -40,8 +39,7 @@ flowchart LR
         ucAsk(["Ask a question and get a\ncited, grounded answer"])
         ucWatch(["Watch the repository for changes"])
         ucReindex(["Incrementally re-index\njust what changed"])
-        ucFailover(["Fail over to the next provider\nin the configured chain"])
-        ucFailClear(["Fail clearly when every provider\nin the chain is unavailable"])
+        ucFailClear(["Fail clearly when a stage's model\nis unavailable"])
     end
 
     operator --> ucScan
@@ -53,7 +51,6 @@ flowchart LR
     operator --> ucServe
     ucServe -->|include| ucCheckModels
     operator --> ucConfig
-    operator --> ucProvider
     operator --> ucCheckVersion
     operator --> ucHome
     ucHome -->|include| ucHistory
@@ -78,9 +75,8 @@ flowchart LR
     ucReindex -->|include| ucEmbed
     ucReindex -->|include| ucDocs
 
-    ucSummarize -->|extend| ucFailover
-    ucAsk -->|extend| ucFailover
-    ucEmbed -->|extend| ucFailover
-    ucFailover -->|extend| ucFailClear
+    ucSummarize -->|extend| ucFailClear
+    ucAsk -->|extend| ucFailClear
+    ucEmbed -->|extend| ucFailClear
     ucCheckModels -->|extend| ucFailClear
 ```

@@ -119,63 +119,54 @@ this shape:
   (`normalize_endpoint_url` rejects anything but `localhost` / `127.0.0.1` / `::1`)
   — constitution 2.1/2.3 enforced in code, not just policy: it is structurally
   impossible to point the *local* engine at a cloud API.
-- Availability-check-before-call, everywhere. A single engine still fails hard
-  (`ServiceUnavailableError` / `LocalLLMUnavailableError`) with no fallback of
-  its own; automatic failover only happens one layer up, in
-  `provider_routing.FailoverExecutor`, and only within the operator's own
-  explicitly configured chain (constitution 2.3, v3.0.0 — 029) — never as an
-  undisclosed, out-of-chain cloud fallback.
+- Availability-check-before-call, everywhere. An engine fails hard
+  (`ServiceUnavailableError` / `LocalLLMUnavailableError`) rather than
+  substituting anything. There is no fallback at any layer: the engine named
+  in the configuration is the only one that can run (constitution 2.3).
 
-**`httpx.AsyncClient`**/**`httpx`** (026, extended 029) for every remote-provider
-call — `local_llm`'s Ollama streaming call, `GroqLLMEngine`'s Groq API call, and
-(029) `OpenAIEmbeddingProvider`'s OpenAI embeddings call — since generation is
-the one place this project needs a real async streaming HTTP response
-(`generateStream`, consumed token-by-token as Server-Sent Events reach the chat
-API). Every remote provider's endpoint is deliberately **not** run through
-`normalize_endpoint_url` — that validator's loopback-only guarantee stays
-specific to the local engine; a remote provider's own disclosed nature
-(constitution 2.1 v3.0.0, `provider_routing` — 029) governs it instead. No new
-HTTP client dependency was introduced by 029: `OpenAIEmbeddingProvider`'s
-transport reuses the same already-a-direct-dependency `httpx`.
+**`httpx.AsyncClient`**/**`httpx`** (026) for `local_llm`'s Ollama streaming
+call, since generation is the one place this project needs a real async
+streaming HTTP response (`generateStream`, consumed token-by-token as
+Server-Sent Events reach the chat API).
 
-## Provider chains & failover (029)
+## One engine per stage, and no routing layer
 
-**A new `provider_routing` package, no new dependency.** `FailoverExecutor`
-(`provider_routing.router`) is stage-agnostic, plain-Python retry/classification
-logic over whatever `(ProviderRef, engine)` pairs `provider_routing.factory`
-resolves from a `CLIConfiguration` chain — no separate resiliency/retry library
-(e.g. `tenacity`) was pulled in, since the retry policy here is deliberately
-narrow (exactly the configured chain, exactly three classified failure
-reasons) rather than a general-purpose one a library would be built for.
-`engine_failover_log` is one additive SQLite table in the already-existing
-`repository_metadata` file (`ALTER TABLE`-guarded the same way `chat_messages`
-and `chunks` gained their own new columns), not a new database.
+There is deliberately no provider-routing package: no ordered list of engines,
+no failure classifier, no switch log. Each stage resolves to exactly one
+`LocalLLMEngine` or `EmbeddingEngine` built straight from `CLIConfiguration`,
+and `cli.availability.check_ai_dependencies` proves it answers before any
+pipeline stage starts.
+
+That keeps the dependency list short — no resiliency or retry library (e.g.
+`tenacity`) — and, more importantly, it keeps the answer to "what will process
+my code?" readable off the configuration file rather than dependent on which
+engine happened to respond. `providerId` (`"local:<model>"`) is stamped onto
+every summary and every vector so a stored artefact always names the model
+behind it.
 
 ## Indexing concurrency (032)
 
 **`concurrent.futures.ThreadPoolExecutor` from the standard library, no new
 dependency.** The two expensive indexing stages — `SUMMARIZING` (one LLM call
 per symbol) and `EMBEDDING` (one call per chunk, dispatched per file) — are
-almost pure network wait, so they run their calls from a thread pool instead
-of one at a time. Threads rather than `asyncio` because every engine in
+blocking calls, so they run from a thread pool instead of one at a time.
+Threads rather than `asyncio` because every engine in
 `local_llm`/`embedding_engine` exposes a *synchronous* `generate`/`embed`, and
-the work being overlapped is a blocking socket read: converting the whole
-provider stack to async would be a large rewrite to reach a throughput that
-threads already reach, on a workload where a few dozen threads is the
-practical ceiling anyway (the real limit is the provider's requests-per-minute
-quota, not local scheduling). Pool sizes are per stage and configurable
-(`summaryConcurrency`, `embeddingConcurrency` in `config.json`), because the
-two stages talk to providers with very different limits.
+the work being overlapped is a blocking socket read.
 
-**Backoff is part of the concurrency, not a refinement of it.** Before 032,
-`FailoverExecutor` abandoned a provider on its first HTTP 429 and moved down
-the chain. Concurrent calls against one API key *produce* 429s, so shipping
-the pools without a wait-and-retry policy would have made indexing less
-reliable, not faster — the whole chain would burn through in seconds over a
-limit that only time clears. `BackoffPolicy` (exponential, capped, full
-jitter) therefore lands in the same change. Still no retry library: the policy
-is four numbers and one loop, and `tenacity`'s generality buys nothing against
-a chain this specific.
+The pools pay for themselves. Measured on this project's machine (GTX 1650,
+4 GB VRAM) against `nomic-embed-text`, eight concurrent embeddings completed in
+6.8s versus 51.4s serially — 6.42s/chunk down to 0.85s/chunk, a **7.6x**
+speedup: Ollama overlaps requests up to `OLLAMA_NUM_PARALLEL` rather than
+merely queueing them. Pool sizes stay per stage and configurable
+(`summaryConcurrency`, `embeddingConcurrency` in `config.json`) because the
+ceiling is the machine's own CPU/GPU, which differs per machine.
+
+**No backoff policy, deliberately.** Rate-limit backoff exists to survive a
+server that refuses work when it is busy. A local runtime does not refuse: it
+blocks or queues until it can answer, so a pool thread waiting on a socket is
+already the correct behaviour and a retry schedule on top would only add
+latency to work that was never rejected.
 
 **Reuse before recompute.** An `EmbeddingCache` (`reindex_pipeline`) is
 consulted before every embedding call and seeded from the previous successful
@@ -187,32 +178,35 @@ across models would mix dimensionalities into one index.
 
 ### What it actually bought, measured
 
-`scripts/index_bench.py` over `src/provider_routing` (7 files, 32 symbols, 64
-chunks), both revisions indexing the same bytes, embeddings served by local
-Ollama `nomic-embed-text`:
+Measured on this project's machine — AMD Ryzen 5 4600H, 15.4 GB RAM, GTX 1650
+with 4 GB VRAM — against Ollama serving `nomic-embed-text` and
+`qwen2.5-coder:1.5b`:
 
-| Stage | before (61a40bf) | after, cold | after, re-index |
-|---|---|---|---|
-| `SUMMARIZING` | 91.7s | 84.4s | 151.6s |
-| `EMBEDDING` | 433.2s | 163.1s | 82.4s |
-| total | 534.3s | 254.5s | 242.0s |
+| Stage | serial | concurrent | per call | speedup |
+|---|---|---|---|---|
+| `EMBEDDING` (8 workers) | 51.4s / 8 | 6.8s / 8 | 6.42s → 0.85s | **7.6x** |
+| `SUMMARIZING` (4 workers) | 2.9s / 4 | 1.5s / 4 | 0.73s → 0.38s | **1.9x** |
 
-Embedding concurrency is the win: **2.7x** cold, and **5.3x** against the
-baseline once the cache is warm (32 of the 64 chunks reused — the `code` ones;
-`summary` chunks miss, because a full run regenerates the LLM summary they
-embed).
+**The two stages do not scale alike, and that is why the pool sizes are
+separate.** An embedding is a single short forward pass, so the runtime
+overlaps eight of them almost perfectly. A summary is an autoregressive
+generation that occupies the GPU for its whole length, so concurrent summaries
+contend and the return flattens quickly — real summary prompts carry source
+code and run longer than the short prompts measured above, which flattens it
+further. Tuning one stage without touching the other is exactly what
+`summaryConcurrency` and `embeddingConcurrency` are for.
 
-**Summarization concurrency bought essentially nothing (1.09x), and that is
-not a tuning problem.** Groq's free tier caps *tokens per minute* — 8 000 TPM
-on this key, against 1 000 requests per day — and summarization prompts carry
-source code. A token-per-minute ceiling is a throughput ceiling: no amount of
-concurrency lifts it, so the extra in-flight calls become 429s and convert
-straight back into backoff (88 waits in the run above, 150 in the next). On a
-TPM-capped key `summaryConcurrency: 1` is the honest setting; the pool only
-pays once that budget rises, or once the stage points at a provider billed per
-request. Being able to say that about one stage without touching the other is
-why the pool sizes are per stage and configurable rather than one shared
-number.
+Two costs are worth knowing before raising either number. Loading a model for
+the first time is expensive — a cold embedding call measured 49.9s and a cold
+generation 94.7s, against sub-second warm calls — and on a 4 GB card the two
+models compete for residency, so alternating between them forces a reload. The
+pipeline therefore drains one stage completely before starting the next rather
+than interleaving them.
+
+**Reuse beats both.** Re-indexing an unchanged repository costs almost nothing:
+the summary ledger and the embedding cache carry every prior answer forward, so
+a 276-symbol, 51-file repository re-indexed in about 20 seconds end to end
+without a single model call for content that had not changed.
 
 ## Documentation rendering
 

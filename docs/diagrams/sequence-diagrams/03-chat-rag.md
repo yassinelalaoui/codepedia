@@ -27,7 +27,7 @@ sequenceDiagram
     participant ChatApiApp as "Chat API (014/026)"
     participant ChatSession as "Chat / RAG Session (011/026)"
     participant VectorIndex as "Vector Index (006/007)"
-    participant LLMEngine as "LLMEngine: local (008) or\nexplicitly-configured remote (026)"
+    participant LLMEngine as "LLMEngine: local Ollama (008)"
     participant ChatStore as "Chat Persistence (025/027)"
 
     Reader->>ChatApiApp: POST /sessions

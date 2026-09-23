@@ -50,7 +50,7 @@ sequenceDiagram
     CodeSummaryPipeline->>LocalLLMEngine: checkAvailability()
     alt local model unavailable
         LocalLLMEngine-->>CodeSummaryPipeline: unavailable
-        CodeSummaryPipeline-->>cli: raise LocalLLMUnavailableError (stop, no cloud fallback)
+        CodeSummaryPipeline-->>cli: raise LocalLLMUnavailableError (stop, no substitute engine)
     else model ready
         loop for each in-scope symbol
             CodeSummaryPipeline->>DependencyGraph: dependents(), imports (context)
@@ -62,7 +62,7 @@ sequenceDiagram
 
     cli->>DocGenerator: generateRepositoryDocumentation(incremental=False)\n(content pass, reflects the summaries just generated,\nsame grouping, so the cached feature plan is reused)
     opt Overview narrative (038): no cached reply for this exact prompt
-        DocGenerator->>LocalLLMEngine: one generate(prompt) through the summary chain
+        DocGenerator->>LocalLLMEngine: one generate(prompt) on the summary model
         LocalLLMEngine-->>DocGenerator: JSON reply (lead + subsystem paragraphs)
     end
     DocGenerator->>DocGenerator: ground each paragraph against the symbol index\n(unresolved names are dropped, never published)
