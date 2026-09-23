@@ -47,6 +47,23 @@ class EmbeddingEngine:
     def checkAvailability(self) -> EmbeddingAvailabilityStatus:
         return self._transport.availability(self.modelName)
 
+    @property
+    def providerId(self) -> str:
+        """Which model produced a vector, as stored in `embeddingModelId`.
+
+        Two embedding models' vectors are not comparable - frequently not even
+        the same length - so a stored vector has to record what made it, and a
+        query has to refuse vectors made by anything else. That is as true
+        between two local models (`nomic-embed-text` and a replacement) as it
+        ever was between a local and a remote one, which is why this survives
+        the removal of remote providers.
+
+        The `"local:"` prefix is kept so that vectors written before that
+        removal still match: they were stamped from a chain entry that read
+        exactly this.
+        """
+        return f"local:{self.modelName}"
+
     def isAvailableLocally(self) -> bool:
         return self.checkAvailability().available
 

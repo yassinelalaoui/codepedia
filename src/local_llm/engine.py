@@ -28,7 +28,7 @@ def _availability_error(status: AvailabilityStatus, *, endpoint_url: str, model_
 
 
 # How long an "available" verdict stays good without re-probing - the same
-# reasoning, and the same duration, as `groq_engine._AVAILABILITY_TTL_SECONDS`.
+# reasoning, and the same duration, the remote engine's own cache once used.
 # Every `generateStream` and `generate_result` pre-flights `checkAvailability`,
 # which is a `GET /api/tags` listing every installed model, so summarizing a
 # repository cost two round-trips per symbol where one would do. Localhost makes
@@ -87,6 +87,21 @@ class LocalLLMEngine:
     def _invalidate_availability(self) -> None:
         with self._availability_lock:
             self._invalidate_availability_locked()
+
+    @property
+    def providerId(self) -> str:
+        """Which model wrote an answer, as stored in `generated_by`.
+
+        The wiki records the provenance of every generated summary and chat
+        answer (constitution 2.4). One local engine per stage makes that a
+        constant rather than a per-call result, but it is still recorded: the
+        model name changes when the operator changes it, and a summary written
+        by a 1.5B model is not the same artefact as one written by a 7B.
+
+        The `"local:"` prefix is kept so rows written before remote providers
+        were removed still read back identically.
+        """
+        return f"local:{self.modelName}"
 
     def isAvailableLocally(self) -> bool:
         return self.checkAvailability().available
