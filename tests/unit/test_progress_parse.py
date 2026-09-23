@@ -58,23 +58,25 @@ def test_parses_an_items_event():
     assert event.get("total") == 11
 
 
-def test_parses_a_failed_event_with_providers():
+def test_parses_a_failed_event_keeping_its_extra_payload_fields():
+    """Unknown fields survive parsing rather than being dropped.
+
+    The parser knows a fixed set of event types, not a fixed set of fields, so
+    a producer can add detail without this module changing.
+    """
     event = parse_line(
         line(
             seq=40,
             type="failed",
             stage="EMBEDDING",
-            message="No provider in the 'embeddings' chain is currently available.",
-            providers=["local:nomic-embed-text:latest", "openai:text-embedding-3-small"],
+            message="The model for the 'embeddings' stage is not available.",
+            detail="ollama is not running",
         )
     )
 
     assert event is not None
     assert event.stage == "EMBEDDING"
-    assert event.get("providers") == [
-        "local:nomic-embed-text:latest",
-        "openai:text-embedding-3-small",
-    ]
+    assert event.get("detail") == "ollama is not running"
 
 
 def test_parses_server_ready():

@@ -71,13 +71,11 @@ class RunState:
     repositoryPath: str
     stages: list[StageState] = field(default_factory=lambda: [StageState(name, label) for name, label in STAGE_SEQUENCE])
     currentStage: Optional[str] = None
-    providerSwitches: list[dict[str, Any]] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
     catchup: Optional[dict[str, Any]] = None
     outcome: Optional[str] = None
     failedStage: Optional[str] = None
     failureMessage: Optional[str] = None
-    providersAttempted: list[str] = field(default_factory=list)
     serverUrl: Optional[str] = None
     startedAt: str = field(default_factory=_now)
     endedAt: Optional[str] = None
@@ -139,24 +137,6 @@ class RunState:
         if stage.status == PENDING:
             stage.status = RUNNING
 
-    def _apply_failover(self, event: ProgressEvent) -> None:
-        self.providerSwitches.append(
-            {
-                "chain": event.get("chain"),
-                "fromProvider": event.get("fromProvider"),
-                "toProvider": event.get("toProvider"),
-                "reason": event.get("reason"),
-                "at": _now(),
-            }
-        )
-
-    def _apply_backoff(self, event: ProgressEvent) -> None:
-        provider = event.get("provider")
-        delay = event.get("delaySeconds")
-        self.notices.append(f"Rate limited by {provider}; waiting {delay}s before retrying.")
-        # Unbounded growth would be a slow leak on a long rate-limited run.
-        del self.notices[:-20]
-
     def _apply_catchup(self, event: ProgressEvent) -> None:
         self.catchup = {
             "phase": event.get("phase"),
@@ -171,9 +151,6 @@ class RunState:
         # obligation 6), so a child killed before emitting this still ends.
         self.failedStage = event.stage or event.get("chain")
         self.failureMessage = event.get("message")
-        providers = event.get("providers") or []
-        if isinstance(providers, list):
-            self.providersAttempted = [str(entry) for entry in providers]
         stage = self._stage(event.stage)
         if stage is not None:
             stage.status = FAILED
@@ -219,13 +196,11 @@ class RunState:
                 "repositoryPath": self.repositoryPath,
                 "stages": [stage.to_dict() for stage in self.stages],
                 "currentStage": self.currentStage,
-                "providerSwitches": list(self.providerSwitches),
                 "notices": list(self.notices),
                 "catchup": dict(self.catchup) if self.catchup else None,
                 "outcome": self.outcome,
                 "failedStage": self.failedStage,
                 "failureMessage": self.failureMessage,
-                "providersAttempted": list(self.providersAttempted),
                 "serverUrl": self.serverUrl,
                 "startedAt": self.startedAt,
                 "endedAt": self.endedAt,

@@ -23,7 +23,7 @@ from cli.progress_stream import SENTINEL
 KNOWN_STAGES = frozenset(stage.name for stage in Stage)
 
 KNOWN_TYPES = frozenset(
-    {"stage", "stage_end", "items", "failover", "backoff", "failed", "server_ready", "catchup"}
+    {"stage", "stage_end", "items", "failed", "server_ready", "catchup"}
 )
 
 

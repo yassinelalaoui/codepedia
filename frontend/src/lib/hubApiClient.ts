@@ -18,27 +18,17 @@ export interface StageState {
   elapsedSeconds: number | null;
 }
 
-export interface ProviderSwitch {
-  chain: string | null;
-  fromProvider: string | null;
-  toProvider: string | null;
-  reason: string | null;
-  at: string;
-}
-
 export interface RunSnapshot {
   runId: string;
   kind: "index" | "open";
   repositoryPath: string;
   stages: StageState[];
   currentStage: string | null;
-  providerSwitches: ProviderSwitch[];
   notices: string[];
   catchup: { phase: string; completed: number; total: number; path: string } | null;
   outcome: "succeeded" | "failed" | "cancelled" | null;
   failedStage: string | null;
   failureMessage: string | null;
-  providersAttempted: string[];
   serverUrl: string | null;
   startedAt: string;
   endedAt: string | null;
@@ -64,7 +54,6 @@ export interface RunRecord {
   outcome: string | null;
   failedStage: string | null;
   failureMessage: string | null;
-  providersAttempted: string[];
 }
 
 export class HubApiError extends Error {

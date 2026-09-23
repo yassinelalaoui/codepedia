@@ -41,8 +41,7 @@ CREATE TABLE IF NOT EXISTS runs (
     ended_at            TEXT,
     outcome             TEXT,
     failed_stage        TEXT,
-    failure_message     TEXT,
-    providers_attempted TEXT
+    failure_message     TEXT
 );
 CREATE INDEX IF NOT EXISTS runs_started_at ON runs (started_at DESC);
 """
@@ -58,7 +57,6 @@ class RunRecord:
     outcome: Optional[str] = None
     failedStage: Optional[str] = None
     failureMessage: Optional[str] = None
-    providersAttempted: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -70,7 +68,6 @@ class RunRecord:
             "outcome": self.outcome,
             "failedStage": self.failedStage,
             "failureMessage": self.failureMessage,
-            "providersAttempted": list(self.providersAttempted),
         }
 
 
@@ -117,15 +114,13 @@ class RunLog:
         outcome: str,
         failed_stage: Optional[str] = None,
         failure_message: Optional[str] = None,
-        providers_attempted: Sequence[str] = (),
     ) -> None:
         """Record how a run ended, including what to tell the person about it."""
         with _connect() as connection:
             connection.execute(
                 """
                 UPDATE runs
-                   SET ended_at = ?, outcome = ?, failed_stage = ?, failure_message = ?,
-                       providers_attempted = ?
+                   SET ended_at = ?, outcome = ?, failed_stage = ?, failure_message = ?
                  WHERE run_id = ?
                 """,
                 (
@@ -133,7 +128,6 @@ class RunLog:
                     outcome,
                     failed_stage,
                     failure_message,
-                    json.dumps(list(providers_attempted)) if providers_attempted else None,
                     run_id,
                 ),
             )
@@ -196,15 +190,6 @@ class RunLog:
 
 
 def _record_from_row(row: sqlite3.Row) -> RunRecord:
-    raw_providers = row["providers_attempted"]
-    providers: tuple[str, ...] = ()
-    if raw_providers:
-        try:
-            decoded = json.loads(raw_providers)
-            if isinstance(decoded, list):
-                providers = tuple(str(entry) for entry in decoded)
-        except ValueError:
-            providers = ()
     return RunRecord(
         runId=row["run_id"],
         repositoryPath=row["repository_path"],
@@ -214,5 +199,4 @@ def _record_from_row(row: sqlite3.Row) -> RunRecord:
         outcome=row["outcome"],
         failedStage=row["failed_stage"],
         failureMessage=row["failure_message"],
-        providersAttempted=providers,
     )

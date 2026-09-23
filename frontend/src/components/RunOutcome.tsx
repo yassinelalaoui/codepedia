@@ -60,17 +60,6 @@ export function RunOutcome({ run, onRetry, onDismiss, onOpen, retrying = false }
 
       {run.failureMessage ? <p className="run-outcome__message">{run.failureMessage}</p> : null}
 
-      {run.providersAttempted.length > 0 ? (
-        <div className="run-outcome__providers">
-          <p>Providers tried:</p>
-          <ul>
-            {run.providersAttempted.map((provider) => (
-              <li key={provider}>{provider}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
       {run.discardedEverything ? (
         <p className="run-outcome__discarded">
           Nothing was kept from this run. Any stages shown as finished above were discarded — the

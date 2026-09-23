@@ -193,8 +193,7 @@ def test_a_failed_run_ends_in_a_clear_terminal_state(client, tmp_path, scripted)
         seq=90,
         type="failed",
         stage="EMBEDDING",
-        message="No provider in the 'embeddings' chain is currently available.",
-        providers=["local:nomic-embed-text:latest", "openai:text-embedding-3-small"],
+        message="The model for the 'embeddings' stage is not available.",
     )
     scripted["process"].exit(1)
 
@@ -202,13 +201,9 @@ def test_a_failed_run_ends_in_a_clear_terminal_state(client, tmp_path, scripted)
 
     assert final == "failed", "the run never reached a terminal state"
     current = snapshot(client)
-    # Spec FR-022: the stage, and every provider tried.
+    # Spec FR-022: the stage, and what went wrong with it.
     assert current["failedStage"] == "EMBEDDING"
     assert "embeddings" in current["failureMessage"]
-    assert current["providersAttempted"] == [
-        "local:nomic-embed-text:latest",
-        "openai:text-embedding-3-small",
-    ]
     # Spec FR-023: the ticked stages above must not be read as saved work.
     assert current["discardedEverything"] is True
     assert current["currentStage"] is None
@@ -293,8 +288,7 @@ def test_a_finished_run_is_recorded_with_its_diagnosis(client, tmp_path, scripte
         seq=1,
         type="failed",
         stage="EMBEDDING",
-        message="No provider in the 'embeddings' chain is currently available.",
-        providers=["local:nomic-embed-text:latest"],
+        message="The model for the 'embeddings' stage is not available.",
     )
     scripted["process"].exit(1)
     wait_for(lambda: (snapshot(client) or {}).get("outcome"))
@@ -304,7 +298,6 @@ def test_a_finished_run_is_recorded_with_its_diagnosis(client, tmp_path, scripte
     assert len(runs) == 1
     assert runs[0]["outcome"] == "failed"
     assert runs[0]["failedStage"] == "EMBEDDING"
-    assert runs[0]["providersAttempted"] == ["local:nomic-embed-text:latest"]
 
 
 def test_a_run_whose_hub_died_reads_as_interrupted_on_the_next_start(client, tmp_path, scripted, hub_home):

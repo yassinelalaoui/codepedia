@@ -39,19 +39,13 @@ def test_closing_a_run_records_its_diagnosis(log):
         run_id="r1",
         outcome="failed",
         failed_stage="EMBEDDING",
-        failure_message="No provider in the 'embeddings' chain is currently available.",
-        providers_attempted=["local:nomic-embed-text:latest", "openai:text-embedding-3-small"],
+        failure_message="The model for the 'embeddings' stage is not available.",
     )
 
     record = log.recent()[0]
     assert record.outcome == "failed"
     assert record.failedStage == "EMBEDDING"
     assert "embeddings" in record.failureMessage
-    # Spec FR-022: every provider attempted, so the person can say what to fix.
-    assert record.providersAttempted == (
-        "local:nomic-embed-text:latest",
-        "openai:text-embedding-3-small",
-    )
     assert record.endedAt is not None
 
 

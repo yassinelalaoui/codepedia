@@ -95,20 +95,6 @@ export function RunProgress({ run, onCancel, cancelling = false }: RunProgressPr
         })}
       </ol>
 
-      {run.providerSwitches.length > 0 ? (
-        <div className="run-progress__switches">
-          <h3>Provider switches</h3>
-          <ul>
-            {run.providerSwitches.map((event, index) => (
-              <li key={`${event.at}-${index}`}>
-                {event.chain}: {event.fromProvider} → {event.toProvider}
-                {event.reason ? ` (${event.reason})` : ""}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
       {run.notices.length > 0 ? (
         <ul className="run-progress__notices">
           {run.notices.map((notice, index) => (

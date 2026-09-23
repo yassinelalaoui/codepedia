@@ -91,23 +91,6 @@ def test_version_increases_on_every_mutation():
     assert len(set(versions)) == len(versions)
 
 
-def test_provider_switches_accumulate():
-    run = new_run()
-    run.apply(
-        event(
-            seq=1,
-            type="failover",
-            chain="summary",
-            fromProvider="local:qwen",
-            toProvider="groq:oss-20b",
-            reason="unavailable",
-        )
-    )
-
-    assert len(run.providerSwitches) == 1
-    assert run.providerSwitches[0]["toProvider"] == "groq:oss-20b"
-
-
 def test_failed_event_records_the_diagnosis_without_terminating_the_run():
     """The child's exit code decides termination, not this event
     (contracts/run-progress-stream.md, reader obligation 6)."""
@@ -118,16 +101,12 @@ def test_failed_event_records_the_diagnosis_without_terminating_the_run():
             seq=2,
             type="failed",
             stage="EMBEDDING",
-            message="No provider in the 'embeddings' chain is currently available.",
-            providers=["local:nomic-embed-text:latest", "openai:text-embedding-3-small"],
+            message="The model for the 'embeddings' stage is not available.",
         )
     )
 
     assert run.failedStage == "EMBEDDING"
-    assert run.providersAttempted == [
-        "local:nomic-embed-text:latest",
-        "openai:text-embedding-3-small",
-    ]
+    assert run.failureMessage == "The model for the 'embeddings' stage is not available."
     assert run.outcome is None, "a diagnosis is not a terminal state"
 
 

@@ -153,7 +153,6 @@ class HubState:
             outcome=run.outcome or "failed",
             failed_stage=run.failedStage,
             failure_message=run.failureMessage,
-            providers_attempted=run.providersAttempted,
         )
 
     def cancel_current(self) -> Optional[RunState]:
