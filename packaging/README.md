@@ -17,8 +17,8 @@ research.md section 4). Commit and push that change to `main` first.
 Push a version tag matching the version from step 1:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 This triggers `.github/workflows/release.yml`, which builds

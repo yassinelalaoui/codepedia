@@ -20,13 +20,21 @@ SRC = REPO_ROOT / "src"
 # one-file binary (research.md section 4).
 datas = copy_metadata("codepedia")
 
-# doc_generator's Jinja templates and static assets are loaded by path at
-# runtime, so PyInstaller's static import analysis can't discover them on
-# its own - they must be listed explicitly, mirroring the
-# [tool.setuptools.package-data] fix in pyproject.toml (research.md section 3).
+# Templates and static assets are loaded by path at runtime, so PyInstaller's
+# static import analysis can't discover them on its own - they must be listed
+# explicitly, mirroring the [tool.setuptools.package-data] entries in
+# pyproject.toml (research.md section 3).
+#
+# `hub_server/assets` matters as much as `doc_generator`'s: `codepedia home`
+# mounts that directory as the homepage, and `hub_server.app` skips the mount
+# when it is missing rather than failing. Left out, the frozen binary starts a
+# homepage server that answers 404 on `/` while its API routes work - a silent
+# failure, which is why `tests/unit/test_packaging_spec.py` now asserts every
+# runtime-loaded asset directory appears here.
 datas += [
     (str(SRC / "doc_generator" / "templates"), "doc_generator/templates"),
     (str(SRC / "doc_generator" / "assets"), "doc_generator/assets"),
+    (str(SRC / "hub_server" / "assets"), "hub_server/assets"),
 ]
 
 # parser_engine.treesitter_runtime imports each language's tree-sitter
